@@ -294,12 +294,12 @@ function WeekGrid({
         ))}
       </div>
 
-      {/* Grid body — no horizontal scroll, colored blocks only */}
-      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-px">
+      {/* Grid body — light grid lines, padded status blocks */}
+      <div className="grid grid-cols-[36px_repeat(7,1fr)]">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
             {/* Time label */}
-            <div className="flex items-center justify-end pr-1 text-[8px] text-foreground/70 tabular-nums font-semibold h-9">
+            <div className="flex items-center justify-end pr-1 text-[8px] text-foreground/70 tabular-nums font-semibold h-10 border-b border-border/20">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -314,7 +314,7 @@ function WeekGrid({
                 : null;
 
               return (
-                <div key={di} className="relative">
+                <div key={di} className="relative border-b border-r border-border/15 p-[3px]">
                   <button
                     onClick={() => {
                       if (slot?.patient) {
@@ -324,11 +324,11 @@ function WeekGrid({
                       }
                     }}
                     className={cn(
-                      "w-full h-9 rounded-[3px] border transition-all duration-150",
+                      "w-full h-[34px] rounded-[5px] transition-all duration-150",
                       "active:scale-[0.90]",
                       statusBg
-                        ? cn(statusBg, "border-transparent opacity-90 hover:opacity-100")
-                        : "bg-surface-sunken border-border/30 hover:bg-accent/50"
+                        ? cn(statusBg, "hover:opacity-85")
+                        : "hover:bg-accent/40"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
