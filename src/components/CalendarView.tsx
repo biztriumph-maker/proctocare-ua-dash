@@ -1,18 +1,23 @@
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
 import type { PatientStatus } from "./PatientCard";
-import { toast } from "sonner";
 
 interface CalendarSlot {
   hour: number;
-  patient?: { name: string; status: PatientStatus };
+  patient?: { name: string; status: PatientStatus; procedure: string };
 }
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
   onFindOpening: () => void;
 }
+
+const statusColor: Record<PatientStatus, string> = {
+  ready: "bg-status-ready-bg border-status-ready/30",
+  progress: "bg-status-progress-bg border-status-progress/30",
+  risk: "bg-status-risk-bg border-status-risk/30",
+};
 
 const statusDot: Record<PatientStatus, string> = {
   ready: "bg-status-ready",
@@ -23,23 +28,23 @@ const statusDot: Record<PatientStatus, string> = {
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
-// Mock weekly data keyed by "YYYY-MM-DD"
+const PROCEDURES = ["Колоноскопія", "Ректоскопія", "Аноскопія", "Консультація"];
+
 function getMockSlots(dateStr: string): CalendarSlot[] {
   const seed = dateStr.split("-").reduce((a, b) => a + parseInt(b), 0);
-  const slots: CalendarSlot[] = HOURS.map((hour) => {
+  return HOURS.map((hour) => {
     const hash = (seed * 31 + hour * 7) % 100;
-    if (hash < 25) return { hour, patient: { name: "Коваленко О.", status: "ready" as PatientStatus } };
-    if (hash < 35) return { hour, patient: { name: "Мельник І.", status: "progress" as PatientStatus } };
-    if (hash < 42) return { hour, patient: { name: "Шевченко Т.", status: "risk" as PatientStatus } };
+    if (hash < 25) return { hour, patient: { name: "Коваленко О.", status: "ready" as PatientStatus, procedure: PROCEDURES[hash % 4] } };
+    if (hash < 35) return { hour, patient: { name: "Мельник І.", status: "progress" as PatientStatus, procedure: PROCEDURES[(hash + 1) % 4] } };
+    if (hash < 42) return { hour, patient: { name: "Шевченко Т.", status: "risk" as PatientStatus, procedure: PROCEDURES[(hash + 2) % 4] } };
     return { hour };
   });
-  return slots;
 }
 
 function getWeekDates(refDate: Date): Date[] {
   const d = new Date(refDate);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   const monday = new Date(d.setDate(diff));
   return Array.from({ length: 7 }, (_, i) => {
     const date = new Date(monday);
@@ -71,15 +76,15 @@ function getOccupancy(dateStr: string): "full" | "moderate" | "free" {
   return "free";
 }
 
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
 export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
-
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
   const monthLabel = useMemo(() => {
     return currentDate.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
@@ -106,7 +111,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
     setShowMonthPicker(false);
   }, []);
 
-  // Month picker data
   const monthDates = useMemo(() => {
     return getMonthDates(currentDate.getFullYear(), currentDate.getMonth());
   }, [currentDate]);
@@ -232,7 +236,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
       {viewMode === "week" ? (
         <WeekGrid
           weekDates={weekDates}
-          currentDate={currentDate}
           onSlotClick={onSlotClick}
           onSelectDay={(d) => {
             setCurrentDate(d);
@@ -240,11 +243,32 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
           }}
         />
       ) : (
-        <DayGrid
-          date={currentDate}
-          onSlotClick={onSlotClick}
-        />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} />
       )}
+    </div>
+  );
+}
+
+// ── Slot Popover ──
+function SlotPopover({
+  slot,
+  onClose,
+}: {
+  slot: { name: string; status: PatientStatus; procedure: string };
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute z-20 top-full left-0 mt-1 w-48 bg-popover border rounded-lg shadow-elevated p-2.5 space-y-1 animate-reveal-up">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className={cn("w-2 h-2 rounded-full", statusDot[slot.status])} />
+          <span className="text-[12px] font-semibold text-foreground">{slot.name}</span>
+        </div>
+        <button onClick={onClose} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all">
+          <X size={12} className="text-muted-foreground" />
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{slot.procedure}</p>
     </div>
   );
 }
@@ -252,18 +276,15 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
 // ── Week Grid ──
 function WeekGrid({
   weekDates,
-  currentDate,
   onSlotClick,
   onSelectDay,
 }: {
   weekDates: Date[];
-  currentDate: Date;
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
 }) {
   const today = new Date();
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const [activePopover, setActivePopover] = useState<string | null>(null);
 
   const slotsPerDay = useMemo(() => {
     return weekDates.map((d) => getMockSlots(dateToStr(d)));
@@ -272,18 +293,16 @@ function WeekGrid({
   return (
     <div className="overflow-x-auto -mx-4 px-4">
       <div className="min-w-[600px]">
-        {/* Header row */}
+        {/* Header row — sticky time column */}
         <div className="grid grid-cols-[48px_repeat(7,1fr)] gap-px mb-1">
-          <div />
+          <div className="sticky left-0 z-10 bg-background" />
           {weekDates.map((d, i) => (
             <button
               key={i}
               onClick={() => onSelectDay(d)}
               className={cn(
                 "text-center py-1.5 rounded-md transition-all active:scale-[0.96]",
-                isSameDay(d, today)
-                  ? "bg-primary/10"
-                  : "hover:bg-accent/60"
+                isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
               )}
             >
               <p className="text-[9px] font-semibold text-muted-foreground uppercase">
@@ -303,37 +322,45 @@ function WeekGrid({
         <div className="grid grid-cols-[48px_repeat(7,1fr)] gap-px">
           {HOURS.map((hour, hi) => (
             <div key={hour} className="contents">
-              <div className="flex items-center justify-end pr-2 text-[10px] text-muted-foreground tabular-nums font-medium h-10">
+              {/* Sticky time label */}
+              <div className="sticky left-0 z-10 bg-background flex items-center justify-end pr-2 text-[10px] text-muted-foreground tabular-nums font-medium h-11 border-b border-border/40">
                 {String(hour).padStart(2, "0")}:00
               </div>
               {weekDates.map((d, di) => {
                 const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
+                const popoverKey = `${di}-${hour}`;
                 return (
-                  <button
-                    key={di}
-                    onClick={() => {
-                      if (slot?.patient) {
-                        toast.info(`Деталі: ${slot.patient.name}`);
-                      } else {
-                        onSlotClick(d, hour);
-                      }
-                    }}
-                    className={cn(
-                      "h-10 rounded-sm border border-transparent transition-all duration-150 text-[10px] truncate px-1 flex items-center gap-0.5",
-                      "active:scale-[0.96]",
-                      slot?.patient
-                        ? "bg-surface-raised shadow-card hover:shadow-card-hover"
-                        : "hover:bg-accent/40 hover:border-border"
+                  <div key={di} className="relative">
+                    <button
+                      onClick={() => {
+                        if (slot?.patient) {
+                          setActivePopover(activePopover === popoverKey ? null : popoverKey);
+                        } else {
+                          onSlotClick(d, hour);
+                        }
+                      }}
+                      className={cn(
+                        "w-full h-11 border-b border-border/40 transition-all duration-150 text-[10px] truncate px-1 flex items-center gap-0.5",
+                        "active:scale-[0.96]",
+                        slot?.patient
+                          ? cn("border-l-2", statusColor[slot.patient.status])
+                          : "hover:bg-accent/40"
+                      )}
+                    >
+                      {slot?.patient && (
+                        <>
+                          <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                          <span className="font-medium text-foreground truncate">{slot.patient.name}</span>
+                        </>
+                      )}
+                    </button>
+                    {slot?.patient && activePopover === popoverKey && (
+                      <SlotPopover
+                        slot={slot.patient}
+                        onClose={() => setActivePopover(null)}
+                      />
                     )}
-                    style={{ animationDelay: `${(hi * 7 + di) * 15}ms` }}
-                  >
-                    {slot?.patient && (
-                      <>
-                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                        <span className="font-medium text-foreground truncate">{slot.patient.name}</span>
-                      </>
-                    )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -353,42 +380,61 @@ function DayGrid({
   onSlotClick: (date: Date, hour: number) => void;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
+  const [activePopover, setActivePopover] = useState<number | null>(null);
 
   return (
     <div className="space-y-0.5">
       {slots.map((slot, i) => (
-        <button
-          key={slot.hour}
-          onClick={() => {
-            if (slot.patient) {
-              toast.info(`Деталі: ${slot.patient.name}`);
-            } else {
-              onSlotClick(date, slot.hour);
-            }
-          }}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-all duration-200",
-            "active:scale-[0.98] animate-reveal-up",
-            slot.patient
-              ? "bg-surface-raised shadow-card hover:shadow-card-hover"
-              : "hover:bg-accent/60 border border-transparent hover:border-border"
-          )}
-          style={{ animationDelay: `${i * 40}ms` }}
-        >
-          <span className="text-[11px] font-semibold text-muted-foreground tabular-nums w-10 shrink-0">
-            {String(slot.hour).padStart(2, "0")}:00
-          </span>
-          {slot.patient ? (
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
-              <span className="text-[13px] font-medium text-foreground truncate">
-                {slot.patient.name}
-              </span>
+        <div key={slot.hour} className="relative">
+          <button
+            onClick={() => {
+              if (slot.patient) {
+                setActivePopover(activePopover === slot.hour ? null : slot.hour);
+              } else {
+                onSlotClick(date, slot.hour);
+              }
+            }}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-all duration-200",
+              "active:scale-[0.98] animate-reveal-up",
+              slot.patient
+                ? cn("border-l-2", statusColor[slot.patient.status])
+                : "hover:bg-accent/60 border border-transparent hover:border-border"
+            )}
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
+            <span className="text-[11px] font-semibold text-muted-foreground tabular-nums w-10 shrink-0">
+              {String(slot.hour).padStart(2, "0")}:00
+            </span>
+            {slot.patient ? (
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                <span className="text-[13px] font-medium text-foreground truncate">
+                  {slot.patient.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground truncate ml-auto">
+                  {slot.patient.procedure}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[11px] text-muted-foreground/50">— вільно —</span>
+            )}
+          </button>
+          {slot.patient && activePopover === slot.hour && (
+            <div className="absolute z-20 top-full left-12 mt-1 w-52 bg-popover border rounded-lg shadow-elevated p-2.5 space-y-1 animate-reveal-up">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("w-2 h-2 rounded-full", statusDot[slot.patient.status])} />
+                  <span className="text-[12px] font-semibold text-foreground">{slot.patient.name}</span>
+                </div>
+                <button onClick={() => setActivePopover(null)} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all">
+                  <X size={12} className="text-muted-foreground" />
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{slot.patient.procedure}</p>
             </div>
-          ) : (
-            <span className="text-[11px] text-muted-foreground/50">— вільно —</span>
           )}
-        </button>
+        </div>
       ))}
     </div>
   );
