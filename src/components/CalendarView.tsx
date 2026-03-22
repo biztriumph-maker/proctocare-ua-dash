@@ -306,7 +306,7 @@ function WeekGrid({
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
             {/* Time label */}
-            <div className="flex items-center justify-end pr-1 text-[8px] text-muted-foreground tabular-nums font-medium h-9">
+            <div className="flex items-center justify-end pr-1 text-[8px] text-foreground/70 tabular-nums font-semibold h-9">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
