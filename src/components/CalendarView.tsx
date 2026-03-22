@@ -66,13 +66,6 @@ function dateToStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function getOccupancy(dateStr: string): "full" | "moderate" | "free" {
-  const slots = getMockSlots(dateStr);
-  const occupied = slots.filter((s) => s.patient).length;
-  if (occupied >= 7) return "full";
-  if (occupied >= 3) return "moderate";
-  return "free";
-}
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
