@@ -437,9 +437,6 @@ function DayGrid({
     </div>
   );
 }
-  onSlotClick: (date: Date, hour: number) => void;
-  onSelectDay: (d: Date) => void;
-}) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
 
