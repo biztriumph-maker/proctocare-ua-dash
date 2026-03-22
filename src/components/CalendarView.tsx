@@ -273,11 +273,170 @@ function SlotPopover({
   );
 }
 
-// ── Week Grid ──
+// ── Week Grid (Zero-Scroll Mobile) ──
 function WeekGrid({
   weekDates,
   onSlotClick,
   onSelectDay,
+}: {
+  weekDates: Date[];
+  onSlotClick: (date: Date, hour: number) => void;
+  onSelectDay: (d: Date) => void;
+}) {
+  const today = new Date();
+  const [activePopover, setActivePopover] = useState<string | null>(null);
+
+  const slotsPerDay = useMemo(() => {
+    return weekDates.map((d) => getMockSlots(dateToStr(d)));
+  }, [weekDates]);
+
+  return (
+    <div>
+      {/* Header row */}
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-0.5 mb-1">
+        <div />
+        {weekDates.map((d, i) => (
+          <button
+            key={i}
+            onClick={() => onSelectDay(d)}
+            className={cn(
+              "text-center py-1 rounded-md transition-all active:scale-[0.96]",
+              isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
+            )}
+          >
+            <p className="text-[8px] font-semibold text-muted-foreground uppercase leading-none">
+              {DAY_LABELS[i]}
+            </p>
+            <p className={cn(
+              "text-[12px] font-bold tabular-nums leading-tight",
+              isSameDay(d, today) ? "text-primary" : "text-foreground"
+            )}>
+              {d.getDate()}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      {/* Grid body — fits screen, no horizontal scroll */}
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-0.5">
+        {HOURS.map((hour) => (
+          <div key={hour} className="contents">
+            <div className="flex items-center justify-end pr-1 text-[9px] text-muted-foreground tabular-nums font-medium h-9">
+              {String(hour).padStart(2, "0")}
+            </div>
+            {weekDates.map((d, di) => {
+              const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
+              const popoverKey = `${di}-${hour}`;
+              const statusBg = slot?.patient
+                ? slot.patient.status === "ready"
+                  ? "bg-status-ready"
+                  : slot.patient.status === "progress"
+                    ? "bg-status-progress"
+                    : "bg-status-risk"
+                : null;
+
+              return (
+                <div key={di} className="relative">
+                  <button
+                    onClick={() => {
+                      if (slot?.patient) {
+                        setActivePopover(activePopover === popoverKey ? null : popoverKey);
+                      } else {
+                        onSlotClick(d, hour);
+                      }
+                    }}
+                    className={cn(
+                      "w-full h-9 rounded-[4px] border border-border/30 transition-all duration-150",
+                      "active:scale-[0.92]",
+                      statusBg
+                        ? cn(statusBg, "opacity-80 hover:opacity-100")
+                        : "bg-surface-sunken hover:bg-accent/50"
+                    )}
+                  />
+                  {slot?.patient && activePopover === popoverKey && (
+                    <SlotPopover
+                      slot={slot.patient}
+                      onClose={() => setActivePopover(null)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Day Grid ──
+function DayGrid({
+  date,
+  onSlotClick,
+}: {
+  date: Date;
+  onSlotClick: (date: Date, hour: number) => void;
+}) {
+  const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
+  const [activePopover, setActivePopover] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-0.5">
+      {slots.map((slot, i) => (
+        <div key={slot.hour} className="relative">
+          <button
+            onClick={() => {
+              if (slot.patient) {
+                setActivePopover(activePopover === slot.hour ? null : slot.hour);
+              } else {
+                onSlotClick(date, slot.hour);
+              }
+            }}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-all duration-200",
+              "active:scale-[0.98] animate-reveal-up",
+              slot.patient
+                ? cn("border-l-2", statusColor[slot.patient.status])
+                : "hover:bg-accent/60 border border-transparent hover:border-border"
+            )}
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
+            <span className="text-[11px] font-semibold text-muted-foreground tabular-nums w-10 shrink-0">
+              {String(slot.hour).padStart(2, "0")}:00
+            </span>
+            {slot.patient ? (
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                <span className="text-[13px] font-medium text-foreground truncate">
+                  {slot.patient.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground truncate ml-auto">
+                  {slot.patient.procedure}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[11px] text-muted-foreground/50">— вільно —</span>
+            )}
+          </button>
+          {slot.patient && activePopover === slot.hour && (
+            <div className="absolute z-20 top-full left-12 mt-1 w-52 bg-popover border rounded-lg shadow-elevated p-2.5 space-y-1 animate-reveal-up">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("w-2 h-2 rounded-full", statusDot[slot.patient.status])} />
+                  <span className="text-[12px] font-semibold text-foreground">{slot.patient.name}</span>
+                </div>
+                <button onClick={() => setActivePopover(null)} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all">
+                  <X size={12} className="text-muted-foreground" />
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{slot.patient.procedure}</p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
