@@ -308,12 +308,12 @@ function WeekGrid({
       </div>
 
       {/* Grid body — no horizontal scroll, colored blocks only */}
-      <div className="grid grid-cols-[32px_repeat(7,1fr)] gap-px">
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-px">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
             {/* Time label */}
-            <div className="flex items-center justify-end pr-0.5 text-[9px] text-muted-foreground tabular-nums font-medium h-9">
-              {String(hour).padStart(2, "0")}
+            <div className="flex items-center justify-end pr-1 text-[8px] text-muted-foreground tabular-nums font-medium h-9">
+              {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);

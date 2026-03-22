@@ -14,7 +14,7 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
           "flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "operational"
-            ? "bg-surface-raised shadow-card text-foreground"
+            ? "bg-surface-raised shadow-[0_1px_3px_0_hsl(220_12%_70%/0.35),0_2px_6px_0_hsl(220_12%_70%/0.15)] text-foreground"
             : "text-muted-foreground hover:text-foreground"
         )}
       >
@@ -26,7 +26,7 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
           "flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "calendar"
-            ? "bg-surface-raised shadow-card text-foreground"
+            ? "bg-surface-raised shadow-[0_1px_3px_0_hsl(220_12%_70%/0.35),0_2px_6px_0_hsl(220_12%_70%/0.15)] text-foreground"
             : "text-muted-foreground hover:text-foreground"
         )}
       >
