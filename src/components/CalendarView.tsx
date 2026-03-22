@@ -288,7 +288,7 @@ function WeekGrid({
               isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
             )}
           >
-            <p className="text-[8px] font-semibold text-muted-foreground uppercase leading-none">
+            <p className="text-[8px] font-bold text-foreground/60 uppercase leading-none">
               {DAY_LABELS[i]}
             </p>
             <p className={cn(
