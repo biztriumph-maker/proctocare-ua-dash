@@ -10,7 +10,6 @@ interface CalendarSlot {
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onFindOpening: () => void;
 }
 
 const statusColor: Record<PatientStatus, string> = {
