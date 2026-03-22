@@ -307,10 +307,10 @@ function WeekGrid({
               const popoverKey = `${di}-${hour}`;
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
-                  ? "bg-status-ready"
+                  ? "bg-status-ready-bg border border-status-ready/25"
                   : slot.patient.status === "progress"
-                    ? "bg-status-progress"
-                    : "bg-status-risk"
+                    ? "bg-status-progress-bg border border-status-progress/25"
+                    : "bg-status-risk-bg border border-status-risk/25"
                 : null;
 
               return (
