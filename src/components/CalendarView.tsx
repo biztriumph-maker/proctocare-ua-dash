@@ -214,15 +214,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
         </div>
       )}
 
-      {/* Find opening */}
-      <button
-        onClick={onFindOpening}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-primary/30 text-primary text-xs font-medium hover:bg-primary/5 active:scale-[0.98] transition-all"
-      >
-        <Search size={14} />
-        Знайти вільне вікно
-      </button>
-
       {viewMode === "week" ? (
         <WeekGrid
           weekDates={weekDates}
