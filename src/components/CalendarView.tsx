@@ -283,7 +283,7 @@ function WeekGrid({
   return (
     <div>
       {/* Header row */}
-      <div className="grid grid-cols-[32px_repeat(7,1fr)] gap-px mb-1">
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-px mb-1">
         <div />
         {weekDates.map((d, i) => (
           <button
