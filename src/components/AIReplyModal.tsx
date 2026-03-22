@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Send, X } from "lucide-react";
+import { Send, X, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatMessage {
@@ -14,6 +14,8 @@ export interface AIAlertDetail {
   question: string;
   timestamp: string;
   chatHistory: ChatMessage[];
+  appointmentDate: Date;
+  appointmentTime: string;
 }
 
 interface AIReplyModalProps {
@@ -40,6 +42,12 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
     }, 300);
   };
 
+  const formattedDate = alert.appointmentDate.toLocaleDateString("uk-UA", {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       {/* Overlay */}
@@ -56,7 +64,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
         </div>
 
         {/* Header */}
-        <div className="flex items-start justify-between px-4 pb-3">
+        <div className="flex items-start justify-between px-4 pb-2">
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-foreground leading-tight">
               {alert.patientName}
@@ -71,6 +79,17 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
           >
             <X size={14} />
           </button>
+        </div>
+
+        {/* Procedure date banner */}
+        <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/15">
+          <CalendarDays size={14} className="text-primary shrink-0" />
+          <p className="text-[12px] font-medium text-foreground">
+            Процедура призначена на:{" "}
+            <span className="font-bold text-primary">
+              {formattedDate}, {alert.appointmentTime}
+            </span>
+          </p>
         </div>
 
         {/* Chat context */}

@@ -10,6 +10,12 @@ import { NewEntryForm } from "@/components/NewEntryForm";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+const today = new Date();
+const tomorrow = new Date();
+tomorrow.setDate(tomorrow.getDate() + 1);
+const nextWeek = new Date();
+nextWeek.setDate(nextWeek.getDate() + 5);
+
 const MOCK_PATIENTS: Patient[] = [
   { id: "1", name: "Коваленко Олена", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
   { id: "2", name: "Мельник Ігор", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Очищення розпочато, чекаємо підтвердження" },
@@ -31,6 +37,8 @@ const MOCK_AI_ALERTS: AIAlertDetail[] = [
     patientName: "Шевченко Тарас",
     question: "Чи можна приймати Фортранс з діабетом 2 типу?",
     timestamp: "Сьогодні, 10:20",
+    appointmentDate: today,
+    appointmentTime: "11:00",
     chatHistory: [
       { sender: "ai", text: "Доброго дня! Починайте підготовку за інструкцією: дієта без клітковини за 3 дні.", time: "09:00" },
       { sender: "patient", text: "Дякую. А у мене діабет 2 типу — мені точно можна Фортранс?", time: "10:18" },
@@ -41,9 +49,23 @@ const MOCK_AI_ALERTS: AIAlertDetail[] = [
     patientName: "Лисенко Андрій",
     question: "Пацієнт запитує про альтернативу препарату",
     timestamp: "Сьогодні, 11:05",
+    appointmentDate: tomorrow,
+    appointmentTime: "17:00",
     chatHistory: [
       { sender: "ai", text: "Вам призначено Мовіпреп для підготовки. Почніть прийом о 18:00.", time: "10:30" },
       { sender: "patient", text: "Я не переношу цей препарат — мене від нього нудить. Є щось інше?", time: "11:02" },
+    ],
+  },
+  {
+    id: "a3",
+    patientName: "Іваненко Петро",
+    question: "Запитує про дієту перед процедурою",
+    timestamp: "Вчора, 18:30",
+    appointmentDate: nextWeek,
+    appointmentTime: "09:00",
+    chatHistory: [
+      { sender: "ai", text: "Доброго дня! Ваша процедура через тиждень.", time: "18:00" },
+      { sender: "patient", text: "Що можна їсти за 5 днів до процедури?", time: "18:28" },
     ],
   },
 ];
@@ -106,9 +128,9 @@ export default function Index() {
     handleAIReply(alertId);
   }, [handleAIReply]);
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
 
   return (
     <div className="min-h-screen bg-background">
@@ -131,7 +153,9 @@ export default function Index() {
 
         <div className="max-w-xl mx-auto space-y-2">
           <ViewToggle activeView={view} onViewChange={setView} />
-          <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
+          {view === "operational" && (
+            <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
+          )}
         </div>
       </header>
 
@@ -140,7 +164,13 @@ export default function Index() {
         {view === "operational" ? (
           <>
             <AIAlertSection
-              alerts={MOCK_AI_ALERTS}
+              alerts={MOCK_AI_ALERTS.map((a) => ({
+                id: a.id,
+                patientName: a.patientName,
+                question: a.question,
+                appointmentDate: a.appointmentDate,
+                appointmentTime: a.appointmentTime,
+              }))}
               onReply={handleAIReply}
               onOpenReply={handleOpenReply}
             />
