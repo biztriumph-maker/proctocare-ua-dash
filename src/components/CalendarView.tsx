@@ -437,8 +437,6 @@ function DayGrid({
     </div>
   );
 }
-}: {
-  weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
 }) {
