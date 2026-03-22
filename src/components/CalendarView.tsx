@@ -191,7 +191,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
             {monthDates.map((date, i) => {
               if (!date) return <span key={`e-${i}`} />;
               const str = dateToStr(date);
-              const occ = getOccupancy(str);
               const isSelected = isSameDay(date, currentDate);
               const isToday = isSameDay(date, new Date());
               return (
@@ -199,23 +198,15 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
                   key={str}
                   onClick={() => selectDateFromMonth(date)}
                   className={cn(
-                    "relative flex flex-col items-center py-1 rounded text-[11px] font-medium transition-all active:scale-[0.93]",
+                    "relative flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-medium transition-all active:scale-[0.93]",
                     isSelected
                       ? "bg-primary text-primary-foreground"
                       : isToday
-                        ? "bg-accent text-foreground"
+                        ? "ring-1 ring-primary/40 text-primary"
                         : "hover:bg-accent/60 text-foreground"
                   )}
                 >
                   {date.getDate()}
-                  <span
-                    className={cn(
-                      "w-1 h-1 rounded-full mt-0.5",
-                      occ === "full" && "bg-status-risk",
-                      occ === "moderate" && "bg-status-progress",
-                      occ === "free" && "bg-status-ready"
-                    )}
-                  />
                 </button>
               );
             })}
