@@ -437,12 +437,8 @@ function DayGrid({
     </div>
   );
 }
-  const today = new Date();
-  const [activePopover, setActivePopover] = useState<string | null>(null);
 
-  const slotsPerDay = useMemo(() => {
-    return weekDates.map((d) => getMockSlots(dateToStr(d)));
-  }, [weekDates]);
+
 
   return (
     <div className="overflow-x-auto -mx-4 px-4">
