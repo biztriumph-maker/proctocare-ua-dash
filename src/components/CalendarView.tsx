@@ -124,12 +124,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle */}
-      <div className="flex rounded-md bg-surface-sunken p-0.5 gap-0.5">
+      <div className="flex rounded-lg bg-surface-sunken p-0.5 gap-0.5 shadow-[0_0_0_1px_hsl(var(--border))]">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
-            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
-            viewMode === "day" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
+            "flex-1 py-1.5 rounded-md text-[11px] font-semibold transition-all duration-200 active:scale-[0.97]",
+            viewMode === "day"
+              ? "bg-surface-raised shadow-[0_1px_3px_hsl(220_12%_50%/0.2)] text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           День
@@ -137,8 +139,10 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         <button
           onClick={() => setViewMode("week")}
           className={cn(
-            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
-            viewMode === "week" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
+            "flex-1 py-1.5 rounded-md text-[11px] font-semibold transition-all duration-200 active:scale-[0.97]",
+            viewMode === "week"
+              ? "bg-surface-raised shadow-[0_1px_3px_hsl(220_12%_50%/0.2)] text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           Тиждень
