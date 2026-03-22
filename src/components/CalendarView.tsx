@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
 import type { PatientStatus } from "./PatientCard";
 
@@ -10,7 +10,6 @@ interface CalendarSlot {
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onFindOpening: () => void;
 }
 
 const statusColor: Record<PatientStatus, string> = {
@@ -67,18 +66,11 @@ function dateToStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function getOccupancy(dateStr: string): "full" | "moderate" | "free" {
-  const slots = getMockSlots(dateStr);
-  const occupied = slots.filter((s) => s.patient).length;
-  if (occupied >= 7) return "full";
-  if (occupied >= 3) return "moderate";
-  return "free";
-}
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) {
+export function CalendarView({ onSlotClick }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
@@ -125,12 +117,14 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle */}
-      <div className="flex rounded-md bg-surface-sunken p-0.5 gap-0.5">
+      <div className="flex rounded-lg bg-surface-sunken p-0.5 gap-0.5 shadow-[0_0_0_1px_hsl(var(--border))]">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
-            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
-            viewMode === "day" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
+            "flex-1 py-1.5 rounded-md text-[11px] font-semibold transition-all duration-200 active:scale-[0.97]",
+            viewMode === "day"
+              ? "bg-surface-raised shadow-[0_1px_3px_hsl(220_12%_50%/0.2)] text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           День
@@ -138,8 +132,10 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
         <button
           onClick={() => setViewMode("week")}
           className={cn(
-            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
-            viewMode === "week" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
+            "flex-1 py-1.5 rounded-md text-[11px] font-semibold transition-all duration-200 active:scale-[0.97]",
+            viewMode === "week"
+              ? "bg-surface-raised shadow-[0_1px_3px_hsl(220_12%_50%/0.2)] text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           Тиждень
@@ -214,15 +210,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
         </div>
       )}
 
-      {/* Find opening */}
-      <button
-        onClick={onFindOpening}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-primary/30 text-primary text-xs font-medium hover:bg-primary/5 active:scale-[0.98] transition-all"
-      >
-        <Search size={14} />
-        Знайти вільне вікно
-      </button>
-
       {viewMode === "week" ? (
         <WeekGrid
           weekDates={weekDates}
@@ -294,7 +281,7 @@ function WeekGrid({
               isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
             )}
           >
-            <p className="text-[8px] font-semibold text-muted-foreground uppercase leading-none">
+            <p className="text-[8px] font-bold text-foreground/60 uppercase leading-none">
               {DAY_LABELS[i]}
             </p>
             <p className={cn(
@@ -312,7 +299,7 @@ function WeekGrid({
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
             {/* Time label */}
-            <div className="flex items-center justify-end pr-1 text-[8px] text-muted-foreground tabular-nums font-medium h-9">
+            <div className="flex items-center justify-end pr-1 text-[8px] text-foreground/70 tabular-nums font-semibold h-9">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -340,8 +327,8 @@ function WeekGrid({
                       "w-full h-9 rounded-[3px] border transition-all duration-150",
                       "active:scale-[0.90]",
                       statusBg
-                        ? cn(statusBg, "border-transparent opacity-75 hover:opacity-100")
-                        : "bg-surface-sunken border-border/20 hover:bg-accent/50"
+                        ? cn(statusBg, "border-transparent opacity-90 hover:opacity-100")
+                        : "bg-surface-sunken border-border/30 hover:bg-accent/50"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (

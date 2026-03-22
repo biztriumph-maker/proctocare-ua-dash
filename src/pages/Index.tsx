@@ -233,7 +233,6 @@ export default function Index() {
         ) : (
           <CalendarView
             onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
-            onFindOpening={() => toast.info("Найближчі вільні слоти: 10:00, 12:00, 13:00")}
           />
         )}
       </main>
