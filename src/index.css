@@ -35,12 +35,12 @@
     --radius: 0.75rem;
 
     /* ProctoCare semantic tokens */
-    --status-ready: 152 30% 58%;
-    --status-progress: 38 50% 58%;
-    --status-risk: 4 45% 62%;
-    --status-ready-bg: 152 30% 95%;
-    --status-progress-bg: 38 40% 94%;
-    --status-risk-bg: 4 35% 95%;
+    --status-ready: 152 50% 42%;
+    --status-progress: 38 90% 48%;
+    --status-risk: 4 78% 50%;
+    --status-ready-bg: 152 50% 94%;
+    --status-progress-bg: 38 85% 93%;
+    --status-risk-bg: 4 70% 94%;
 
     --surface-raised: 0 0% 100%;
     --surface-sunken: 40 14% 96%;

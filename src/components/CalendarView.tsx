@@ -334,8 +334,8 @@ function WeekGrid({
                       "w-full h-9 rounded-[3px] border transition-all duration-150",
                       "active:scale-[0.90]",
                       statusBg
-                        ? cn(statusBg, "border-transparent opacity-75 hover:opacity-100")
-                        : "bg-surface-sunken border-border/20 hover:bg-accent/50"
+                        ? cn(statusBg, "border-transparent opacity-90 hover:opacity-100")
+                        : "bg-surface-sunken border-border/30 hover:bg-accent/50"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
