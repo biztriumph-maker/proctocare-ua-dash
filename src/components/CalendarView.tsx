@@ -77,7 +77,7 @@ function getOccupancy(dateStr: string): "full" | "moderate" | "free" {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) {
+export function CalendarView({ onSlotClick }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
