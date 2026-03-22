@@ -127,15 +127,6 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
       {/* View mode toggle */}
       <div className="flex rounded-md bg-surface-sunken p-0.5 gap-0.5">
         <button
-          onClick={() => setViewMode("week")}
-          className={cn(
-            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
-            viewMode === "week" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
-          )}
-        >
-          Тиждень
-        </button>
-        <button
           onClick={() => setViewMode("day")}
           className={cn(
             "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
@@ -143,6 +134,15 @@ export function CalendarView({ onSlotClick, onFindOpening }: CalendarViewProps) 
           )}
         >
           День
+        </button>
+        <button
+          onClick={() => setViewMode("week")}
+          className={cn(
+            "flex-1 py-1.5 rounded text-[11px] font-medium transition-all duration-200 active:scale-[0.97]",
+            viewMode === "week" ? "bg-surface-raised shadow-card text-foreground" : "text-muted-foreground"
+          )}
+        >
+          Тиждень
         </button>
       </div>
 
