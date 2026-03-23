@@ -377,7 +377,7 @@ function DayGrid({
             )}
             style={{ animationDelay: `${i * 40}ms` }}
           >
-            <span className="text-xs font-semibold text-foreground tabular-nums w-12 shrink-0">
+            <span className="text-sm font-bold text-foreground tabular-nums w-12 shrink-0">
               {String(slot.hour).padStart(2, "0")}:00
             </span>
             {slot.patient ? (
