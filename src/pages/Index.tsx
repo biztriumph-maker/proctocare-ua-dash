@@ -199,9 +199,9 @@ export default function Index() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4 pb-24">
         {view === "operational" ? (
-          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-5">
-            {/* Column 1: AI Alerts (SOS) */}
-            <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-3 sm:gap-5">
+            {/* Column 1: AI Alerts */}
+            <div className="space-y-3 sm:space-y-4">
               <AIAlertSection
                 alerts={MOCK_AI_ALERTS.map((a) => ({
                   id: a.id,
