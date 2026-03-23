@@ -116,14 +116,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle — pill style */}
-      <div className="flex rounded-xl bg-[hsl(220,14%,28%)] p-1 gap-1">
+      <div className="flex rounded-xl bg-[#F0F2F5] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-              : "font-medium text-white/60 hover:text-white/90"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           День
@@ -133,8 +133,8 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-              : "font-medium text-white/60 hover:text-white/90"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           Тиждень
