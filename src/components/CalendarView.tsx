@@ -116,7 +116,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle — pill style, medium grey */}
-      <div className="flex rounded-xl bg-[#D1D5DB] p-1 gap-1">
+      <div className="flex rounded-xl bg-[#BAE6FD] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
