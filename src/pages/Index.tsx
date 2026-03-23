@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, ChevronRight } from "lucide-react";
+import { Plus, ChevronRight, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
