@@ -151,7 +151,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         </button>
         <button
           onClick={() => setShowMonthPicker(!showMonthPicker)}
-          className="text-sm font-semibold capitalize hover:text-primary transition-colors active:scale-[0.97]"
+          className="text-base font-bold capitalize hover:text-primary transition-colors active:scale-[0.97]"
         >
           {viewMode === "day"
             ? currentDate.toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })
