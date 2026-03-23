@@ -279,8 +279,8 @@ function WeekGrid({
               onClick={() => onSelectDay(d)}
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96]",
-                i < 6 && "border-r border-[#9CA3AF]",
-                isToday && "bg-[#F3F4F6]"
+                i < 6 && "border-r border-[#CBD5E1]",
+                isToday && "bg-[#E8F4F8]"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
