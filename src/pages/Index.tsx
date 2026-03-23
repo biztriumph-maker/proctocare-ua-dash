@@ -260,15 +260,31 @@ export default function Index() {
                 Сьогоднішні записи
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
-                {filtered.map((patient, i) => (
-                  <PatientCard
-                    key={patient.id}
-                    patient={patient}
-                    index={i}
-                    onClick={handlePatientClick}
-                    isNew={patient.id === newlyCreatedId}
-                  />
-                ))}
+                {(() => {
+                  // Vertical-first flow: morning (before 13:00) → left column, afternoon → right
+                  const morning = filtered.filter(p => parseInt(p.time) < 13);
+                  const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
+                  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+                  if (!isDesktop) {
+                    return filtered.map((patient, i) => (
+                      <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                    ));
+                  }
+                  return (
+                    <>
+                      <div className="space-y-2 sm:space-y-3">
+                        {morning.map((patient, i) => (
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                        ))}
+                      </div>
+                      <div className="space-y-2 sm:space-y-3">
+                        {afternoon.map((patient, i) => (
+                          <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
                 {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
               </div>
               {filtered.length === 0 && !skeletonPatient && (
