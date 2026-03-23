@@ -294,10 +294,10 @@ function WeekGrid({
       </div>
 
       {/* Grid body */}
-      <div className="grid grid-cols-[44px_repeat(7,1fr)]">
+      <div className="grid grid-cols-[44px_repeat(7,1fr)] border-l border-border/30">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
-            <div className="flex items-center justify-end pr-1.5 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/20">
+            <div className="flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/30 border-r border-r-border/40">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -312,7 +312,7 @@ function WeekGrid({
                 : null;
 
               return (
-                <div key={di} className="relative border-b border-r border-border/15 p-[3px]">
+                <div key={di} className="relative border-b border-r border-border/30 bg-white p-[3px]">
                   <button
                     onClick={() => {
                       if (slot?.patient) {
@@ -326,7 +326,7 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : ""
+                        : "bg-white"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
