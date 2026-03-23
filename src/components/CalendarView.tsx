@@ -116,14 +116,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle — pill style */}
-      <div className="flex rounded-xl bg-surface-sunken p-1 gap-1 border border-border/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
+      <div className="flex rounded-xl bg-[hsl(220,14%,28%)] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
-              ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-              : "font-medium text-muted-foreground hover:text-foreground"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
+              : "font-medium text-white/60 hover:text-white/90"
           )}
         >
           День
@@ -133,8 +133,8 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
-              ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-              : "font-medium text-muted-foreground hover:text-foreground"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
+              : "font-medium text-white/60 hover:text-white/90"
           )}
         >
           Тиждень
@@ -151,7 +151,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         </button>
         <button
           onClick={() => setShowMonthPicker(!showMonthPicker)}
-          className="text-sm font-semibold capitalize hover:text-primary transition-colors active:scale-[0.97]"
+          className="text-base font-bold capitalize hover:text-primary transition-colors active:scale-[0.97]"
         >
           {viewMode === "day"
             ? currentDate.toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })
@@ -280,11 +280,11 @@ function WeekGrid({
               isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
             )}
           >
-            <p className="text-[10px] font-bold text-foreground/60 uppercase leading-none">
+            <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
               {DAY_LABELS[i]}
             </p>
             <p className={cn(
-              "text-sm font-bold tabular-nums leading-tight",
+              "text-base font-bold tabular-nums leading-tight",
               isSameDay(d, today) ? "text-primary" : "text-foreground"
             )}>
               {d.getDate()}
@@ -297,7 +297,7 @@ function WeekGrid({
       <div className="grid grid-cols-[44px_repeat(7,1fr)]">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
-            <div className="flex items-center justify-end pr-1.5 text-[10px] text-foreground/70 tabular-nums font-semibold h-11 border-b border-border/20">
+            <div className="flex items-center justify-end pr-1.5 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/20">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -326,7 +326,7 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : "hover:bg-accent/40"
+                        : ""
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
@@ -377,16 +377,16 @@ function DayGrid({
             )}
             style={{ animationDelay: `${i * 40}ms` }}
           >
-            <span className="text-xs font-semibold text-foreground tabular-nums w-12 shrink-0">
+            <span className="text-sm font-bold text-foreground tabular-nums w-12 shrink-0">
               {String(slot.hour).padStart(2, "0")}:00
             </span>
             {slot.patient ? (
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                <span className="text-sm font-medium text-foreground truncate">
+                <span className="text-[15px] font-semibold text-foreground truncate">
                   {slot.patient.name}
                 </span>
-                <span className="text-xs text-muted-foreground truncate ml-auto">
+                <span className="text-sm text-muted-foreground truncate ml-auto">
                   {slot.patient.procedure}
                 </span>
               </div>
