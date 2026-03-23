@@ -116,7 +116,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle — pill style, medium grey */}
-      <div className="flex rounded-xl bg-[#D1D5DB] p-1 gap-1">
+      <div className="flex rounded-xl bg-[#BAE6FD] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
@@ -267,10 +267,10 @@ function WeekGrid({
   }, [weekDates]);
 
   return (
-    <div className="border border-[#9CA3AF] rounded-lg overflow-hidden">
+    <div className="border-2 border-[#94A3B8] rounded-lg overflow-hidden shadow-[0_4px_15px_-1px_rgba(0,0,0,0.1)]">
       {/* Header row */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#9CA3AF]">
-        <div className="border-r-2 border-[#9CA3AF]" />
+      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#CBD5E1]">
+        <div className="border-r-2 border-[#94A3B8] bg-[#F0F9FF]" />
         {weekDates.map((d, i) => {
           const isToday = isSameDay(d, today);
           return (
@@ -279,8 +279,8 @@ function WeekGrid({
               onClick={() => onSelectDay(d)}
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96]",
-                i < 6 && "border-r border-[#9CA3AF]",
-                isToday && "bg-[#F3F4F6]"
+                i < 6 && "border-r border-[#CBD5E1]",
+                isToday && "bg-[#E8F4F8]"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
@@ -305,9 +305,9 @@ function WeekGrid({
         {HOURS.map((hour, hi) => (
           <div key={hour} className="contents">
             <div className={cn(
-              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11",
-              "border-r-2 border-[#9CA3AF]",
-              hi < HOURS.length - 1 && "border-b border-[#9CA3AF]"
+              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[#F0F9FF]",
+              "border-r-2 border-[#94A3B8]",
+              hi < HOURS.length - 1 && "border-b border-[#CBD5E1]"
             )}>
               {String(hour).padStart(2, "0")}:00
             </div>
@@ -328,9 +328,9 @@ function WeekGrid({
                   key={di}
                   className={cn(
                     "relative p-[3px]",
-                    hi < HOURS.length - 1 && "border-b border-[#9CA3AF]",
-                    di < 6 && "border-r border-[#9CA3AF]",
-                    isToday ? "bg-[#F3F4F6]" : "bg-white"
+                    hi < HOURS.length - 1 && "border-b border-[#CBD5E1]",
+                    di < 6 && "border-r border-[#CBD5E1]",
+                    isToday ? "bg-[#E8F4F8]" : "bg-white"
                   )}
                 >
                   <button

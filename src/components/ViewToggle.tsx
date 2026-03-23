@@ -7,7 +7,7 @@ interface ViewToggleProps {
 
 export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
   return (
-    <div className="flex rounded-xl bg-[#D1D5DB] p-1 gap-1">
+    <div className="flex rounded-xl bg-[#BAE6FD] p-1 gap-1">
       <button
         onClick={() => onViewChange("operational")}
         className={cn(
