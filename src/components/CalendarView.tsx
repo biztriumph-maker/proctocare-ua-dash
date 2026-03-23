@@ -116,14 +116,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
   return (
     <div className="space-y-3 animate-fade-in">
       {/* View mode toggle — pill style */}
-      <div className="flex rounded-xl bg-[hsl(220,14%,28%)] p-1 gap-1">
+      <div className="flex rounded-xl bg-[#F0F2F5] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-              : "font-medium text-white/60 hover:text-white/90"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           День
@@ -133,8 +133,8 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-              : "font-medium text-white/60 hover:text-white/90"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           Тиждень
@@ -294,10 +294,10 @@ function WeekGrid({
       </div>
 
       {/* Grid body */}
-      <div className="grid grid-cols-[44px_repeat(7,1fr)]">
+      <div className="grid grid-cols-[44px_repeat(7,1fr)] border-l border-border/30">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
-            <div className="flex items-center justify-end pr-1.5 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/20">
+            <div className="flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/30 border-r border-r-border/40">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -312,7 +312,7 @@ function WeekGrid({
                 : null;
 
               return (
-                <div key={di} className="relative border-b border-r border-border/15 p-[3px]">
+                <div key={di} className="relative border-b border-r border-border/30 bg-white p-[3px]">
                   <button
                     onClick={() => {
                       if (slot?.patient) {
@@ -326,7 +326,7 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : ""
+                        : "bg-white"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (

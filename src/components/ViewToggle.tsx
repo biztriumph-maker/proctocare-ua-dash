@@ -7,15 +7,15 @@ interface ViewToggleProps {
 
 export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
   return (
-    <div className="flex rounded-xl bg-[hsl(220,14%,28%)] p-1 gap-1">
+    <div className="flex rounded-xl bg-[#F0F2F5] p-1 gap-1">
       <button
         onClick={() => onViewChange("operational")}
         className={cn(
           "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "operational"
-            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-            : "font-medium text-white/60 hover:text-white/90"
+            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+            : "font-medium text-muted-foreground hover:text-foreground"
         )}
       >
         🩺 Оперативка
@@ -26,8 +26,8 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
           "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "calendar"
-            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
-            : "font-medium text-white/60 hover:text-white/90"
+            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+            : "font-medium text-muted-foreground hover:text-foreground"
         )}
       >
         📅 Планування
