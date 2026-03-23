@@ -27,9 +27,10 @@ const MOCK_PATIENTS: Patient[] = [
 ];
 
 const MOCK_TOMORROW: Patient[] = [
-  { id: "t1", name: "Гриценко Марія", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Препарат ще не отримано" },
+  { id: "t1", name: "Гриценко Марія", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Не підтверджено прийом препарату (Фортранс)" },
   { id: "t2", name: "Петренко Олег", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Розпочато підготовку" },
   { id: "t3", name: "Сидоренко Ірина", time: "10:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Готова до процедури" },
+  { id: "t4", name: "Кравченко Дмитро", time: "14:00", procedure: "Аноскопія", status: "risk", aiSummary: "Аналізи не завантажені" },
 ];
 
 const MOCK_AI_ALERTS: AIAlertDetail[] = [
