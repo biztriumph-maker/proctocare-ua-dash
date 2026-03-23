@@ -328,9 +328,9 @@ function WeekGrid({
                   key={di}
                   className={cn(
                     "relative p-[3px]",
-                    hi < HOURS.length - 1 && "border-b border-[#9CA3AF]",
-                    di < 6 && "border-r border-[#9CA3AF]",
-                    isToday ? "bg-[#F3F4F6]" : "bg-white"
+                    hi < HOURS.length - 1 && "border-b border-[#CBD5E1]",
+                    di < 6 && "border-r border-[#CBD5E1]",
+                    isToday ? "bg-[#E8F4F8]" : "bg-white"
                   )}
                 >
                   <button
