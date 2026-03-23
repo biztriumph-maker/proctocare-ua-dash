@@ -383,10 +383,10 @@ function DayGrid({
             {slot.patient ? (
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                <span className="text-sm font-medium text-foreground truncate">
+                <span className="text-[15px] font-semibold text-foreground truncate">
                   {slot.patient.name}
                 </span>
-                <span className="text-xs text-muted-foreground truncate ml-auto">
+                <span className="text-sm text-muted-foreground truncate ml-auto">
                   {slot.patient.procedure}
                 </span>
               </div>
