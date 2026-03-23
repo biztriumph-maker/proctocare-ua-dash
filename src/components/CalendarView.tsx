@@ -270,7 +270,7 @@ function WeekGrid({
     <div className="border-2 border-[#94A3B8] rounded-lg overflow-hidden shadow-[0_4px_15px_-1px_rgba(0,0,0,0.1)]">
       {/* Header row */}
       <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#CBD5E1]">
-        <div className="border-r-2 border-[#94A3B8] bg-[#F0F9FF]" />
+        <div className="border-r border-[#CBD5E1] bg-[#F0F9FF]" />
         {weekDates.map((d, i) => {
           const isToday = isSameDay(d, today);
           return (
@@ -280,7 +280,7 @@ function WeekGrid({
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96]",
                 i < 6 && "border-r border-[#CBD5E1]",
-                isToday && "bg-[#E8F4F8]"
+                isToday && "bg-[#E0F2FE]"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
@@ -292,9 +292,6 @@ function WeekGrid({
               )}>
                 {d.getDate()}
               </p>
-              {isToday && (
-                <div className="mx-auto mt-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
-              )}
             </button>
           );
         })}
@@ -306,7 +303,7 @@ function WeekGrid({
           <div key={hour} className="contents">
             <div className={cn(
               "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[#F0F9FF]",
-              "border-r-2 border-[#94A3B8]",
+              "border-r border-[#CBD5E1]",
               hi < HOURS.length - 1 && "border-b border-[#CBD5E1]"
             )}>
               {String(hour).padStart(2, "0")}:00
@@ -314,7 +311,6 @@ function WeekGrid({
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
-              const isToday = isSameDay(d, today);
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
                   ? "bg-status-ready-bg border border-status-ready/25"
@@ -327,10 +323,9 @@ function WeekGrid({
                 <div
                   key={di}
                   className={cn(
-                    "relative p-[3px]",
+                    "relative p-1 bg-white",
                     hi < HOURS.length - 1 && "border-b border-[#CBD5E1]",
-                    di < 6 && "border-r border-[#CBD5E1]",
-                    isToday ? "bg-[#E8F4F8]" : "bg-white"
+                    di < 6 && "border-r border-[#CBD5E1]"
                   )}
                 >
                   <button
@@ -342,7 +337,7 @@ function WeekGrid({
                       }
                     }}
                     className={cn(
-                      "w-full h-[36px] rounded-[5px] transition-all duration-150",
+                      "w-full h-[28px] rounded transition-all duration-150",
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
