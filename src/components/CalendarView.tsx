@@ -324,7 +324,7 @@ function WeekGrid({
                 <div
                   key={di}
                   className={cn(
-                    "relative p-1 bg-white",
+                    "relative p-[5px] bg-white",
                     hi < HOURS.length - 1 && "border-b border-[#CBD5E1]",
                     di < 6 && "border-r border-[#CBD5E1]"
                   )}
