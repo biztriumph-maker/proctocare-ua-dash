@@ -1,111 +1,238 @@
-import { X, Mic } from "lucide-react";
-import { useState } from "react";
+import { X, Phone, Bot, ChevronDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { cn } from "@/lib/utils";
+
+export interface NewEntryData {
+  name: string;
+  phone: string;
+  procedure: string;
+  date: string;
+  time: string;
+  notes: string;
+  aiPrep: boolean;
+}
 
 interface NewEntryFormProps {
   prefillDate?: string;
   prefillTime?: string;
   onClose: () => void;
-  onSave: (entry: { name: string; procedure: string; date: string; time: string; notes: string }) => void;
-  bookedHours?: number[];
+  onSave: (entry: NewEntryData) => void;
 }
+
+const PROCEDURES = [
+  "Колоноскопія",
+  "Ректоскопія",
+  "Аноскопія",
+  "Консультація",
+  "Сигмоскопія",
+];
+
+const PATIENT_SUGGESTIONS = [
+  "Коваленко Олена",
+  "Мельник Ігор",
+  "Шевченко Тарас",
+  "Бондаренко Вікторія",
+  "Ткаченко Наталія",
+  "Лисенко Андрій",
+  "Гриценко Марія",
+  "Петренко Олег",
+  "Сидоренко Ірина",
+];
 
 const HOURS = Array.from({ length: 10 }, (_, i) => i + 8);
 
-export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave, bookedHours = [8, 9, 11, 14, 16] }: NewEntryFormProps) {
+export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [procedure, setProcedure] = useState("");
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(prefillTime || "");
   const [notes, setNotes] = useState("");
+  const [aiPrep, setAiPrep] = useState(true);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const filteredSuggestions = name.length > 0
+    ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))
+    : [];
 
   const handleSave = () => {
-    if (!name || !date || !time) return;
-    onSave({ name, procedure, date, time, notes });
+    if (!name || !date || !time || !procedure) return;
+    onSave({ name, phone, procedure, date, time, notes, aiPrep });
   };
+
+  const formattedDate = (() => {
+    try {
+      const d = new Date(date + "T00:00:00");
+      return d.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "long" });
+    } catch {
+      return date;
+    }
+  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-6 space-y-5 animate-reveal-up max-h-[90vh] overflow-y-auto">
+      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-slide-up max-h-[92vh] overflow-y-auto safe-bottom">
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-foreground">Новий запис</h2>
+          <div>
+            <h2 className="text-base font-bold text-foreground">Новий запис</h2>
+            {(prefillDate || prefillTime) && (
+              <p className="text-[11px] text-primary font-medium mt-0.5">
+                {formattedDate}{prefillTime ? ` · ${prefillTime}` : ""}
+              </p>
+            )}
+          </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-accent active:scale-[0.95] transition-all">
             <X size={20} />
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Пацієнт</label>
+        <div className="space-y-3.5">
+          {/* Patient name — searchable */}
+          <div className="relative">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              Пацієнт *
+            </label>
             <input
+              ref={nameRef}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               placeholder="Прізвище та ім'я"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-elevated overflow-hidden animate-reveal-up">
+                {filteredSuggestions.slice(0, 5).map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onMouseDown={() => {
+                      setName(suggestion);
+                      setShowSuggestions(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-[13px] text-foreground hover:bg-accent/60 transition-colors"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Phone */}
           <div>
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Процедура</label>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              <Phone size={10} className="inline mr-1 -mt-0.5" />
+              Телефон *
+            </label>
             <input
-              value={procedure}
-              onChange={(e) => setProcedure(e.target.value)}
-              placeholder="Тип процедури"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+380 __ ___ __ __"
+              type="tel"
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
           </div>
 
+          {/* Procedure — dropdown */}
+          <div className="relative">
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              Процедура *
+            </label>
+            <div className="relative">
+              <select
+                value={procedure}
+                onChange={(e) => setProcedure(e.target.value)}
+                className="w-full appearance-none px-3 py-2.5 pr-8 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              >
+                <option value="">Обрати процедуру</option>
+                {PROCEDURES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Date & Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Дата</label>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Дата</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Час</label>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Час</label>
               <select
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               >
                 <option value="">Обрати</option>
                 {HOURS.map((h) => {
                   const val = `${String(h).padStart(2, "0")}:00`;
-                  const booked = bookedHours.includes(h);
                   return (
-                    <option key={h} value={val} disabled={booked}>
-                      {val} {booked ? "● зайнято" : ""}
-                    </option>
+                    <option key={h} value={val}>{val}</option>
                   );
                 })}
               </select>
             </div>
           </div>
 
+          {/* Notes */}
           <div>
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Нотатки</label>
-            <div className="relative">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Додаткова інформація..."
-                rows={3}
-                className="w-full px-3 py-2.5 pr-10 rounded-lg border bg-background text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/20 transition-shadow resize-none"
-              />
-              <button className="absolute right-2 bottom-2 p-1.5 rounded-md text-primary hover:bg-primary/10 active:scale-[0.95] transition-all">
-                <Mic size={18} />
-              </button>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Нотатки</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Додаткова інформація..."
+              rows={2}
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all resize-none"
+            />
+          </div>
+
+          {/* AI Prep toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <Bot size={16} className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-foreground">Запустити ІІ-підготовку</p>
+                <p className="text-[10px] text-muted-foreground">Бот надішле інструкції пацієнту</p>
+              </div>
             </div>
+            <button
+              onClick={() => setAiPrep(!aiPrep)}
+              className={cn(
+                "relative w-10 h-[22px] rounded-full transition-all duration-200 shrink-0",
+                aiPrep ? "bg-primary" : "bg-border"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200",
+                  aiPrep ? "left-[22px]" : "left-[3px]"
+                )}
+              />
+            </button>
           </div>
         </div>
 
+        {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name || !date || !time}
-          className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
+          disabled={!name || !date || !time || !procedure}
+          className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
         </button>

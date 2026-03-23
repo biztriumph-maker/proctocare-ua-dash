@@ -16,6 +16,7 @@ interface PatientCardProps {
   patient: Patient;
   index: number;
   onClick?: (patient: Patient) => void;
+  isNew?: boolean;
 }
 
 const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string }> = {
@@ -24,7 +25,7 @@ const statusConfig: Record<PatientStatus, { border: string; dot: string; label: 
   risk: { border: "border-l-status-risk", dot: "bg-status-risk", label: "Потребує уваги", bg: "bg-status-risk-bg" },
 };
 
-export function PatientCard({ patient, index, onClick }: PatientCardProps) {
+export function PatientCard({ patient, index, onClick, isNew }: PatientCardProps) {
   const config = statusConfig[patient.status];
 
   return (
@@ -35,9 +36,10 @@ export function PatientCard({ patient, index, onClick }: PatientCardProps) {
         "border border-border/50 shadow-[0_1px_4px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]",
         "transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] active:scale-[0.98]",
         "animate-reveal-up",
-        config.border
+        config.border,
+        isNew && "animate-new-slot-pulse"
       )}
-      style={{ animationDelay: `${index * 60}ms` }}
+      style={{ animationDelay: isNew ? "0ms" : `${index * 60}ms` }}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-0.5">
