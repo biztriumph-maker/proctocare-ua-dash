@@ -5,6 +5,7 @@ import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
 import { AIReplyModal, type AIAlertDetail } from "@/components/AIReplyModal";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
+import { PatientDetailView } from "@/components/PatientDetailView";
 import { CalendarView } from "@/components/CalendarView";
 import { NewEntryForm } from "@/components/NewEntryForm";
 import { toast } from "sonner";
@@ -84,6 +85,7 @@ export default function Index() {
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [patients, setPatients] = useState(MOCK_PATIENTS);
   const [replyAlert, setReplyAlert] = useState<AIAlertDetail | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
   const counts = useMemo(() => ({
     total: patients.length,
@@ -128,6 +130,10 @@ export default function Index() {
     handleAIReply(alertId);
   }, [handleAIReply]);
 
+  const handlePatientClick = useCallback((patient: Patient) => {
+    setSelectedPatient(patient);
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
@@ -136,7 +142,7 @@ export default function Index() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b px-4 pt-2.5 pb-2.5 space-y-2">
-        <div className="flex items-center justify-between max-w-xl mx-auto">
+        <div className="flex items-center justify-between max-w-6xl mx-auto">
           <div>
             <h1 className="text-base font-bold text-foreground leading-tight">ProctoCare</h1>
             <p className="text-[11px] text-muted-foreground">
@@ -145,13 +151,18 @@ export default function Index() {
           </div>
           <button
             onClick={() => openNewEntry()}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-card hover:shadow-card-hover active:scale-[0.93] transition-all duration-200"
+            className={cn(
+              "w-10 h-10 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
+              "shadow-[0_2px_8px_rgba(0,0,0,0.15),0_0_0_3px_hsl(var(--primary)/0.2)]",
+              "hover:shadow-[0_4px_16px_rgba(0,0,0,0.2),0_0_0_4px_hsl(var(--primary)/0.25)]",
+              "active:scale-[0.93] transition-all duration-200"
+            )}
           >
-            <Plus size={18} strokeWidth={2.5} />
+            <Plus size={20} strokeWidth={2.5} />
           </button>
         </div>
 
-        <div className="max-w-xl mx-auto space-y-2">
+        <div className="max-w-6xl mx-auto space-y-2">
           <ViewToggle activeView={view} onViewChange={setView} />
           {view === "operational" && (
             <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
@@ -159,77 +170,86 @@ export default function Index() {
         </div>
       </header>
 
-      {/* Content */}
-      <main className="max-w-xl mx-auto px-4 py-3 pb-24 space-y-3">
+      {/* Content — responsive layout */}
+      <main className="max-w-6xl mx-auto px-4 py-3 pb-24">
         {view === "operational" ? (
-          <>
-            <AIAlertSection
-              alerts={MOCK_AI_ALERTS.map((a) => ({
-                id: a.id,
-                patientName: a.patientName,
-                question: a.question,
-                appointmentDate: a.appointmentDate,
-                appointmentTime: a.appointmentTime,
-              }))}
-              onReply={handleAIReply}
-              onOpenReply={handleOpenReply}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Column 1: AI Alerts (SOS) */}
+            <div className="space-y-3 md:col-span-1">
+              <AIAlertSection
+                alerts={MOCK_AI_ALERTS.map((a) => ({
+                  id: a.id,
+                  patientName: a.patientName,
+                  question: a.question,
+                  appointmentDate: a.appointmentDate,
+                  appointmentTime: a.appointmentTime,
+                }))}
+                onReply={handleAIReply}
+                onOpenReply={handleOpenReply}
+              />
 
-            {/* Tomorrow chip */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowTomorrow(!showTomorrow)}
-                className={cn(
-                  "flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-200 active:scale-[0.96]",
-                  showTomorrow
-                    ? "bg-primary text-primary-foreground shadow-card"
-                    : "bg-surface-raised text-muted-foreground shadow-card hover:shadow-card-hover"
-                )}
-              >
-                <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
-                Завтра · {tomorrowStr}
-              </button>
-              {!showTomorrow && (() => {
-                const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
-                const first = riskPatients.sort((a, b) => a.time.localeCompare(b.time))[0];
-                return riskPatients.length > 0 && first ? (
-                  <span className="text-[10px] font-semibold text-status-risk animate-fade-in">
-                    ⚠ {riskPatients.length} потребує уваги о {first.time}
-                  </span>
-                ) : null;
-              })()}
+              {/* Tomorrow chip */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowTomorrow(!showTomorrow)}
+                  className={cn(
+                    "flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-200 active:scale-[0.96]",
+                    showTomorrow
+                      ? "bg-primary text-primary-foreground shadow-card"
+                      : "bg-surface-raised text-muted-foreground border border-border/50 shadow-card hover:shadow-card-hover"
+                  )}
+                >
+                  <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
+                  Завтра · {tomorrowStr}
+                </button>
+                {!showTomorrow && (() => {
+                  const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
+                  const first = riskPatients.sort((a, b) => a.time.localeCompare(b.time))[0];
+                  return riskPatients.length > 0 && first ? (
+                    <span className="text-[10px] font-semibold text-status-risk animate-fade-in">
+                      ⚠ {riskPatients.length} потребує уваги о {first.time}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+
+              {showTomorrow && (
+                <div className="space-y-2 pl-2 border-l-2 border-primary/20 animate-reveal-up">
+                  <p className="text-[11px] font-semibold text-muted-foreground">Ранкові записи на завтра</p>
+                  {MOCK_TOMORROW.map((patient, i) => (
+                    <PatientCard
+                      key={patient.id}
+                      patient={patient}
+                      index={i}
+                      onClick={handlePatientClick}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
-            {showTomorrow && (
-              <div className="space-y-2 pl-2 border-l-2 border-primary/20 animate-reveal-up">
-                <p className="text-[11px] font-semibold text-muted-foreground">Ранкові записи на завтра</p>
-                {MOCK_TOMORROW.map((patient, i) => (
+            {/* Column 2 (and 3 on lg): Patient Timeline */}
+            <div className="space-y-2 md:col-span-1 lg:col-span-2">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide hidden md:block">
+                Сьогоднішні записи
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                {filtered.map((patient, i) => (
                   <PatientCard
                     key={patient.id}
                     patient={patient}
                     index={i}
-                    onClick={(p) => toast.info(`Деталі пацієнта: ${p.name}`)}
+                    onClick={handlePatientClick}
                   />
                 ))}
               </div>
-            )}
-
-            <div className="space-y-2">
-              {filtered.map((patient, i) => (
-                <PatientCard
-                  key={patient.id}
-                  patient={patient}
-                  index={i}
-                  onClick={(p) => toast.info(`Деталі пацієнта: ${p.name}`)}
-                />
-              ))}
               {filtered.length === 0 && (
                 <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
                   Немає пацієнтів з таким статусом
                 </div>
               )}
             </div>
-          </>
+          </div>
         ) : (
           <CalendarView
             onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
@@ -256,6 +276,14 @@ export default function Index() {
           alert={replyAlert}
           onClose={() => setReplyAlert(null)}
           onSend={handleSendReply}
+        />
+      )}
+
+      {/* Patient Detail View */}
+      {selectedPatient && (
+        <PatientDetailView
+          patient={selectedPatient}
+          onClose={() => setSelectedPatient(null)}
         />
       )}
     </div>
