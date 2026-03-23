@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Clock } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Clock, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { Progress } from "@/components/ui/progress";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -34,10 +35,10 @@ const statusBadgeBg: Record<PatientStatus, string> = {
   risk: "bg-status-risk-bg text-status-risk",
 };
 
-// Mock profile data
 function getMockProfile(patient: Patient) {
   return {
     age: 47,
+    phone: "+380 67 123 45 67",
     allergies: "Пеніцилін",
     diagnosis: "Поліп сигмовидної кишки (K63.5)",
     lastVisit: "12.01.2026",
@@ -45,7 +46,6 @@ function getMockProfile(patient: Patient) {
   };
 }
 
-// Mock chat data
 function getMockChat(patient: Patient): ChatMessage[] {
   const base: ChatMessage[] = [
     { sender: "ai", text: "Доброго дня! Починайте підготовку за інструкцією: дієта без клітковини за 3 дні до процедури.", time: "09:00" },
@@ -72,116 +72,153 @@ function getMockChat(patient: Patient): ChatMessage[] {
   return base;
 }
 
+function getPreparationProgress(status: PatientStatus): { percent: number; steps: { label: string; done: boolean }[] } {
+  if (status === "ready") return {
+    percent: 100,
+    steps: [
+      { label: "Дієта 3 дні", done: true },
+      { label: "Прийом препарату", done: true },
+      { label: "Очищення завершено", done: true },
+      { label: "Аналізи в нормі", done: true },
+    ],
+  };
+  if (status === "progress") return {
+    percent: 55,
+    steps: [
+      { label: "Дієта 3 дні", done: true },
+      { label: "Прийом препарату", done: true },
+      { label: "Очищення завершено", done: false },
+      { label: "Аналізи в нормі", done: false },
+    ],
+  };
+  return {
+    percent: 20,
+    steps: [
+      { label: "Дієта 3 дні", done: true },
+      { label: "Прийом препарату", done: false },
+      { label: "Очищення завершено", done: false },
+      { label: "Аналізи в нормі", done: false },
+    ],
+  };
+}
+
 export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<"profile" | "chat">("chat");
+  const [activeTab, setActiveTab] = useState<"profile" | "chat" | "tracker">("chat");
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
+  const preparation = getPreparationProgress(patient.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Overlay */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-3xl bg-background rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-4xl bg-background rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-muted-foreground/25" />
         </div>
 
         {/* Header */}
-        <div className="flex items-start justify-between px-4 sm:px-6 pb-3 pt-2 sm:pt-4 border-b border-border/60">
+        <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[patient.status])} />
-              <h2 className="text-base font-bold text-foreground leading-tight truncate">
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[patient.status])} />
+              <h2 className="text-base sm:text-lg font-bold text-foreground leading-tight truncate">
                 {patient.name}
               </h2>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", statusBadgeBg[patient.status])}>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className={cn("text-xs font-bold px-2.5 py-0.5 rounded-full", statusBadgeBg[patient.status])}>
                 {statusLabel[patient.status]}
               </span>
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Clock size={10} />
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock size={12} />
                 {patient.time} · {patient.procedure}
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Mobile: tabs | Desktop: side-by-side */}
         {isMobile ? (
           <>
-            {/* Tab bar */}
-            <div className="flex border-b border-border/60">
-              <button
-                onClick={() => setActiveTab("profile")}
-                className={cn(
-                  "flex-1 py-2.5 text-xs font-semibold transition-all active:scale-[0.97]",
-                  activeTab === "profile"
-                    ? "text-foreground border-b-2 border-primary"
-                    : "text-muted-foreground"
-                )}
-              >
-                <User size={14} className="inline mr-1 -mt-0.5" />
-                Профіль
-              </button>
-              <button
-                onClick={() => setActiveTab("chat")}
-                className={cn(
-                  "flex-1 py-2.5 text-xs font-semibold transition-all active:scale-[0.97] relative",
-                  activeTab === "chat"
-                    ? "text-foreground border-b-2 border-primary"
-                    : "text-muted-foreground"
-                )}
-              >
-                <MessageCircle size={14} className="inline mr-1 -mt-0.5" />
-                Чат
-                {unanswered.length > 0 && (
-                  <span className="absolute top-1.5 right-[calc(50%-24px)] w-2 h-2 rounded-full bg-status-risk animate-pulse" />
-                )}
-              </button>
+            {/* Tab bar — pill style */}
+            <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-surface-sunken border border-border/60">
+              {([
+                { key: "profile" as const, label: "Профіль", icon: <User size={14} /> },
+                { key: "chat" as const, label: "Чат", icon: <MessageCircle size={14} />, badge: unanswered.length },
+                { key: "tracker" as const, label: "Трекер", icon: <Activity size={14} /> },
+              ]).map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn(
+                    "flex-1 py-2 text-xs font-medium transition-all active:scale-[0.97] rounded-lg relative flex items-center justify-center gap-1",
+                    activeTab === tab.key
+                      ? "bg-white text-foreground font-bold shadow-[0_1px_4px_rgba(0,0,0,0.1)]"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {tab.icon}
+                  {tab.label}
+                  {tab.badge && tab.badge > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-status-risk animate-pulse" />
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* Tab content */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "profile" ? (
                 <ProfilePane profile={profile} />
+              ) : activeTab === "tracker" ? (
+                <TrackerPane preparation={preparation} status={patient.status} />
               ) : (
                 <ChatPane chat={chat} unanswered={unanswered} />
               )}
             </div>
           </>
         ) : (
-          /* Desktop: side-by-side */
+          /* Desktop: side-by-side — 30/70 split */
           <div className="flex flex-1 overflow-hidden">
-            <div className="w-[280px] border-r border-border/60 overflow-y-auto">
-              <div className="px-4 py-3 border-b border-border/40">
-                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                  <User size={12} className="inline mr-1 -mt-0.5" />
-                  Профіль
+            {/* Left: Profile — fixed width */}
+            <div className="w-[300px] xl:w-[340px] border-r border-border/60 overflow-y-auto shrink-0">
+              <div className="px-5 py-3 border-b border-border/40">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <User size={13} />
+                  Профіль пацієнта
                 </h3>
               </div>
               <ProfilePane profile={profile} />
+
+              {/* Preparation tracker inline on desktop */}
+              <div className="px-5 py-3 border-t border-border/40">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-3">
+                  <Activity size={13} />
+                  Трекер підготовки
+                </h3>
+                <TrackerPaneCompact preparation={preparation} status={patient.status} />
+              </div>
             </div>
+
+            {/* Right: Chat workspace */}
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
-                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                  <MessageCircle size={12} className="inline mr-1 -mt-0.5" />
+              <div className="px-5 py-3 border-b border-border/40 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <MessageCircle size={13} />
                   Чат підготовки
                 </h3>
                 {unanswered.length > 0 && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-full">
-                    <AlertTriangle size={10} />
+                  <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
+                    <AlertTriangle size={12} />
                     {unanswered.length} без відповіді
                   </span>
                 )}
@@ -199,6 +236,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
 function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }) {
   const rows = [
     { label: "Вік", value: `${profile.age} років` },
+    { label: "Телефон", value: profile.phone },
     { label: "Алергії", value: profile.allergies, highlight: true },
     { label: "Діагноз", value: profile.diagnosis },
     { label: "Останній візит", value: profile.lastVisit },
@@ -206,14 +244,14 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
   ];
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-5 space-y-3.5">
       {rows.map((row) => (
         <div key={row.label}>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">
+          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">
             {row.label}
           </p>
           <p className={cn(
-            "text-[13px] leading-snug",
+            "text-sm leading-snug",
             row.highlight ? "text-status-risk font-semibold" : "text-foreground"
           )}>
             {row.value}
@@ -224,19 +262,111 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
   );
 }
 
+// ── Tracker Pane (mobile full) ──
+function TrackerPane({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
+  return (
+    <div className="p-5 space-y-4">
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold text-foreground">Прогрес підготовки</span>
+          <span className={cn(
+            "text-sm font-bold tabular-nums",
+            status === "ready" ? "text-status-ready" : status === "progress" ? "text-status-progress" : "text-status-risk"
+          )}>
+            {preparation.percent}%
+          </span>
+        </div>
+        <Progress
+          value={preparation.percent}
+          className={cn(
+            "h-2.5 rounded-full",
+            status === "ready" ? "[&>div]:bg-status-ready" : status === "progress" ? "[&>div]:bg-status-progress" : "[&>div]:bg-status-risk"
+          )}
+        />
+      </div>
+      <div className="space-y-2.5">
+        {preparation.steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+              step.done
+                ? "bg-status-ready text-white"
+                : "bg-muted text-muted-foreground"
+            )}>
+              {step.done ? "✓" : i + 1}
+            </div>
+            <span className={cn(
+              "text-sm",
+              step.done ? "text-foreground" : "text-muted-foreground"
+            )}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Tracker Compact (desktop inline) ──
+function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-foreground">Прогрес</span>
+          <span className={cn(
+            "text-xs font-bold tabular-nums",
+            status === "ready" ? "text-status-ready" : status === "progress" ? "text-status-progress" : "text-status-risk"
+          )}>
+            {preparation.percent}%
+          </span>
+        </div>
+        <Progress
+          value={preparation.percent}
+          className={cn(
+            "h-2 rounded-full",
+            status === "ready" ? "[&>div]:bg-status-ready" : status === "progress" ? "[&>div]:bg-status-progress" : "[&>div]:bg-status-risk"
+          )}
+        />
+      </div>
+      <div className="space-y-1.5">
+        {preparation.steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <div className={cn(
+              "w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
+              step.done
+                ? "bg-status-ready text-white"
+                : "bg-muted text-muted-foreground"
+            )}>
+              {step.done ? "✓" : i + 1}
+            </div>
+            <span className={cn(
+              "text-xs",
+              step.done ? "text-foreground" : "text-muted-foreground"
+            )}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Chat Pane ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
-    <div className="p-4 space-y-2 overflow-y-auto flex-1">
+    <div className="p-5 space-y-2.5 overflow-y-auto flex-1">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
           key={`pinned-${i}`}
-          className="rounded-xl px-3 py-2.5 text-[12px] leading-relaxed bg-status-risk-bg border-2 border-status-risk/30 animate-reveal-up"
+          className="rounded-xl px-4 py-3 text-sm leading-relaxed bg-status-risk-bg border-2 border-status-risk/30 animate-reveal-up"
         >
           <div className="flex items-center gap-1.5 mb-1">
-            <AlertTriangle size={12} className="text-status-risk shrink-0" />
-            <span className="text-[10px] font-bold text-status-risk">
+            <AlertTriangle size={14} className="text-status-risk shrink-0" />
+            <span className="text-xs font-bold text-status-risk">
               Питання без відповіді · {msg.time}
             </span>
           </div>
@@ -249,7 +379,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
         <div
           key={i}
           className={cn(
-            "rounded-xl px-3 py-2 text-[12px] leading-relaxed max-w-[85%]",
+            "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%]",
             msg.sender === "patient"
               ? "bg-muted/60 text-foreground mr-auto"
               : msg.sender === "doctor"
@@ -257,7 +387,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
                 : "bg-primary/8 text-foreground ml-auto"
           )}
         >
-          <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">
+          <p className="text-xs font-semibold text-muted-foreground mb-0.5">
             {msg.sender === "patient" ? "Пацієнт" : msg.sender === "doctor" ? "Лікар" : "ІІ-асистент"} · {msg.time}
           </p>
           <p>{msg.text}</p>

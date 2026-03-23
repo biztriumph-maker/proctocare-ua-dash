@@ -111,8 +111,6 @@ export default function Index() {
 
   const handleSaveEntry = useCallback((entry: NewEntryData) => {
     const newId = `new-${Date.now()}`;
-
-    // Create skeleton patient immediately
     const newPatient: Patient = {
       id: newId,
       name: entry.name,
@@ -121,29 +119,18 @@ export default function Index() {
       status: "progress",
       aiSummary: entry.aiPrep ? "ІІ-бот надсилає інструкції..." : "Очікує підготовки",
     };
-
-    // Show skeleton first
     setSkeletonPatient(newPatient);
     setShowForm(false);
     setNewlyCreatedId(newId);
-
-    // Simulate loading — after 1.5s, add real patient and open detail
     setTimeout(() => {
       setSkeletonPatient(null);
       setPatients((prev) => [...prev, newPatient]);
-
-      // Auto-open detail view
       setSelectedPatient(newPatient);
-
       toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
         description: entry.aiPrep ? "ІІ-бот розпочав підготовку" : undefined,
       });
     }, 1500);
-
-    // Clear pulse highlight after 3 seconds
-    setTimeout(() => {
-      setNewlyCreatedId(null);
-    }, 4500);
+    setTimeout(() => setNewlyCreatedId(null), 4500);
   }, []);
 
   const handleAIReply = useCallback((alertId: string) => {
@@ -180,28 +167,28 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b px-4 pt-2.5 pb-2.5 space-y-2">
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/60 px-4 sm:px-6 pt-3 pb-3 space-y-2.5">
+        <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div>
-            <h1 className="text-base font-bold text-foreground leading-tight">ProctoCare</h1>
-            <p className="text-[11px] text-muted-foreground">
+            <h1 className="text-lg sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })}
             </p>
           </div>
           <button
             onClick={() => openNewEntry()}
             className={cn(
-              "w-10 h-10 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
+              "w-11 h-11 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
               "shadow-[0_2px_8px_rgba(0,0,0,0.15),0_0_0_3px_hsl(var(--primary)/0.2)]",
               "hover:shadow-[0_4px_16px_rgba(0,0,0,0.2),0_0_0_4px_hsl(var(--primary)/0.25)]",
               "active:scale-[0.93] transition-all duration-200"
             )}
           >
-            <Plus size={20} strokeWidth={2.5} />
+            <Plus size={22} strokeWidth={2.5} />
           </button>
         </div>
 
-        <div className="max-w-6xl mx-auto space-y-2">
+        <div className="max-w-7xl mx-auto space-y-2.5">
           <ViewToggle activeView={view} onViewChange={setView} />
           {view === "operational" && (
             <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
@@ -210,11 +197,11 @@ export default function Index() {
       </header>
 
       {/* Content — responsive layout */}
-      <main className="max-w-6xl mx-auto px-4 py-3 pb-24">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 pb-24">
         {view === "operational" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-5">
             {/* Column 1: AI Alerts (SOS) */}
-            <div className="space-y-3 md:col-span-1">
+            <div className="space-y-4">
               <AIAlertSection
                 alerts={MOCK_AI_ALERTS.map((a) => ({
                   id: a.id,
@@ -232,7 +219,7 @@ export default function Index() {
                 <button
                   onClick={() => setShowTomorrow(!showTomorrow)}
                   className={cn(
-                    "flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-200 active:scale-[0.96]",
+                    "flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
                     showTomorrow
                       ? "bg-primary text-primary-foreground shadow-card"
                       : "bg-surface-raised text-muted-foreground border border-border/50 shadow-card hover:shadow-card-hover"
@@ -245,7 +232,7 @@ export default function Index() {
                   const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
                   const first = riskPatients.sort((a, b) => a.time.localeCompare(b.time))[0];
                   return riskPatients.length > 0 && first ? (
-                    <span className="text-[10px] font-semibold text-status-risk animate-fade-in">
+                    <span className="text-xs font-semibold text-status-risk animate-fade-in">
                       ⚠ {riskPatients.length} потребує уваги о {first.time}
                     </span>
                   ) : null;
@@ -253,8 +240,8 @@ export default function Index() {
               </div>
 
               {showTomorrow && (
-                <div className="space-y-2 pl-2 border-l-2 border-primary/20 animate-reveal-up">
-                  <p className="text-[11px] font-semibold text-muted-foreground">Ранкові записи на завтра</p>
+                <div className="space-y-2.5 pl-3 border-l-2 border-primary/20 animate-reveal-up">
+                  <p className="text-xs font-semibold text-muted-foreground">Ранкові записи на завтра</p>
                   {MOCK_TOMORROW.map((patient, i) => (
                     <PatientCard
                       key={patient.id}
@@ -267,12 +254,12 @@ export default function Index() {
               )}
             </div>
 
-            {/* Column 2 (and 3 on lg): Patient Timeline */}
-            <div className="space-y-2 md:col-span-1 lg:col-span-2">
-              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide hidden md:block">
+            {/* Column 2: Patient Timeline — uses full width */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-foreground hidden md:block">
                 Сьогоднішні записи
               </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-3">
                 {filtered.map((patient, i) => (
                   <PatientCard
                     key={patient.id}
@@ -282,11 +269,7 @@ export default function Index() {
                     isNew={patient.id === newlyCreatedId}
                   />
                 ))}
-
-                {/* Skeleton card while loading */}
-                {skeletonPatient && (
-                  <SkeletonCard patient={skeletonPatient} />
-                )}
+                {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
               </div>
               {filtered.length === 0 && !skeletonPatient && (
                 <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
@@ -302,7 +285,6 @@ export default function Index() {
         )}
       </main>
 
-      {/* New Entry Form */}
       {showForm && (
         <NewEntryForm
           prefillDate={formPrefill.date}
@@ -311,8 +293,6 @@ export default function Index() {
           onSave={handleSaveEntry}
         />
       )}
-
-      {/* AI Reply Modal */}
       {replyAlert && (
         <AIReplyModal
           alert={replyAlert}
@@ -320,8 +300,6 @@ export default function Index() {
           onSend={handleSendReply}
         />
       )}
-
-      {/* Patient Detail View */}
       {selectedPatient && (
         <PatientDetailView
           patient={selectedPatient}
@@ -332,23 +310,22 @@ export default function Index() {
   );
 }
 
-// ── Skeleton Card ──
 function SkeletonCard({ patient }: { patient: Patient }) {
   return (
-    <div className="w-full bg-surface-raised rounded-lg border-l-4 border-l-status-progress px-3.5 py-2.5 border border-border/50 shadow-card animate-pulse">
-      <div className="space-y-2">
+    <div className="w-full bg-surface-raised rounded-xl border-l-4 border-l-status-progress px-4 py-3 border border-border/50 shadow-card animate-pulse">
+      <div className="space-y-2.5">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-muted animate-pulse" />
-          <div className="h-3 w-12 bg-muted rounded animate-pulse" />
-          <div className="h-3 w-20 bg-muted rounded-full animate-pulse" />
+          <div className="h-3.5 w-14 bg-muted rounded animate-pulse" />
+          <div className="h-3.5 w-24 bg-muted rounded-full animate-pulse" />
         </div>
-        <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+        <div className="h-4.5 w-36 bg-muted rounded animate-pulse" />
         <div className="flex items-center gap-2">
-          <div className="h-3 w-20 bg-muted rounded animate-pulse" />
-          <div className="h-3 w-40 bg-primary/10 rounded animate-pulse" />
+          <div className="h-3.5 w-24 bg-muted rounded animate-pulse" />
+          <div className="h-3.5 w-44 bg-primary/10 rounded animate-pulse" />
         </div>
       </div>
-      <p className="text-[10px] text-primary font-medium mt-1.5 flex items-center gap-1">
+      <p className="text-xs text-primary font-medium mt-2 flex items-center gap-1">
         <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
         Створення запису для {patient.name}...
       </p>
