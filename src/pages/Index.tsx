@@ -249,43 +249,117 @@ export default function Index() {
               </div>
             </div>
 
-            {/* Column 2: Patient Timeline */}
+            {/* Column 2: Patient Timeline — toggles between today and tomorrow */}
             <div className="space-y-2 sm:space-y-3">
-              <h3 className="text-sm font-bold text-foreground hidden md:block">
-                Сьогоднішні записи
-              </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
-                {(() => {
-                  // Vertical-first flow: morning (before 13:00) → left column, afternoon → right
-                  const morning = filtered.filter(p => parseInt(p.time) < 13);
-                  const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
-                  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
-                  if (!isDesktop) {
-                    return filtered.map((patient, i) => (
-                      <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                    ));
-                  }
-                  return (
-                    <>
-                      <div className="space-y-2 sm:space-y-3">
-                        {morning.map((patient, i) => (
+              {showTomorrow ? (
+                <>
+                  {/* Проблематика block */}
+                  {(() => {
+                    const riskTomorrow = MOCK_TOMORROW.filter(p => p.status === "risk");
+                    return riskTomorrow.length > 0 ? (
+                      <div className="space-y-2 animate-reveal-up">
+                        <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                          <AlertTriangle size={14} className="text-destructive" />
+                          Проблематика на завтра
+                        </h3>
+                        {riskTomorrow.map((patient) => (
+                          <div
+                            key={patient.id}
+                            className="flex items-center justify-between gap-3 bg-surface-raised rounded-lg p-3 border-2 border-destructive/20 shadow-card"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-foreground">
+                                ⚠️ {patient.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {patient.aiSummary}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handlePatientClick(patient)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold shrink-0 transition-all hover:bg-destructive/20 active:scale-[0.96]"
+                            >
+                              {patient.aiSummary.toLowerCase().includes("аналіз") ? (
+                                <><MessageCircle size={14} /> Чат</>
+                              ) : (
+                                <><Phone size={14} /> Зателефонувати</>
+                              )}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* Tomorrow schedule */}
+                  <h3 className="text-sm font-bold text-foreground mt-3">
+                    Записи на завтра
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                    {(() => {
+                      const morning = MOCK_TOMORROW.filter(p => parseInt(p.time) < 13);
+                      const afternoon = MOCK_TOMORROW.filter(p => parseInt(p.time) >= 13);
+                      const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+                      if (!isDesktop) {
+                        return MOCK_TOMORROW.map((patient, i) => (
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
+                        ));
+                      }
+                      return (
+                        <>
+                          <div className="space-y-2 sm:space-y-3">
+                            {morning.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
+                            ))}
+                          </div>
+                          <div className="space-y-2 sm:space-y-3">
+                            {afternoon.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} />
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-bold text-foreground hidden md:block">
+                    Сьогоднішні записи
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                    {(() => {
+                      const morning = filtered.filter(p => parseInt(p.time) < 13);
+                      const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
+                      const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+                      if (!isDesktop) {
+                        return filtered.map((patient, i) => (
                           <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                        ))}
-                      </div>
-                      <div className="space-y-2 sm:space-y-3">
-                        {afternoon.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                        ))}
-                      </div>
-                    </>
-                  );
-                })()}
-                {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
-              </div>
-              {filtered.length === 0 && !skeletonPatient && (
-                <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
-                  Немає пацієнтів з таким статусом
-                </div>
+                        ));
+                      }
+                      return (
+                        <>
+                          <div className="space-y-2 sm:space-y-3">
+                            {morning.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                            ))}
+                          </div>
+                          <div className="space-y-2 sm:space-y-3">
+                            {afternoon.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                    {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
+                  </div>
+                  {filtered.length === 0 && !skeletonPatient && (
+                    <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
+                      Немає пацієнтів з таким статусом
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
