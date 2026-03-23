@@ -115,15 +115,15 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
 
   return (
     <div className="space-y-3 animate-fade-in">
-      {/* View mode toggle — pill style */}
-      <div className="flex rounded-xl bg-[#F0F2F5] p-1 gap-1">
+      {/* View mode toggle — pill style, medium grey */}
+      <div className="flex rounded-xl bg-[#D1D5DB] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
-              : "font-medium text-muted-foreground hover:text-foreground"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
+              : "font-medium text-foreground/60 hover:text-foreground/80"
           )}
         >
           День
@@ -133,8 +133,8 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           className={cn(
             "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
-              : "font-medium text-muted-foreground hover:text-foreground"
+              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
+              : "font-medium text-foreground/60 hover:text-foreground/80"
           )}
         >
           Тиждень
@@ -267,42 +267,54 @@ function WeekGrid({
   }, [weekDates]);
 
   return (
-    <div>
+    <div className="border border-[#9CA3AF] rounded-lg overflow-hidden">
       {/* Header row */}
-      <div className="grid grid-cols-[44px_repeat(7,1fr)] gap-px mb-1">
-        <div />
-        {weekDates.map((d, i) => (
-          <button
-            key={i}
-            onClick={() => onSelectDay(d)}
-            className={cn(
-              "text-center py-1.5 rounded-md transition-all active:scale-[0.96]",
-              isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
-            )}
-          >
-            <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
-              {DAY_LABELS[i]}
-            </p>
-            <p className={cn(
-              "text-base font-bold tabular-nums leading-tight",
-              isSameDay(d, today) ? "text-primary" : "text-foreground"
-            )}>
-              {d.getDate()}
-            </p>
-          </button>
-        ))}
+      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#9CA3AF]">
+        <div className="border-r-2 border-[#9CA3AF]" />
+        {weekDates.map((d, i) => {
+          const isToday = isSameDay(d, today);
+          return (
+            <button
+              key={i}
+              onClick={() => onSelectDay(d)}
+              className={cn(
+                "text-center py-2 transition-all active:scale-[0.96]",
+                i < 6 && "border-r border-[#9CA3AF]",
+                isToday && "bg-[#F3F4F6]"
+              )}
+            >
+              <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
+                {DAY_LABELS[i]}
+              </p>
+              <p className={cn(
+                "text-base font-bold tabular-nums leading-tight mt-0.5",
+                isToday ? "text-primary" : "text-foreground"
+              )}>
+                {d.getDate()}
+              </p>
+              {isToday && (
+                <div className="mx-auto mt-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Grid body */}
-      <div className="grid grid-cols-[44px_repeat(7,1fr)] border-l border-border/30">
-        {HOURS.map((hour) => (
+      <div className="grid grid-cols-[48px_repeat(7,1fr)]">
+        {HOURS.map((hour, hi) => (
           <div key={hour} className="contents">
-            <div className="flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 border-b border-border/30 border-r border-r-border/40">
+            <div className={cn(
+              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11",
+              "border-r-2 border-[#9CA3AF]",
+              hi < HOURS.length - 1 && "border-b border-[#9CA3AF]"
+            )}>
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
+              const isToday = isSameDay(d, today);
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
                   ? "bg-status-ready-bg border border-status-ready/25"
@@ -312,7 +324,15 @@ function WeekGrid({
                 : null;
 
               return (
-                <div key={di} className="relative border-b border-r border-border/30 bg-white p-[3px]">
+                <div
+                  key={di}
+                  className={cn(
+                    "relative p-[3px]",
+                    hi < HOURS.length - 1 && "border-b border-[#9CA3AF]",
+                    di < 6 && "border-r border-[#9CA3AF]",
+                    isToday ? "bg-[#F3F4F6]" : "bg-white"
+                  )}
+                >
                   <button
                     onClick={() => {
                       if (slot?.patient) {
@@ -326,7 +346,7 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : "bg-white"
+                        : "bg-transparent"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
