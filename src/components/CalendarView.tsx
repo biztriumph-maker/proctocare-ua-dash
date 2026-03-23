@@ -268,7 +268,7 @@ function WeekGrid({
   }, [weekDates]);
 
   return (
-    <div className="border-2 border-[#94A3B8] rounded-lg overflow-hidden shadow-[0_4px_15px_-1px_rgba(0,0,0,0.1)]">
+    <div className="border-2 border-[#94A3B8] rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
       {/* Header row */}
       <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#CBD5E1]">
         <div className="border-r border-[#CBD5E1] bg-[#F0F9FF]" />
