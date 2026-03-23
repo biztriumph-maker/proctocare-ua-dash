@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, ChevronRight } from "lucide-react";
+import { Plus, ChevronRight, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
@@ -27,9 +27,10 @@ const MOCK_PATIENTS: Patient[] = [
 ];
 
 const MOCK_TOMORROW: Patient[] = [
-  { id: "t1", name: "Гриценко Марія", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Препарат ще не отримано" },
+  { id: "t1", name: "Гриценко Марія", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Не підтверджено прийом препарату (Фортранс)" },
   { id: "t2", name: "Петренко Олег", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Розпочато підготовку" },
   { id: "t3", name: "Сидоренко Ірина", time: "10:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Готова до процедури" },
+  { id: "t4", name: "Кравченко Дмитро", time: "14:00", procedure: "Аноскопія", status: "risk", aiSummary: "Аналізи не завантажені" },
 ];
 
 const MOCK_AI_ALERTS: AIAlertDetail[] = [
@@ -214,12 +215,12 @@ export default function Index() {
                 onOpenReply={handleOpenReply}
               />
 
-              {/* Tomorrow chip */}
+              {/* Tomorrow toggle */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setShowTomorrow(!showTomorrow)}
                   className={cn(
-                    "flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
+                    "relative flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
                     showTomorrow
                       ? "bg-primary text-primary-foreground shadow-card"
                       : "bg-surface-raised text-muted-foreground border border-border/50 shadow-card hover:shadow-card-hover"
@@ -227,6 +228,14 @@ export default function Index() {
                 >
                   <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
                   Завтра · {tomorrowStr}
+                  {(() => {
+                    const riskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
+                    return riskCount > 0 ? (
+                      <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shadow-sm">
+                        {riskCount}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
                 {!showTomorrow && (() => {
                   const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
@@ -238,59 +247,119 @@ export default function Index() {
                   ) : null;
                 })()}
               </div>
-
-              {showTomorrow && (
-                <div className="space-y-2.5 pl-3 border-l-2 border-primary/20 animate-reveal-up">
-                  <p className="text-xs font-semibold text-muted-foreground">Ранкові записи на завтра</p>
-                  {MOCK_TOMORROW.map((patient, i) => (
-                    <PatientCard
-                      key={patient.id}
-                      patient={patient}
-                      index={i}
-                      onClick={handlePatientClick}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
 
-            {/* Column 2: Patient Timeline */}
+            {/* Column 2: Patient Timeline — toggles between today and tomorrow */}
             <div className="space-y-2 sm:space-y-3">
-              <h3 className="text-sm font-bold text-foreground hidden md:block">
-                Сьогоднішні записи
-              </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
-                {(() => {
-                  // Vertical-first flow: morning (before 13:00) → left column, afternoon → right
-                  const morning = filtered.filter(p => parseInt(p.time) < 13);
-                  const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
-                  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
-                  if (!isDesktop) {
-                    return filtered.map((patient, i) => (
-                      <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                    ));
-                  }
-                  return (
-                    <>
-                      <div className="space-y-2 sm:space-y-3">
-                        {morning.map((patient, i) => (
+              {showTomorrow ? (
+                <>
+                  {/* Проблематика block */}
+                  {(() => {
+                    const riskTomorrow = MOCK_TOMORROW.filter(p => p.status === "risk");
+                    return riskTomorrow.length > 0 ? (
+                      <div className="space-y-2 animate-reveal-up">
+                        <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                          <AlertTriangle size={14} className="text-destructive" />
+                          Проблематика на завтра
+                        </h3>
+                        {riskTomorrow.map((patient) => (
+                          <div
+                            key={patient.id}
+                            className="flex items-center justify-between gap-3 bg-surface-raised rounded-lg p-3 border-2 border-destructive/20 shadow-card"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-foreground">
+                                ⚠️ {patient.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {patient.aiSummary}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handlePatientClick(patient)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold shrink-0 transition-all hover:bg-destructive/20 active:scale-[0.96]"
+                            >
+                              {patient.aiSummary.toLowerCase().includes("аналіз") ? (
+                                <><MessageCircle size={14} /> Чат</>
+                              ) : (
+                                <><Phone size={14} /> Зателефонувати</>
+                              )}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* Tomorrow schedule */}
+                  <h3 className="text-sm font-bold text-foreground mt-3">
+                    Записи на завтра
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                    {(() => {
+                      const morning = MOCK_TOMORROW.filter(p => parseInt(p.time) < 13);
+                      const afternoon = MOCK_TOMORROW.filter(p => parseInt(p.time) >= 13);
+                      const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+                      if (!isDesktop) {
+                        return MOCK_TOMORROW.map((patient, i) => (
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
+                        ));
+                      }
+                      return (
+                        <>
+                          <div className="space-y-2 sm:space-y-3">
+                            {morning.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
+                            ))}
+                          </div>
+                          <div className="space-y-2 sm:space-y-3">
+                            {afternoon.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} />
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-bold text-foreground hidden md:block">
+                    Сьогоднішні записи
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                    {(() => {
+                      const morning = filtered.filter(p => parseInt(p.time) < 13);
+                      const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
+                      const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+                      if (!isDesktop) {
+                        return filtered.map((patient, i) => (
                           <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                        ))}
-                      </div>
-                      <div className="space-y-2 sm:space-y-3">
-                        {afternoon.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
-                        ))}
-                      </div>
-                    </>
-                  );
-                })()}
-                {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
-              </div>
-              {filtered.length === 0 && !skeletonPatient && (
-                <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
-                  Немає пацієнтів з таким статусом
-                </div>
+                        ));
+                      }
+                      return (
+                        <>
+                          <div className="space-y-2 sm:space-y-3">
+                            {morning.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                            ))}
+                          </div>
+                          <div className="space-y-2 sm:space-y-3">
+                            {afternoon.map((patient, i) => (
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                    {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
+                  </div>
+                  {filtered.length === 0 && !skeletonPatient && (
+                    <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
+                      Немає пацієнтів з таким статусом
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
