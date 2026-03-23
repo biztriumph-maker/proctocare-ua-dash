@@ -223,7 +223,7 @@ export default function Index() {
                     "relative flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
                     showTomorrow
                       ? "bg-primary text-primary-foreground shadow-card"
-                      : "bg-surface-raised text-muted-foreground border border-border/50 shadow-card hover:shadow-card-hover"
+                      : "bg-[#DCFCE7] text-green-800 border border-green-300/60 shadow-card hover:shadow-card-hover"
                   )}
                 >
                   <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
@@ -277,7 +277,7 @@ export default function Index() {
                             </div>
                             <button
                               onClick={() => handlePatientClick(patient)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold shrink-0 transition-all hover:bg-destructive/20 active:scale-[0.96]"
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold shrink-0 transition-all hover:bg-destructive/90 active:scale-[0.96] shadow-sm"
                             >
                               {patient.aiSummary.toLowerCase().includes("аналіз") ? (
                                 <><MessageCircle size={14} /> Чат</>
