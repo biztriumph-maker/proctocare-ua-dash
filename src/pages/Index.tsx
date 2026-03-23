@@ -7,7 +7,7 @@ import { AIReplyModal, type AIAlertDetail } from "@/components/AIReplyModal";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
 import { PatientDetailView } from "@/components/PatientDetailView";
 import { CalendarView } from "@/components/CalendarView";
-import { NewEntryForm } from "@/components/NewEntryForm";
+import { NewEntryForm, type NewEntryData } from "@/components/NewEntryForm";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -86,6 +86,8 @@ export default function Index() {
   const [patients, setPatients] = useState(MOCK_PATIENTS);
   const [replyAlert, setReplyAlert] = useState<AIAlertDetail | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
+  const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
 
   const counts = useMemo(() => ({
     total: patients.length,
@@ -105,6 +107,43 @@ export default function Index() {
       time: hour !== undefined ? `${String(hour).padStart(2, "0")}:00` : undefined,
     });
     setShowForm(true);
+  }, []);
+
+  const handleSaveEntry = useCallback((entry: NewEntryData) => {
+    const newId = `new-${Date.now()}`;
+
+    // Create skeleton patient immediately
+    const newPatient: Patient = {
+      id: newId,
+      name: entry.name,
+      time: entry.time,
+      procedure: entry.procedure,
+      status: "progress",
+      aiSummary: entry.aiPrep ? "ІІ-бот надсилає інструкції..." : "Очікує підготовки",
+    };
+
+    // Show skeleton first
+    setSkeletonPatient(newPatient);
+    setShowForm(false);
+    setNewlyCreatedId(newId);
+
+    // Simulate loading — after 1.5s, add real patient and open detail
+    setTimeout(() => {
+      setSkeletonPatient(null);
+      setPatients((prev) => [...prev, newPatient]);
+
+      // Auto-open detail view
+      setSelectedPatient(newPatient);
+
+      toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
+        description: entry.aiPrep ? "ІІ-бот розпочав підготовку" : undefined,
+      });
+    }, 1500);
+
+    // Clear pulse highlight after 3 seconds
+    setTimeout(() => {
+      setNewlyCreatedId(null);
+    }, 4500);
   }, []);
 
   const handleAIReply = useCallback((alertId: string) => {
@@ -240,10 +279,16 @@ export default function Index() {
                     patient={patient}
                     index={i}
                     onClick={handlePatientClick}
+                    isNew={patient.id === newlyCreatedId}
                   />
                 ))}
+
+                {/* Skeleton card while loading */}
+                {skeletonPatient && (
+                  <SkeletonCard patient={skeletonPatient} />
+                )}
               </div>
-              {filtered.length === 0 && (
+              {filtered.length === 0 && !skeletonPatient && (
                 <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
                   Немає пацієнтів з таким статусом
                 </div>
@@ -263,10 +308,7 @@ export default function Index() {
           prefillDate={formPrefill.date}
           prefillTime={formPrefill.time}
           onClose={() => setShowForm(false)}
-          onSave={(entry) => {
-            toast.success(`Запис створено: ${entry.name} о ${entry.time}`);
-            setShowForm(false);
-          }}
+          onSave={handleSaveEntry}
         />
       )}
 
@@ -286,6 +328,30 @@ export default function Index() {
           onClose={() => setSelectedPatient(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ── Skeleton Card ──
+function SkeletonCard({ patient }: { patient: Patient }) {
+  return (
+    <div className="w-full bg-surface-raised rounded-lg border-l-4 border-l-status-progress px-3.5 py-2.5 border border-border/50 shadow-card animate-pulse">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-muted animate-pulse" />
+          <div className="h-3 w-12 bg-muted rounded animate-pulse" />
+          <div className="h-3 w-20 bg-muted rounded-full animate-pulse" />
+        </div>
+        <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-20 bg-muted rounded animate-pulse" />
+          <div className="h-3 w-40 bg-primary/10 rounded animate-pulse" />
+        </div>
+      </div>
+      <p className="text-[10px] text-primary font-medium mt-1.5 flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+        Створення запису для {patient.name}...
+      </p>
     </div>
   );
 }
