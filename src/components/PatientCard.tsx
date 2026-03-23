@@ -41,26 +41,26 @@ export function PatientCard({ patient, index, onClick, isNew }: PatientCardProps
       )}
       style={{ animationDelay: isNew ? "0ms" : `${index * 60}ms` }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
-            <Clock size={13} className="text-muted-foreground shrink-0" />
-            <span className="text-xs font-semibold text-foreground tabular-nums">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Clock size={12} className="text-muted-foreground shrink-0" />
+            <span className="text-[11px] font-semibold text-foreground tabular-nums">
               {patient.time}
             </span>
-            <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full", config.bg, `text-status-${patient.status}`)}>
+            <span className={cn("text-[10px] sm:text-[11px] font-bold px-1.5 py-px rounded-full", config.bg, `text-status-${patient.status}`)}>
               {config.label}
             </span>
           </div>
-          <h4 className="text-sm font-semibold text-foreground truncate leading-tight">
+          <h4 className="text-[13px] sm:text-sm font-semibold text-foreground truncate leading-tight">
             {patient.name}
           </h4>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xs text-muted-foreground">{patient.procedure}</span>
-            <span className="text-xs text-primary font-medium truncate">· {patient.aiSummary}</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[11px] text-muted-foreground">{patient.procedure}</span>
+            <span className="text-[11px] text-primary font-medium truncate">· {patient.aiSummary}</span>
           </div>
         </div>
-        <ChevronRight size={18} className="text-muted-foreground/50 shrink-0" />
+        <ChevronRight size={16} className="text-muted-foreground/50 shrink-0" />
       </div>
     </button>
   );
