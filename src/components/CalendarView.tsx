@@ -167,7 +167,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
 
       {/* Month picker overlay */}
       {showMonthPicker && (
-        <div className="bg-surface-raised rounded-lg shadow-elevated p-3 space-y-2 animate-reveal-up">
+        <div className="border-2 border-[#94A3B8] rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-white p-3 space-y-2 animate-reveal-up">
           <div className="flex items-center justify-between">
             <button onClick={() => shiftMonth(-1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
               <ChevronLeft size={16} />
@@ -177,14 +177,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
               <ChevronRight size={16} />
             </button>
           </div>
-          <div className="grid grid-cols-7 gap-0.5 text-center">
+          <div className="grid grid-cols-7 gap-0 text-center">
             {DAY_LABELS.map((d) => (
-              <span key={d} className="text-[10px] font-semibold text-muted-foreground py-1">
+              <span key={d} className="text-[10px] font-semibold text-muted-foreground py-1 border-b border-[#CBD5E1]">
                 {d}
               </span>
             ))}
             {monthDates.map((date, i) => {
-              if (!date) return <span key={`e-${i}`} />;
+              if (!date) return <span key={`e-${i}`} className="border-b border-r border-[#CBD5E1]/40" />;
               const str = dateToStr(date);
               const isSelected = isSameDay(date, currentDate);
               const isToday = isSameDay(date, new Date());
@@ -193,11 +193,12 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
                   key={str}
                   onClick={() => selectDateFromMonth(date)}
                   className={cn(
-                    "relative flex items-center justify-center w-8 h-8 rounded-full text-xs font-medium transition-all active:scale-[0.93]",
+                    "relative flex items-center justify-center w-full h-9 text-xs font-medium transition-all active:scale-[0.93]",
+                    "border-b border-r border-[#CBD5E1]/40",
                     isSelected
                       ? "bg-primary text-primary-foreground"
                       : isToday
-                        ? "ring-1 ring-primary/40 text-primary"
+                        ? "bg-[#E0F2FE] text-primary font-bold"
                         : "hover:bg-accent/60 text-foreground"
                   )}
                 >
