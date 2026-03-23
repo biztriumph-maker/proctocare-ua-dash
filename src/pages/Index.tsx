@@ -254,12 +254,12 @@ export default function Index() {
               )}
             </div>
 
-            {/* Column 2: Patient Timeline — uses full width */}
-            <div className="space-y-3">
+            {/* Column 2: Patient Timeline */}
+            <div className="space-y-2 sm:space-y-3">
               <h3 className="text-sm font-bold text-foreground hidden md:block">
                 Сьогоднішні записи
               </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
                 {filtered.map((patient, i) => (
                   <PatientCard
                     key={patient.id}
