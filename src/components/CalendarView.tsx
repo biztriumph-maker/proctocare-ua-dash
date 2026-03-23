@@ -326,7 +326,7 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : "hover:bg-accent/40"
+                        : ""
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
