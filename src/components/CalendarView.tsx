@@ -305,9 +305,9 @@ function WeekGrid({
         {HOURS.map((hour, hi) => (
           <div key={hour} className="contents">
             <div className={cn(
-              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11",
-              "border-r-2 border-[#9CA3AF]",
-              hi < HOURS.length - 1 && "border-b border-[#9CA3AF]"
+              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[#F0F9FF]",
+              "border-r-2 border-[#94A3B8]",
+              hi < HOURS.length - 1 && "border-b border-[#CBD5E1]"
             )}>
               {String(hour).padStart(2, "0")}:00
             </div>
