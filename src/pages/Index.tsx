@@ -215,12 +215,12 @@ export default function Index() {
                 onOpenReply={handleOpenReply}
               />
 
-              {/* Tomorrow chip */}
+              {/* Tomorrow toggle */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setShowTomorrow(!showTomorrow)}
                   className={cn(
-                    "flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
+                    "relative flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
                     showTomorrow
                       ? "bg-primary text-primary-foreground shadow-card"
                       : "bg-surface-raised text-muted-foreground border border-border/50 shadow-card hover:shadow-card-hover"
@@ -228,6 +228,14 @@ export default function Index() {
                 >
                   <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
                   Завтра · {tomorrowStr}
+                  {(() => {
+                    const riskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
+                    return riskCount > 0 ? (
+                      <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shadow-sm">
+                        {riskCount}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
                 {!showTomorrow && (() => {
                   const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
@@ -239,20 +247,6 @@ export default function Index() {
                   ) : null;
                 })()}
               </div>
-
-              {showTomorrow && (
-                <div className="space-y-2.5 pl-3 border-l-2 border-primary/20 animate-reveal-up">
-                  <p className="text-xs font-semibold text-muted-foreground">Ранкові записи на завтра</p>
-                  {MOCK_TOMORROW.map((patient, i) => (
-                    <PatientCard
-                      key={patient.id}
-                      patient={patient}
-                      index={i}
-                      onClick={handlePatientClick}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Column 2: Patient Timeline */}
