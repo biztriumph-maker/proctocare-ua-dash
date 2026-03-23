@@ -14,8 +14,8 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
           "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "operational"
-            ? "bg-white font-bold text-foreground shadow-[0_1px_6px_rgba(0,0,0,0.1),0_1px_3px_rgba(0,0,0,0.08)]"
-            : "font-medium text-muted-foreground hover:text-foreground"
+            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
+            : "font-medium text-white/60 hover:text-white/90"
         )}
       >
         🩺 Оперативка
@@ -26,8 +26,8 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
           "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "calendar"
-            ? "bg-white font-bold text-foreground shadow-[0_1px_6px_rgba(0,0,0,0.1),0_1px_3px_rgba(0,0,0,0.08)]"
-            : "font-medium text-muted-foreground hover:text-foreground"
+            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.15)]"
+            : "font-medium text-white/60 hover:text-white/90"
         )}
       >
         📅 Планування
