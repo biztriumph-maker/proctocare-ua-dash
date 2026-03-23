@@ -25,13 +25,13 @@ export function StatusFilterBar({ activeFilter, onFilterChange, counts }: Status
   ];
 
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
       {badges.map((badge) => (
         <button
           key={badge.type}
           onClick={() => onFilterChange(badge.type === activeFilter ? "all" : badge.type)}
           className={cn(
-            "flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all duration-200",
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200",
             "active:scale-[0.96]",
             activeFilter === badge.type
               ? badge.activeColorClass

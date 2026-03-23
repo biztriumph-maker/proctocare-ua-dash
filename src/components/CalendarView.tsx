@@ -66,7 +66,6 @@ function dateToStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
@@ -116,15 +115,15 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
 
   return (
     <div className="space-y-3 animate-fade-in">
-      {/* View mode toggle */}
-      <div className="flex rounded-xl bg-surface-sunken p-1 gap-1 border border-border/60">
+      {/* View mode toggle — pill style */}
+      <div className="flex rounded-xl bg-surface-sunken p-1 gap-1 border border-border/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
-            "flex-1 py-1.5 rounded-lg text-[11px] transition-all duration-200 active:scale-[0.97]",
+            "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
               ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-              : "font-semibold text-muted-foreground hover:text-foreground"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           День
@@ -132,10 +131,10 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         <button
           onClick={() => setViewMode("week")}
           className={cn(
-            "flex-1 py-1.5 rounded-lg text-[11px] transition-all duration-200 active:scale-[0.97]",
+            "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
               ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-              : "font-semibold text-muted-foreground hover:text-foreground"
+              : "font-medium text-muted-foreground hover:text-foreground"
           )}
         >
           Тиждень
@@ -148,11 +147,11 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           onClick={() => (viewMode === "week" ? shiftWeek(-1) : shiftDay(-1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={20} />
         </button>
         <button
           onClick={() => setShowMonthPicker(!showMonthPicker)}
-          className="text-xs font-semibold capitalize hover:text-primary transition-colors active:scale-[0.97]"
+          className="text-sm font-semibold capitalize hover:text-primary transition-colors active:scale-[0.97]"
         >
           {viewMode === "day"
             ? currentDate.toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })
@@ -162,7 +161,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
           onClick={() => (viewMode === "week" ? shiftWeek(1) : shiftDay(1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
         >
-          <ChevronRight size={18} />
+          <ChevronRight size={20} />
         </button>
       </div>
 
@@ -171,16 +170,16 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         <div className="bg-surface-raised rounded-lg shadow-elevated p-3 space-y-2 animate-reveal-up">
           <div className="flex items-center justify-between">
             <button onClick={() => shiftMonth(-1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
-              <ChevronLeft size={14} />
+              <ChevronLeft size={16} />
             </button>
-            <span className="text-xs font-semibold capitalize">{monthLabel}</span>
+            <span className="text-sm font-semibold capitalize">{monthLabel}</span>
             <button onClick={() => shiftMonth(1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
-              <ChevronRight size={14} />
+              <ChevronRight size={16} />
             </button>
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-center">
             {DAY_LABELS.map((d) => (
-              <span key={d} className="text-[9px] font-semibold text-muted-foreground py-1">
+              <span key={d} className="text-[10px] font-semibold text-muted-foreground py-1">
                 {d}
               </span>
             ))}
@@ -194,7 +193,7 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
                   key={str}
                   onClick={() => selectDateFromMonth(date)}
                   className={cn(
-                    "relative flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-medium transition-all active:scale-[0.93]",
+                    "relative flex items-center justify-center w-8 h-8 rounded-full text-xs font-medium transition-all active:scale-[0.93]",
                     isSelected
                       ? "bg-primary text-primary-foreground"
                       : isToday
@@ -235,22 +234,22 @@ function SlotPopover({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 w-44 bg-popover border rounded-lg shadow-elevated p-2.5 space-y-1 animate-reveal-up">
+    <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.status])} />
-          <span className="text-[11px] font-semibold text-foreground truncate">{slot.name}</span>
+          <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
+          <span className="text-xs font-semibold text-foreground truncate">{slot.name}</span>
         </div>
         <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all shrink-0">
-          <X size={10} className="text-muted-foreground" />
+          <X size={12} className="text-muted-foreground" />
         </button>
       </div>
-      <p className="text-[10px] text-muted-foreground">{slot.procedure}</p>
+      <p className="text-xs text-muted-foreground">{slot.procedure}</p>
     </div>
   );
 }
 
-// ── Week Grid (Zero-Scroll Mobile) ──
+// ── Week Grid ──
 function WeekGrid({
   weekDates,
   onSlotClick,
@@ -270,22 +269,22 @@ function WeekGrid({
   return (
     <div>
       {/* Header row */}
-      <div className="grid grid-cols-[36px_repeat(7,1fr)] gap-px mb-1">
+      <div className="grid grid-cols-[44px_repeat(7,1fr)] gap-px mb-1">
         <div />
         {weekDates.map((d, i) => (
           <button
             key={i}
             onClick={() => onSelectDay(d)}
             className={cn(
-              "text-center py-1 rounded-md transition-all active:scale-[0.96]",
+              "text-center py-1.5 rounded-md transition-all active:scale-[0.96]",
               isSameDay(d, today) ? "bg-primary/10" : "hover:bg-accent/60"
             )}
           >
-            <p className="text-[8px] font-bold text-foreground/60 uppercase leading-none">
+            <p className="text-[10px] font-bold text-foreground/60 uppercase leading-none">
               {DAY_LABELS[i]}
             </p>
             <p className={cn(
-              "text-[12px] font-bold tabular-nums leading-tight",
+              "text-sm font-bold tabular-nums leading-tight",
               isSameDay(d, today) ? "text-primary" : "text-foreground"
             )}>
               {d.getDate()}
@@ -294,12 +293,11 @@ function WeekGrid({
         ))}
       </div>
 
-      {/* Grid body — light grid lines, padded status blocks */}
-      <div className="grid grid-cols-[36px_repeat(7,1fr)]">
+      {/* Grid body */}
+      <div className="grid grid-cols-[44px_repeat(7,1fr)]">
         {HOURS.map((hour) => (
           <div key={hour} className="contents">
-            {/* Time label */}
-            <div className="flex items-center justify-end pr-1 text-[8px] text-foreground/70 tabular-nums font-semibold h-10 border-b border-border/20">
+            <div className="flex items-center justify-end pr-1.5 text-[10px] text-foreground/70 tabular-nums font-semibold h-11 border-b border-border/20">
               {String(hour).padStart(2, "0")}:00
             </div>
             {weekDates.map((d, di) => {
@@ -324,7 +322,7 @@ function WeekGrid({
                       }
                     }}
                     className={cn(
-                      "w-full h-[34px] rounded-[5px] transition-all duration-150",
+                      "w-full h-[36px] rounded-[5px] transition-all duration-150",
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
@@ -347,7 +345,7 @@ function WeekGrid({
   );
 }
 
-// ── Day Grid (with names & procedures) ──
+// ── Day Grid ──
 function DayGrid({
   date,
   onSlotClick,
@@ -359,7 +357,7 @@ function DayGrid({
   const [activePopover, setActivePopover] = useState<number | null>(null);
 
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1">
       {slots.map((slot, i) => (
         <div key={slot.hour} className="relative">
           <button
@@ -371,7 +369,7 @@ function DayGrid({
               }
             }}
             className={cn(
-              "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left transition-all duration-200",
+              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
               "active:scale-[0.98] animate-reveal-up",
               slot.patient
                 ? cn("border-l-2", statusColor[slot.patient.status])
@@ -379,35 +377,35 @@ function DayGrid({
             )}
             style={{ animationDelay: `${i * 40}ms` }}
           >
-            <span className="text-[11px] font-semibold text-muted-foreground tabular-nums w-10 shrink-0">
+            <span className="text-xs font-semibold text-foreground tabular-nums w-12 shrink-0">
               {String(slot.hour).padStart(2, "0")}:00
             </span>
             {slot.patient ? (
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                <span className="text-[13px] font-medium text-foreground truncate">
+                <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                <span className="text-sm font-medium text-foreground truncate">
                   {slot.patient.name}
                 </span>
-                <span className="text-[10px] text-muted-foreground truncate ml-auto">
+                <span className="text-xs text-muted-foreground truncate ml-auto">
                   {slot.patient.procedure}
                 </span>
               </div>
             ) : (
-              <span className="text-[11px] text-muted-foreground/50">— вільно —</span>
+              <span className="text-xs text-muted-foreground/50">— вільно —</span>
             )}
           </button>
           {slot.patient && activePopover === slot.hour && (
-            <div className="absolute z-20 top-full left-12 mt-1 w-52 bg-popover border rounded-lg shadow-elevated p-2.5 space-y-1 animate-reveal-up">
+            <div className="absolute z-20 top-full left-14 mt-1 w-56 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className={cn("w-2 h-2 rounded-full", statusDot[slot.patient.status])} />
-                  <span className="text-[12px] font-semibold text-foreground">{slot.patient.name}</span>
+                  <span className={cn("w-2.5 h-2.5 rounded-full", statusDot[slot.patient.status])} />
+                  <span className="text-sm font-semibold text-foreground">{slot.patient.name}</span>
                 </div>
                 <button onClick={() => setActivePopover(null)} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all">
-                  <X size={12} className="text-muted-foreground" />
+                  <X size={14} className="text-muted-foreground" />
                 </button>
               </div>
-              <p className="text-[11px] text-muted-foreground">{slot.patient.procedure}</p>
+              <p className="text-xs text-muted-foreground">{slot.patient.procedure}</p>
             </div>
           )}
         </div>

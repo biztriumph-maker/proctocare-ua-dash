@@ -7,15 +7,15 @@ interface ViewToggleProps {
 
 export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
   return (
-    <div className="flex rounded-xl bg-surface-sunken p-1 gap-1 border border-border/60">
+    <div className="flex rounded-xl bg-surface-sunken p-1 gap-1 border border-border/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
       <button
         onClick={() => onViewChange("operational")}
         className={cn(
-          "flex-1 py-2 px-3 rounded-lg text-xs transition-all duration-200",
+          "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "operational"
-            ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-            : "font-semibold text-muted-foreground hover:text-foreground"
+            ? "bg-white font-bold text-foreground shadow-[0_1px_6px_rgba(0,0,0,0.1),0_1px_3px_rgba(0,0,0,0.08)]"
+            : "font-medium text-muted-foreground hover:text-foreground"
         )}
       >
         🩺 Оперативка
@@ -23,11 +23,11 @@ export function ViewToggle({ activeView, onViewChange }: ViewToggleProps) {
       <button
         onClick={() => onViewChange("calendar")}
         className={cn(
-          "flex-1 py-2 px-3 rounded-lg text-xs transition-all duration-200",
+          "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
           "active:scale-[0.97]",
           activeView === "calendar"
-            ? "bg-white font-bold text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]"
-            : "font-semibold text-muted-foreground hover:text-foreground"
+            ? "bg-white font-bold text-foreground shadow-[0_1px_6px_rgba(0,0,0,0.1),0_1px_3px_rgba(0,0,0,0.08)]"
+            : "font-medium text-muted-foreground hover:text-foreground"
         )}
       >
         📅 Планування
