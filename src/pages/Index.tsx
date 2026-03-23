@@ -277,7 +277,7 @@ export default function Index() {
                             </div>
                             <button
                               onClick={() => handlePatientClick(patient)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold shrink-0 transition-all hover:bg-destructive/20 active:scale-[0.96]"
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-bold shrink-0 transition-all hover:bg-destructive/90 active:scale-[0.96] shadow-sm"
                             >
                               {patient.aiSummary.toLowerCase().includes("аналіз") ? (
                                 <><MessageCircle size={14} /> Чат</>
