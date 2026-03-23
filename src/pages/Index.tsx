@@ -167,28 +167,28 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/60 px-4 sm:px-6 pt-3 pb-3 space-y-2.5">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/60 px-3 sm:px-6 pt-2 pb-2 sm:pt-3 sm:pb-3 space-y-1.5 sm:space-y-2.5">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">
+            <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
+            <p className="text-[11px] sm:text-sm text-muted-foreground">
               {new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })}
             </p>
           </div>
           <button
             onClick={() => openNewEntry()}
             className={cn(
-              "w-11 h-11 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
+              "w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
               "shadow-[0_2px_8px_rgba(0,0,0,0.15),0_0_0_3px_hsl(var(--primary)/0.2)]",
               "hover:shadow-[0_4px_16px_rgba(0,0,0,0.2),0_0_0_4px_hsl(var(--primary)/0.25)]",
               "active:scale-[0.93] transition-all duration-200"
             )}
           >
-            <Plus size={22} strokeWidth={2.5} />
+            <Plus size={20} strokeWidth={2.5} />
           </button>
         </div>
 
-        <div className="max-w-7xl mx-auto space-y-2.5">
+        <div className="max-w-7xl mx-auto space-y-1.5 sm:space-y-2.5">
           <ViewToggle activeView={view} onViewChange={setView} />
           {view === "operational" && (
             <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
@@ -196,12 +196,12 @@ export default function Index() {
         </div>
       </header>
 
-      {/* Content — responsive layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 pb-24">
+      {/* Content */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4 pb-24">
         {view === "operational" ? (
-          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-5">
-            {/* Column 1: AI Alerts (SOS) */}
-            <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-3 sm:gap-5">
+            {/* Column 1: AI Alerts */}
+            <div className="space-y-3 sm:space-y-4">
               <AIAlertSection
                 alerts={MOCK_AI_ALERTS.map((a) => ({
                   id: a.id,
@@ -254,12 +254,12 @@ export default function Index() {
               )}
             </div>
 
-            {/* Column 2: Patient Timeline — uses full width */}
-            <div className="space-y-3">
+            {/* Column 2: Patient Timeline */}
+            <div className="space-y-2 sm:space-y-3">
               <h3 className="text-sm font-bold text-foreground hidden md:block">
                 Сьогоднішні записи
               </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
                 {filtered.map((patient, i) => (
                   <PatientCard
                     key={patient.id}
