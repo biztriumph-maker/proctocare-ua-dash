@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Phone, MessageCircle, AlertTriangle, CalendarDays } from "lucide-react";
+import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
@@ -239,19 +239,16 @@ export default function Index() {
               <button
                 onClick={() => setShowTomorrow(!showTomorrow)}
                 className={cn(
-                  "w-full rounded-xl p-4 text-left transition-all duration-200 active:scale-[0.98] animate-reveal-up",
+                  "w-full rounded-xl p-4 text-center transition-all duration-200 active:scale-[0.98] animate-reveal-up",
                   showTomorrow
                     ? "bg-primary text-primary-foreground shadow-card"
-                    : "bg-[hsl(210,40%,96%)] border-2 border-border/60 shadow-card hover:shadow-card-hover"
+                    : "bg-[hsl(270,100%,97%)] border-2 border-[hsl(270,80%,90%)] shadow-card hover:shadow-card-hover"
                 )}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays size={16} className={showTomorrow ? "text-primary-foreground" : "text-foreground"} />
-                    <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-primary-foreground" : "text-foreground")}>
-                      Завтра · {tomorrowStr}
-                    </h3>
-                  </div>
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-primary-foreground" : "text-foreground")}>
+                    Завтра · {tomorrowStr}
+                  </h3>
                   {tomorrowRiskCount > 0 && (
                     <span className="w-6 h-6 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold shadow-sm">
                       {tomorrowRiskCount}
