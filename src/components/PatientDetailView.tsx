@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Clock, Activity, Phone, Mic } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
