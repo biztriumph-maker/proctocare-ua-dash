@@ -404,7 +404,7 @@ function DayGrid({
   searchQuery?: string;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
-  const [activePopover, setActivePopover] = useState<number | null>(null);
+  
 
   return (
     <div className="space-y-1">
