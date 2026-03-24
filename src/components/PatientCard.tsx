@@ -101,19 +101,19 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
         </button>
       </div>
 
-      {/* Action buttons — OUTSIDE the card, with spacing */}
+      {/* Action buttons — OUTSIDE the card, with safety spacing */}
       {!patient.noShow && !patient.completed && (onNoShow || onComplete) && (
-        <div className="flex items-center gap-2 pl-3 sm:pl-4">
+        <div className="flex items-center gap-2 pl-3 sm:pl-4 mt-1">
           {onComplete && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onComplete(patient.id);
               }}
-              className="flex items-center gap-1 text-[11px] font-bold text-status-ready bg-status-ready-bg hover:bg-status-ready/20 px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-ready/20"
+              className="flex items-center gap-1 text-[11px] font-bold text-status-ready bg-transparent hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-ready/40"
             >
               <Check size={12} strokeWidth={3} />
-              Виконано
+              Прийом завершено
             </button>
           )}
           {onNoShow && (
@@ -122,10 +122,10 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                 e.stopPropagation();
                 onNoShow(patient.id);
               }}
-              className="flex items-center gap-1 text-[11px] font-bold text-status-risk bg-status-risk-bg hover:bg-status-risk/20 px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-risk/20"
+              className="flex items-center gap-1 text-[11px] font-bold text-status-risk bg-transparent hover:bg-status-risk-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-risk/40"
             >
               <X size={12} strokeWidth={3} />
-              Н/З
+              Пацієнт не з'явився
             </button>
           )}
         </div>

@@ -259,12 +259,12 @@ export default function Index() {
                 className={cn(
                   "w-full rounded-xl p-4 text-center transition-all duration-200 active:scale-[0.98] animate-reveal-up",
                   showTomorrow
-                    ? "bg-primary text-primary-foreground shadow-card"
+                    ? "bg-[hsl(263,70%,50%)] text-white shadow-card"
                     : "bg-[hsl(270,80%,90%)] border-2 border-[hsl(270,70%,80%)] shadow-card hover:shadow-card-hover"
                 )}
               >
                 <div className="flex items-center justify-center gap-2 mb-2">
-                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-primary-foreground" : "text-foreground")}>
+                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-white" : "text-foreground")}>
                     Завтра · {tomorrowStr}
                   </h3>
                   {tomorrowRiskCount > 0 && (
@@ -273,7 +273,7 @@ export default function Index() {
                     </span>
                   )}
                 </div>
-                <p className={cn("text-xs", showTomorrow ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                <p className={cn("text-xs", showTomorrow ? "text-white/80" : "text-muted-foreground")}>
                   {MOCK_TOMORROW.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
                 </p>
               </button>

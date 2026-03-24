@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Check } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Check, FileText, Upload, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -86,7 +86,7 @@ function getPreparationProgress(status: PatientStatus): { percent: number; steps
 
 export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<"card" | "assistant">("card");
+  const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
@@ -148,6 +148,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-[hsl(199,89%,86%)] border border-sky-300/60">
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
+                { key: "files" as const, label: "Файли", icon: <FileText size={14} /> },
                 { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
@@ -179,6 +180,15 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                     <TrackerPane preparation={preparation} status={patient.status} />
                   </ContentBlock>
                 </div>
+              ) : activeTab === "files" ? (
+                <div className="p-4 space-y-3">
+                  <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
+                    <FilesPane />
+                  </ContentBlock>
+                  <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
+                    <PricePane />
+                  </ContentBlock>
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <ChatPane chat={chat} unanswered={unanswered} />
@@ -195,6 +205,12 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
+              </ContentBlock>
+              <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
+                <FilesPane />
+              </ContentBlock>
+              <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
+                <PricePane />
               </ContentBlock>
             </div>
 
@@ -393,6 +409,100 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
   );
 }
 
+// ── Files Pane — upload and manage documents ──
+const MOCK_FILES = [
+  { name: "Аналіз крові 20.03.pdf", type: "patient" as const, date: "20.03.2026" },
+  { name: "МРТ черевної порожнини.jpg", type: "patient" as const, date: "18.03.2026" },
+  { name: "Протокол колоноскопії.pdf", type: "doctor" as const, date: "24.03.2026" },
+];
+
+function FilesPane() {
+  return (
+    <div className="px-4 pb-4 space-y-3">
+      {MOCK_FILES.map((file, i) => (
+        <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
+          <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
+            <p className="text-[10px] text-muted-foreground">
+              {file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}
+            </p>
+          </div>
+        </div>
+      ))}
+      <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
+        <Upload size={14} />
+        Завантажити файл
+      </button>
+    </div>
+  );
+}
+
+// ── Price Pane — add services from pricelist ──
+const PRICE_LIST = [
+  { name: "Колоноскопія діагностична", price: 3200 },
+  { name: "Колоноскопія з біопсією", price: 4500 },
+  { name: "Ректоскопія", price: 1800 },
+  { name: "Аноскопія", price: 1200 },
+  { name: "Консультація проктолога", price: 900 },
+  { name: "Видалення поліпа", price: 5500 },
+];
+
+function PricePane() {
+  const [added, setAdded] = useState<number[]>([]);
+  const [showList, setShowList] = useState(false);
+
+  return (
+    <div className="px-4 pb-4 space-y-2">
+      {added.length > 0 && (
+        <div className="space-y-1.5">
+          {added.map((idx) => (
+            <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-status-ready-bg border border-status-ready/20">
+              <span className="text-xs font-bold text-foreground">{PRICE_LIST[idx].name}</span>
+              <span className="text-xs font-bold text-status-ready">{PRICE_LIST[idx].price} ₴</span>
+            </div>
+          ))}
+          <div className="flex justify-end pt-1">
+            <span className="text-sm font-bold text-foreground">
+              Разом: {added.reduce((sum, idx) => sum + PRICE_LIST[idx].price, 0)} ₴
+            </span>
+          </div>
+        </div>
+      )}
+      <button
+        onClick={() => setShowList(!showList)}
+        className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]"
+      >
+        <Plus size={14} />
+        Додати послугу
+      </button>
+      {showList && (
+        <div className="space-y-1 animate-reveal-up">
+          {PRICE_LIST.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                if (!added.includes(i)) setAdded([...added, i]);
+                setShowList(false);
+              }}
+              disabled={added.includes(i)}
+              className={cn(
+                "w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors active:scale-[0.98]",
+                added.includes(i)
+                  ? "bg-muted/50 opacity-50"
+                  : "bg-background border border-border/60 hover:bg-accent/40"
+              )}
+            >
+              <span className="text-xs font-bold text-foreground">{item.name}</span>
+              <span className="text-xs font-bold text-muted-foreground">{item.price} ₴</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Chat Pane — Messenger Premium style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
@@ -406,7 +516,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={14} className="text-status-risk shrink-0" />
             <span className="text-xs font-bold text-status-risk">
-              Питання без відповіді · {msg.time}
+              Питання без відповіді · 24.03 | {msg.time}
             </span>
           </div>
           <p className="text-foreground font-bold">{msg.text}</p>
