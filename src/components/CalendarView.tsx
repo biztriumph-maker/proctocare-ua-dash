@@ -436,7 +436,8 @@ function DayGrid({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
