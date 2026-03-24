@@ -1,4 +1,4 @@
-import { MessageCircle, ChevronDown } from "lucide-react";
+import { MessageCircle, ChevronDown, AlertTriangle } from "lucide-react";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
@@ -122,9 +122,9 @@ export function AIAlertSection({ alerts, onReply, onOpenReply }: AIAlertSectionP
   return (
     <div className="rounded-xl border-2 border-status-progress/30 bg-status-progress-bg p-4 space-y-2.5 animate-reveal-up">
       <div className="flex items-center gap-2">
-        <span className="text-base">🤖</span>
+        <AlertTriangle size={16} className="text-status-progress shrink-0" />
         <h3 className="text-sm font-semibold text-foreground">
-          ІІ потребує допомоги
+          ШІ потребує допомоги
         </h3>
         <span className="ml-auto bg-status-progress text-white text-xs font-bold px-2.5 py-0.5 rounded-full tabular-nums">
           {visible.length}

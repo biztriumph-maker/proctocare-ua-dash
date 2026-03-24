@@ -30,7 +30,7 @@ export function SearchBar({ onSearch, className }: SearchBarProps) {
   return (
     <div className={cn("relative flex items-center", className)}>
       {expanded ? (
-        <div className="flex items-center gap-1.5 bg-white rounded-full border border-border px-3 py-1.5 shadow-sm animate-fade-in">
+        <div className="flex items-center gap-1.5 bg-white rounded-full border-2 border-muted-foreground/40 px-3 py-1.5 shadow-sm animate-fade-in">
           <Search size={14} className="text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
@@ -46,7 +46,7 @@ export function SearchBar({ onSearch, className }: SearchBarProps) {
       ) : (
         <button
           onClick={() => setExpanded(true)}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/80 border border-border/60 shadow-sm hover:shadow-md active:scale-[0.93] transition-all"
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white border-2 border-muted-foreground/40 shadow-sm hover:shadow-md active:scale-[0.93] transition-all"
         >
           <Search size={16} className="text-muted-foreground" />
         </button>

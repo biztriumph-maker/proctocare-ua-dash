@@ -10,6 +10,7 @@ interface CalendarSlot {
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
+  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
 }
 
@@ -70,7 +71,7 @@ function dateToStr(d: Date): string {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "" }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
@@ -116,8 +117,8 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
 
   return (
     <div className="space-y-3 animate-fade-in">
-      {/* View mode toggle — pill style, medium grey */}
-      <div className="flex rounded-xl bg-[#BAE6FD] p-1 gap-1">
+      {/* View mode toggle */}
+      <div className="flex rounded-xl bg-[hsl(199,89%,86%)] p-1 gap-1">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
@@ -168,7 +169,7 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
 
       {/* Month picker overlay */}
       {showMonthPicker && (
-        <div className="border-2 border-[#94A3B8] rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-white p-3 space-y-2 animate-reveal-up">
+        <div className="border-2 border-muted-foreground/40 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-white p-3 space-y-2 animate-reveal-up">
           <div className="flex items-center justify-between">
             <button onClick={() => shiftMonth(-1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
               <ChevronLeft size={16} />
@@ -180,12 +181,12 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
           </div>
           <div className="grid grid-cols-7 gap-0 text-center">
             {DAY_LABELS.map((d) => (
-              <span key={d} className="text-[10px] font-semibold text-muted-foreground py-1 border-b border-[#CBD5E1]">
+              <span key={d} className="text-[10px] font-semibold text-muted-foreground py-1 border-b border-border">
                 {d}
               </span>
             ))}
             {monthDates.map((date, i) => {
-              if (!date) return <span key={`e-${i}`} className="border-b border-r border-[#CBD5E1]/40" />;
+              if (!date) return <span key={`e-${i}`} className="border-b border-r border-border/40" />;
               const str = dateToStr(date);
               const isSelected = isSameDay(date, currentDate);
               const isToday = isSameDay(date, new Date());
@@ -195,11 +196,11 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
                   onClick={() => selectDateFromMonth(date)}
                   className={cn(
                     "relative flex items-center justify-center w-full h-9 text-xs font-medium transition-all active:scale-[0.93]",
-                    "border-b border-r border-[#CBD5E1]/40",
+                    "border-b border-r border-border/40",
                     isSelected
                       ? "bg-primary text-primary-foreground"
                       : isToday
-                        ? "bg-[#E0F2FE] text-primary font-bold"
+                        ? "bg-[hsl(204,100%,93%)] text-primary font-bold"
                         : "hover:bg-accent/60 text-foreground"
                   )}
                 >
@@ -215,6 +216,7 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
         <WeekGrid
           weekDates={weekDates}
           onSlotClick={onSlotClick}
+          onPatientClick={onPatientClick}
           searchQuery={searchQuery}
           onSelectDay={(d) => {
             setCurrentDate(d);
@@ -222,32 +224,50 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
           }}
         />
       ) : (
-        <DayGrid date={currentDate} onSlotClick={onSlotClick} searchQuery={searchQuery} />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} />
       )}
     </div>
   );
 }
 
-// ── Slot Popover ──
+// ── Slot Popover (clickable) ──
 function SlotPopover({
   slot,
+  hour,
   onClose,
+  onPatientClick,
 }: {
   slot: { name: string; status: PatientStatus; procedure: string };
+  hour: number;
   onClose: () => void;
+  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
 }) {
   return (
     <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00` });
+          }}
+          className="flex items-center gap-1.5 min-w-0 hover:underline"
+        >
           <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
           <span className="text-xs font-semibold text-foreground truncate">{slot.name}</span>
-        </div>
+        </button>
         <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all shrink-0">
           <X size={12} className="text-muted-foreground" />
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">{slot.procedure}</p>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00` });
+        }}
+        className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
+      >
+        {slot.procedure}
+      </button>
     </div>
   );
 }
@@ -257,11 +277,13 @@ function WeekGrid({
   weekDates,
   onSlotClick,
   onSelectDay,
+  onPatientClick,
   searchQuery = "",
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
+  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
 }) {
   const today = new Date();
@@ -272,10 +294,10 @@ function WeekGrid({
   }, [weekDates]);
 
   return (
-    <div className="border-2 border-[#94A3B8] rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
+    <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
       {/* Header row */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-[#CBD5E1]">
-        <div className="border-r border-[#CBD5E1] bg-[#F0F9FF]" />
+      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-border">
+        <div className="border-r border-border bg-[hsl(204,100%,97%)]" />
         {weekDates.map((d, i) => {
           const isToday = isSameDay(d, today);
           return (
@@ -284,8 +306,8 @@ function WeekGrid({
               onClick={() => onSelectDay(d)}
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96]",
-                i < 6 && "border-r border-[#CBD5E1]",
-                isToday && "bg-[#E0F2FE]"
+                i < 6 && "border-r border-border",
+                isToday && "bg-[hsl(204,100%,93%)]"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
@@ -307,9 +329,9 @@ function WeekGrid({
         {HOURS.map((hour, hi) => (
           <div key={hour} className="contents">
             <div className={cn(
-              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[#F0F9FF]",
-              "border-r border-[#CBD5E1]",
-              hi < HOURS.length - 1 && "border-b border-[#CBD5E1]"
+              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[hsl(204,100%,97%)]",
+              "border-r border-border",
+              hi < HOURS.length - 1 && "border-b border-border"
             )}>
               {String(hour).padStart(2, "0")}:00
             </div>
@@ -330,8 +352,8 @@ function WeekGrid({
                   key={di}
                   className={cn(
                     "relative p-[5px] bg-white",
-                    hi < HOURS.length - 1 && "border-b border-[#CBD5E1]",
-                    di < 6 && "border-r border-[#CBD5E1]"
+                    hi < HOURS.length - 1 && "border-b border-border",
+                    di < 6 && "border-r border-border"
                   )}
                 >
                   <button
@@ -354,7 +376,9 @@ function WeekGrid({
                   {slot?.patient && activePopover === popoverKey && (
                     <SlotPopover
                       slot={slot.patient}
+                      hour={hour}
                       onClose={() => setActivePopover(null)}
+                      onPatientClick={onPatientClick}
                     />
                   )}
                 </div>
@@ -371,14 +395,16 @@ function WeekGrid({
 function DayGrid({
   date,
   onSlotClick,
+  onPatientClick,
   searchQuery = "",
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
+  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
-  const [activePopover, setActivePopover] = useState<number | null>(null);
+  
 
   return (
     <div className="space-y-1">
@@ -389,7 +415,7 @@ function DayGrid({
           <button
             onClick={() => {
               if (slot.patient) {
-                setActivePopover(activePopover === slot.hour ? null : slot.hour);
+                onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00` });
               } else {
                 onSlotClick(date, slot.hour);
               }
@@ -421,20 +447,6 @@ function DayGrid({
               <span className="text-xs text-muted-foreground/50">— вільно —</span>
             )}
           </button>
-          {slot.patient && activePopover === slot.hour && (
-            <div className="absolute z-20 top-full left-14 mt-1 w-56 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className={cn("w-2.5 h-2.5 rounded-full", statusDot[slot.patient.status])} />
-                  <span className="text-sm font-semibold text-foreground">{slot.patient.name}</span>
-                </div>
-                <button onClick={() => setActivePopover(null)} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all">
-                  <X size={14} className="text-muted-foreground" />
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground">{slot.patient.procedure}</p>
-            </div>
-          )}
         </div>
         );
       })}
