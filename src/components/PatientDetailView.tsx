@@ -86,7 +86,7 @@ function getPreparationProgress(status: PatientStatus): { percent: number; steps
 
 export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<"card" | "assistant">("card");
+  const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
