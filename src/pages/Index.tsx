@@ -381,6 +381,16 @@ export default function Index() {
         ) : (
           <CalendarView
             onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
+            onPatientClick={(p) => {
+              setSelectedPatient({
+                id: `cal-${p.name}-${p.time}`,
+                name: p.name,
+                time: p.time,
+                procedure: p.procedure,
+                status: p.status,
+                aiSummary: "Дані з календаря",
+              });
+            }}
             searchQuery={searchQuery}
           />
         )}
