@@ -206,6 +206,12 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
+              <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
+                <FilesPane />
+              </ContentBlock>
+              <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
+                <PricePane />
+              </ContentBlock>
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden p-4 pl-0">
