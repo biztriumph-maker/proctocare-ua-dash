@@ -369,9 +369,11 @@ function WeekGrid({
 function DayGrid({
   date,
   onSlotClick,
+  searchQuery = "",
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
+  searchQuery?: string;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
   const [activePopover, setActivePopover] = useState<number | null>(null);
