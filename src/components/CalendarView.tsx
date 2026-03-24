@@ -231,17 +231,20 @@ function SlotPopover({
   onClose,
   onPatientClick,
   openDirection,
+  openHorizontal,
 }: {
   slot: { name: string; status: PatientStatus; procedure: string };
   hour: number;
   onClose: () => void;
   onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
   openDirection: "up" | "down";
+  openHorizontal: "left" | "right" | "center";
 }) {
   return (
     <div className={cn(
-      "absolute z-20 left-1/2 -translate-x-1/2 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
-      openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
+      "absolute z-20 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
+      openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1",
+      openHorizontal === "left" ? "right-0" : openHorizontal === "right" ? "left-0" : "left-1/2 -translate-x-1/2"
     )}>
       <div className="flex items-center justify-between">
         <button
@@ -348,8 +351,9 @@ function WeekGrid({
               const past = isPast(d);
               const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
 
-              // Determine popover direction: open up if in bottom half of grid
+              // Smart positioning: open up if bottom half, open left if right side
               const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
+              const openHorizontal = di >= 5 ? "left" : di <= 1 ? "right" : "center";
 
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
@@ -395,12 +399,13 @@ function WeekGrid({
                     )}
                   </button>
                   {slot?.patient && activePopover === popoverKey && (
-                    <SlotPopover
+                     <SlotPopover
                       slot={slot.patient}
                       hour={hour}
                       onClose={() => setActivePopover(null)}
                       onPatientClick={onPatientClick}
                       openDirection={openDirection as "up" | "down"}
+                      openHorizontal={openHorizontal}
                     />
                   )}
                 </div>

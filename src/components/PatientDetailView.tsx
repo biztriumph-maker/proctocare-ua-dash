@@ -417,23 +417,66 @@ const MOCK_FILES = [
 ];
 
 function FilesPane() {
+  const [protocolText, setProtocolText] = useState("Огляд проведено. Слизова без патологій. Рекомендовано контрольний огляд через 6 місяців.");
+  const [editingProtocol, setEditingProtocol] = useState(false);
+
   return (
-    <div className="px-4 pb-4 space-y-3">
-      {MOCK_FILES.map((file, i) => (
-        <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
-          <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
-            <p className="text-[10px] text-muted-foreground">
-              {file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}
-            </p>
-          </div>
+    <div className="px-4 pb-4 space-y-4">
+      {/* Protocol block — highlighted with blue border */}
+      <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <FileText size={12} className="text-primary" />
+            Протокол огляду
+          </h4>
+          <button
+            onClick={() => setEditingProtocol(!editingProtocol)}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
+          >
+            {editingProtocol ? <Check size={14} className="text-status-ready" /> : <Pencil size={12} className="text-muted-foreground" />}
+          </button>
         </div>
-      ))}
-      <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
-        <Upload size={14} />
-        Завантажити файл
-      </button>
+        {editingProtocol ? (
+          <textarea
+            value={protocolText}
+            onChange={(e) => setProtocolText(e.target.value)}
+            className="w-full text-sm leading-relaxed text-foreground bg-white border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/40 resize-none min-h-[80px]"
+            autoFocus
+          />
+        ) : (
+          <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+        )}
+      </div>
+
+      {/* Files block */}
+      <div className="space-y-2">
+        <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+          Файли та аналізи
+        </h4>
+        {MOCK_FILES.map((file, i) => (
+          <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
+            <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
+                <FileText size={12} className="text-muted-foreground" />
+              </button>
+              <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Редагувати">
+                <Pencil size={12} className="text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+        ))}
+        <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
+          <Upload size={14} />
+          Завантажити файл
+        </button>
+      </div>
     </div>
   );
 }
