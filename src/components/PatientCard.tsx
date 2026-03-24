@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Clock, Check, X } from "lucide-react";
+import { useState } from "react";
 
 export type PatientStatus = "ready" | "progress" | "risk";
 
@@ -10,6 +11,7 @@ export interface Patient {
   procedure: string;
   status: PatientStatus;
   aiSummary: string;
+  birthDate?: string;
   paid?: boolean;
   noShow?: boolean;
   completed?: boolean;
@@ -32,9 +34,46 @@ const statusConfig: Record<PatientStatus, { border: string; dot: string; label: 
 
 export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComplete }: PatientCardProps) {
   const config = statusConfig[patient.status];
+  const [confirmAction, setConfirmAction] = useState<"complete" | "noshow" | null>(null);
 
   return (
     <div className="space-y-2">
+      {/* Confirmation modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmAction(null)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">
+              Підтвердити дію: {confirmAction === "complete" ? "Прийом завершено" : "Не з'явився"}?
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              {patient.name} · {patient.time} · {patient.procedure}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmAction === "complete") onComplete?.(patient.id);
+                  else onNoShow?.(patient.id);
+                  setConfirmAction(null);
+                }}
+                className={cn(
+                  "flex-1 py-2.5 text-sm font-bold rounded-lg transition-colors active:scale-[0.97]",
+                  confirmAction === "complete"
+                    ? "bg-status-ready text-white"
+                    : "bg-status-risk text-white"
+                )}
+              >
+                Підтвердити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Card */}
       <div
         className={cn(
@@ -91,14 +130,13 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
         </button>
       </div>
 
-      {/* Action buttons — OUTSIDE the card, full width, grey outline */}
       {!patient.noShow && !patient.completed && (onNoShow || onComplete) && (
         <div className="flex items-center gap-2 mt-2">
           {onComplete && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onComplete(patient.id);
+                setConfirmAction("complete");
               }}
               className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-ready hover:border-status-ready/60 hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-ready border border-border"
             >
@@ -110,7 +148,7 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onNoShow(patient.id);
+                setConfirmAction("noshow");
               }}
               className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-risk hover:border-status-risk/60 hover:bg-status-risk-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-risk border border-border"
             >
