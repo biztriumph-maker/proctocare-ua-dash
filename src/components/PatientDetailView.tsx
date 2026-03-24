@@ -397,7 +397,8 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
   };
 
   const rows = [
-    { label: "Вік", value: `${profile.age} років` },
+    { label: "Дата народження", value: profile.birthDate || "—" },
+    { label: "Вік", value: profile.age },
     { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
     { label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" },
     { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },

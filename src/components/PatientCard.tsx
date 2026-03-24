@@ -10,6 +10,7 @@ export interface Patient {
   procedure: string;
   status: PatientStatus;
   aiSummary: string;
+  birthDate?: string;
   paid?: boolean;
   noShow?: boolean;
   completed?: boolean;

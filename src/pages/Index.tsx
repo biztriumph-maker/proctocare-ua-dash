@@ -134,6 +134,7 @@ export default function Index() {
       procedure: entry.procedure,
       status: "progress",
       aiSummary: entry.aiPrep ? "ШІ-бот надсилає інструкції..." : "Очікує підготовки",
+      birthDate: entry.birthDate,
     };
     setSkeletonPatient(newPatient);
     setShowForm(false);
