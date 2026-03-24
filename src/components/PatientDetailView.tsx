@@ -391,7 +391,7 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
 // ── Chat Pane — Messenger style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
-    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(210,40%,96%)]">
+    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(215,25%,89%)]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
@@ -428,7 +428,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
               )}
             >
               <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
-                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "ШІ-асистент"} · {msg.time}
+                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "ШІ-асистент"} · 24.03 | {msg.time}
               </p>
               <p className="text-foreground">{msg.text}</p>
             </div>
@@ -445,7 +445,7 @@ function ChatInput() {
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-center gap-2 bg-[hsl(200,100%,95%)] rounded-full px-4 py-1.5">
+        <div className="flex items-center gap-2 bg-[hsl(200,100%,96%)] rounded-full px-4 py-1.5">
         <input
           type="text"
           value={value}
