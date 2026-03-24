@@ -132,28 +132,41 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               Дата народження *
             </label>
             <input
-              type="date"
+              type="text"
+              inputMode="numeric"
               value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                let formatted = raw;
+                if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
+                if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                setBirthDate(formatted);
+              }}
+              placeholder="ДД.ММ.РРРР"
+              maxLength={10}
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
-            {birthDate && (() => {
-              const today = new Date();
-              const bd = new Date(birthDate + "T00:00:00");
-              let age = today.getFullYear() - bd.getFullYear();
-              const m = today.getMonth() - bd.getMonth();
-              if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
-              if (age >= 0 && age < 150) {
-                const lastDigit = age % 10;
-                const lastTwo = age % 100;
-                const suffix = (lastTwo >= 11 && lastTwo <= 14) ? "років"
-                  : lastDigit === 1 ? "рік"
-                  : (lastDigit >= 2 && lastDigit <= 4) ? "роки"
-                  : "років";
-                return <p className="text-xs text-primary font-medium mt-1">{age} {suffix}</p>;
-              }
-              return null;
-            })()}
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Вік:{" "}
+              {(() => {
+                const parts = birthDate.split(".");
+                if (parts.length === 3 && parts[2].length === 4) {
+                  const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+                  if (!isNaN(bd.getTime())) {
+                    const today = new Date();
+                    let age = today.getFullYear() - bd.getFullYear();
+                    const m = today.getMonth() - bd.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+                    if (age >= 0 && age < 150) {
+                      const ld = age % 10, lt = age % 100;
+                      const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
+                      return <span className="text-primary font-semibold">{age} {s}</span>;
+                    }
+                  }
+                }
+                return <span className="text-muted-foreground/50">—</span>;
+              })()}
+            </p>
           </div>
 
           {/* Phone */}
