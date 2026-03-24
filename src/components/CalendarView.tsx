@@ -10,6 +10,7 @@ interface CalendarSlot {
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
+  searchQuery?: string;
 }
 
 const statusColor: Record<PatientStatus, string> = {
@@ -69,7 +70,7 @@ function dateToStr(d: Date): string {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
@@ -214,13 +215,14 @@ export function CalendarView({ onSlotClick }: CalendarViewProps) {
         <WeekGrid
           weekDates={weekDates}
           onSlotClick={onSlotClick}
+          searchQuery={searchQuery}
           onSelectDay={(d) => {
             setCurrentDate(d);
             setViewMode("day");
           }}
         />
       ) : (
-        <DayGrid date={currentDate} onSlotClick={onSlotClick} />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} searchQuery={searchQuery} />
       )}
     </div>
   );
@@ -255,10 +257,12 @@ function WeekGrid({
   weekDates,
   onSlotClick,
   onSelectDay,
+  searchQuery = "",
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
+  searchQuery?: string;
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
@@ -312,6 +316,7 @@ function WeekGrid({
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
+              const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
                   ? "bg-status-ready-bg border border-status-ready/25"
@@ -342,7 +347,8 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : "bg-transparent"
+                        : "bg-transparent",
+                      isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
@@ -365,16 +371,20 @@ function WeekGrid({
 function DayGrid({
   date,
   onSlotClick,
+  searchQuery = "",
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
+  searchQuery?: string;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
   const [activePopover, setActivePopover] = useState<number | null>(null);
 
   return (
     <div className="space-y-1">
-      {slots.map((slot, i) => (
+      {slots.map((slot, i) => {
+        const isSearchMatch = searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return (
         <div key={slot.hour} className="relative">
           <button
             onClick={() => {
@@ -389,7 +399,8 @@ function DayGrid({
               "active:scale-[0.98] animate-reveal-up",
               slot.patient
                 ? cn("border-l-2", statusColor[slot.patient.status])
-                : "hover:bg-accent/60 border border-transparent hover:border-border"
+                : "hover:bg-accent/60 border border-transparent hover:border-border",
+              isSearchMatch && "ring-2 ring-primary ring-offset-1"
             )}
             style={{ animationDelay: `${i * 40}ms` }}
           >
@@ -425,7 +436,8 @@ function DayGrid({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { PatientCard, type Patient, type PatientStatus } from "@/components/Pati
 import { PatientDetailView } from "@/components/PatientDetailView";
 import { CalendarView } from "@/components/CalendarView";
 import { NewEntryForm, type NewEntryData } from "@/components/NewEntryForm";
+import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -89,6 +90,7 @@ export default function Index() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
   const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const counts = useMemo(() => ({
     total: patients.length,
@@ -98,9 +100,22 @@ export default function Index() {
   }), [patients]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return patients;
-    return patients.filter((p) => statusToFilter[p.status] === filter);
-  }, [filter, patients]);
+    let list = patients;
+    if (filter !== "all") {
+      list = list.filter((p) => statusToFilter[p.status] === filter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((p) => p.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [filter, patients, searchQuery]);
+
+  const filteredTomorrow = useMemo(() => {
+    if (!searchQuery.trim()) return MOCK_TOMORROW;
+    const q = searchQuery.toLowerCase();
+    return MOCK_TOMORROW.filter((p) => p.name.toLowerCase().includes(q));
+  }, [searchQuery]);
 
   const openNewEntry = useCallback((date?: string, hour?: number) => {
     setFormPrefill({
@@ -165,6 +180,8 @@ export default function Index() {
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
 
+  const tomorrowRiskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -176,17 +193,20 @@ export default function Index() {
               {new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })}
             </p>
           </div>
-          <button
-            onClick={() => openNewEntry()}
-            className={cn(
-              "w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
-              "shadow-[0_2px_8px_rgba(0,0,0,0.15),0_0_0_3px_hsl(var(--primary)/0.2)]",
-              "hover:shadow-[0_4px_16px_rgba(0,0,0,0.2),0_0_0_4px_hsl(var(--primary)/0.25)]",
-              "active:scale-[0.93] transition-all duration-200"
-            )}
-          >
-            <Plus size={20} strokeWidth={2.5} />
-          </button>
+          <div className="flex items-center gap-2">
+            <SearchBar onSearch={setSearchQuery} />
+            <button
+              onClick={() => openNewEntry()}
+              className={cn(
+                "w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-primary text-primary-foreground",
+                "shadow-[0_2px_8px_rgba(0,0,0,0.15),0_0_0_3px_hsl(var(--primary)/0.2)]",
+                "hover:shadow-[0_4px_16px_rgba(0,0,0,0.2),0_0_0_4px_hsl(var(--primary)/0.25)]",
+                "active:scale-[0.93] transition-all duration-200"
+              )}
+            >
+              <Plus size={20} strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
 
         <div className="max-w-7xl mx-auto space-y-1.5 sm:space-y-2.5">
@@ -228,14 +248,11 @@ export default function Index() {
                 >
                   <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
                   Завтра · {tomorrowStr}
-                  {(() => {
-                    const riskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
-                    return riskCount > 0 ? (
-                      <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shadow-sm">
-                        {riskCount}
-                      </span>
-                    ) : null;
-                  })()}
+                  {tomorrowRiskCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shadow-sm">
+                      {tomorrowRiskCount}
+                    </span>
+                  )}
                 </button>
                 {!showTomorrow && (() => {
                   const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
@@ -255,7 +272,7 @@ export default function Index() {
                 <>
                   {/* Проблематика block */}
                   {(() => {
-                    const riskTomorrow = MOCK_TOMORROW.filter(p => p.status === "risk");
+                    const riskTomorrow = filteredTomorrow.filter(p => p.status === "risk");
                     return riskTomorrow.length > 0 ? (
                       <div className="space-y-2 animate-reveal-up">
                         <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
@@ -297,11 +314,11 @@ export default function Index() {
                   </h3>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
                     {(() => {
-                      const morning = MOCK_TOMORROW.filter(p => parseInt(p.time) < 13);
-                      const afternoon = MOCK_TOMORROW.filter(p => parseInt(p.time) >= 13);
+                      const morning = filteredTomorrow.filter(p => parseInt(p.time) < 13);
+                      const afternoon = filteredTomorrow.filter(p => parseInt(p.time) >= 13);
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
-                        return MOCK_TOMORROW.map((patient, i) => (
+                        return filteredTomorrow.map((patient, i) => (
                           <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
                         ));
                       }
@@ -366,6 +383,7 @@ export default function Index() {
         ) : (
           <CalendarView
             onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
+            searchQuery={searchQuery}
           />
         )}
       </main>
