@@ -176,6 +176,15 @@ export default function Index() {
     setSelectedPatient(patient);
   }, []);
 
+  const handleNoShow = useCallback((patientId: string) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, noShow: true } : p
+      )
+    );
+    toast("Пацієнта позначено як «Не з'явився»");
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
