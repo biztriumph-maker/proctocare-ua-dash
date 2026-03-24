@@ -148,6 +148,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-[hsl(199,89%,86%)] border border-sky-300/60">
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
+                { key: "files" as const, label: "Файли", icon: <FileText size={14} /> },
                 { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
