@@ -154,3 +154,15 @@
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
+
+/* Hide scrollbars globally while keeping scroll functionality */
+.scrollbar-hide::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide,
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
