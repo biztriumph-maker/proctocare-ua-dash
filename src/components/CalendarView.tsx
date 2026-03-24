@@ -257,10 +257,12 @@ function WeekGrid({
   weekDates,
   onSlotClick,
   onSelectDay,
+  searchQuery = "",
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
+  searchQuery?: string;
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
