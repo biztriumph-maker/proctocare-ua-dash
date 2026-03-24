@@ -76,16 +76,6 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                 {patient.completed && (
                   <Check size={14} className="text-status-ready" strokeWidth={3} />
                 )}
-                {!patient.paid && !patient.noShow && !patient.completed && (
-                  <span className="text-[11px] font-bold text-amber-600 bg-amber-100 px-1.5 py-px rounded-full">
-                    ₴
-                  </span>
-                )}
-                {patient.paid && (
-                  <span className="text-[11px] font-bold text-status-ready bg-status-ready-bg px-1.5 py-px rounded-full">
-                    ₴
-                  </span>
-                )}
               </div>
               <h4 className={cn("text-[13px] sm:text-sm font-semibold truncate leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
                 {patient.name}
