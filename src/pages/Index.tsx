@@ -273,7 +273,7 @@ export default function Index() {
                     </span>
                   )}
                 </div>
-                <p className={cn("text-xs", showTomorrow ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                <p className={cn("text-xs", showTomorrow ? "text-white/80" : "text-muted-foreground")}>
                   {MOCK_TOMORROW.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
                 </p>
               </button>
