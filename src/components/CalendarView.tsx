@@ -351,8 +351,9 @@ function WeekGrid({
               const past = isPast(d);
               const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
 
-              // Determine popover direction: open up if in bottom half of grid
+              // Smart positioning: open up if bottom half, open left if right side
               const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
+              const openHorizontal = di >= 5 ? "left" : di <= 1 ? "right" : "center";
 
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
