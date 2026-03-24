@@ -362,7 +362,7 @@ export default function Index() {
                         <>
                           <div className="space-y-2 sm:space-y-3">
                             {morning.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
                             ))}
                           </div>
                           <div className="space-y-2 sm:space-y-3">
