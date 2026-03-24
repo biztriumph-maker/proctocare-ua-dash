@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 export interface NewEntryData {
   name: string;
+  birthDate: string;
   phone: string;
   procedure: string;
   date: string;
