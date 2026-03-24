@@ -25,7 +25,7 @@ export function StatusFilterBar({ activeFilter, onFilterChange, counts }: Status
   ];
 
   return (
-    <div className="flex gap-1.5 pb-0.5">
+    <div className="flex gap-1.5 pb-0.5 px-2 py-1.5 rounded-xl bg-[hsl(199,89%,86%)]">
       {badges.map((badge) => (
         <button
           key={badge.type}
@@ -34,8 +34,8 @@ export function StatusFilterBar({ activeFilter, onFilterChange, counts }: Status
             "flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all duration-200",
             "active:scale-[0.96]",
             activeFilter === badge.type
-              ? badge.activeColorClass
-              : cn("bg-surface-raised shadow-card", badge.colorClass, "hover:shadow-card-hover")
+              ? cn(badge.activeColorClass, "shadow-[0_2px_8px_rgba(0,0,0,0.12)]")
+              : cn("bg-white/60 hover:bg-white/80", badge.colorClass)
           )}
         >
           {badge.label}

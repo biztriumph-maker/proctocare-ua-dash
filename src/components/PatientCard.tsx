@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Clock, ChevronRight } from "lucide-react";
+import { Clock } from "lucide-react";
 
 export type PatientStatus = "ready" | "progress" | "risk";
 
@@ -41,7 +41,7 @@ export function PatientCard({ patient, index, onClick, isNew }: PatientCardProps
       )}
       style={{ animationDelay: isNew ? "0ms" : `${index * 60}ms` }}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1">
           <div className="flex items-center gap-1.5">
             <Clock size={12} className="text-muted-foreground shrink-0" />
@@ -60,7 +60,6 @@ export function PatientCard({ patient, index, onClick, isNew }: PatientCardProps
             <span className="text-[11px] text-primary font-medium truncate">· {patient.aiSummary}</span>
           </div>
         </div>
-        <ChevronRight size={16} className="text-muted-foreground/50 shrink-0" />
       </div>
     </button>
   );

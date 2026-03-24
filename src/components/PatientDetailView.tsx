@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -96,7 +96,6 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
 
-      {/* Modal — light grey bg */}
       <div className="relative w-full max-w-4xl bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -117,7 +116,6 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                 {statusLabel[patient.status]}
               </span>
             </div>
-            {/* Separate date/time line */}
             <div className="flex items-center gap-1.5 text-xs flex-wrap">
               <span className="text-muted-foreground font-normal">Дата:</span>
               <span className="font-bold text-foreground">24.03.2026</span>
@@ -147,11 +145,10 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
         {/* Mobile: tabs | Desktop: side-by-side */}
         {isMobile ? (
           <>
-            {/* Tab bar */}
             <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-[hsl(199,89%,86%)] border border-sky-300/60">
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
-                { key: "assistant" as const, label: "ШІ Асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
+                { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
                   key={tab.key}
@@ -243,28 +240,61 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
   );
 }
 
-// ── Profile Pane ──
+// ── Profile Pane with editable fields ──
 function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }) {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState({
+    diagnosis: profile.diagnosis,
+    notes: profile.notes,
+  });
+
   const rows = [
     { label: "Вік", value: `${profile.age} років` },
     { label: "Телефон", value: profile.phone },
     { label: "Алергії", value: profile.allergies, highlight: true },
-    { label: "Діагноз", value: profile.diagnosis },
+    { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
     { label: "Останній візит", value: profile.lastVisit },
-    { label: "Нотатки", value: profile.notes },
+    { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
   ];
 
   return (
     <div className="px-4 pb-4 space-y-3">
       {rows.map((row) => (
         <div key={row.label}>
-          <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-0.5">
-            {row.label}
-          </p>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
+              {row.label}
+            </p>
+            {row.editable && (
+              <button
+                onClick={() => {
+                  if (editingField === row.field) {
+                    setEditingField(null);
+                  } else {
+                    setEditingField(row.field!);
+                  }
+                }}
+                className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all"
+              >
+                {editingField === row.field ? (
+                  <Check size={12} className="text-status-ready" />
+                ) : (
+                  <Pencil size={11} className="text-muted-foreground" />
+                )}
+              </button>
+            )}
+          </div>
           {row.highlight ? (
             <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
               ⚠ {row.value}
             </p>
+          ) : row.editable && editingField === row.field ? (
+            <textarea
+              value={editValues[row.field as keyof typeof editValues]}
+              onChange={(e) => setEditValues(prev => ({ ...prev, [row.field!]: e.target.value }))}
+              className="w-full text-sm leading-snug font-bold text-foreground bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/40 resize-none min-h-[36px]"
+              autoFocus
+            />
           ) : (
             <p className="text-sm leading-snug font-bold text-foreground">{row.value}</p>
           )}
@@ -356,7 +386,7 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
   );
 }
 
-// ── Chat Pane ──
+// ── Chat Pane — Messenger style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
     <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1">
@@ -376,36 +406,44 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
         </div>
       ))}
 
-      {/* Chat history */}
-      {chat.filter((m) => !m.unanswered).map((msg, i) => (
-        <div
-          key={i}
-          className={cn(
-            "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%]",
-            msg.sender === "patient"
-              ? "bg-card text-foreground mr-auto border border-border/40"
-              : msg.sender === "doctor"
-                ? "bg-primary/15 text-foreground ml-auto"
-                : "bg-[hsl(200,80%,96%)] text-foreground ml-auto"
-          )}
-        >
-          <p className="text-xs font-bold text-muted-foreground mb-0.5">
-            {msg.sender === "patient" ? "Пацієнт" : msg.sender === "doctor" ? "Лікар" : "ШІ-асистент"} · {msg.time}
-          </p>
-          <p>{msg.text}</p>
-        </div>
-      ))}
+      {/* Chat history — messenger bubbles */}
+      {chat.filter((m) => !m.unanswered).map((msg, i) => {
+        const isPatient = msg.sender === "patient";
+        const isDoctor = msg.sender === "doctor";
+        return (
+          <div
+            key={i}
+            className={cn("flex", isPatient ? "justify-end" : "justify-start")}
+          >
+            <div
+              className={cn(
+                "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%]",
+                isPatient
+                  ? "bg-card border border-border/50 rounded-br-md"
+                  : isDoctor
+                    ? "bg-primary/15 rounded-bl-md"
+                    : "bg-[hsl(204,100%,95%)] rounded-bl-md"
+              )}
+            >
+              <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
+                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "ШІ-асистент"} · {msg.time}
+              </p>
+              <p className="text-foreground">{msg.text}</p>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ── Chat Input ──
+// ── Chat Input — Telegram style ──
 function ChatInput() {
   const [value, setValue] = useState("");
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-center gap-2 bg-[hsl(204,100%,95%)] rounded-xl px-3 py-2">
+      <div className="flex items-center gap-2 bg-[hsl(204,100%,95%)] rounded-full px-4 py-1.5">
         <input
           type="text"
           value={value}
@@ -413,8 +451,8 @@ function ChatInput() {
           placeholder="Відповісти..."
           className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
         />
-        <button className="w-10 h-10 flex items-center justify-center rounded-full bg-status-progress text-white hover:opacity-90 active:scale-[0.93] transition-all">
-          <Mic size={22} />
+        <button className="w-10 h-10 flex items-center justify-center rounded-full bg-[hsl(30,95%,62%)] text-white hover:opacity-90 active:scale-[0.93] transition-all">
+          <Mic size={24} />
         </button>
       </div>
     </div>
