@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Clock, Check, X } from "lucide-react";
+import { useState } from "react";
 
 export type PatientStatus = "ready" | "progress" | "risk";
 
