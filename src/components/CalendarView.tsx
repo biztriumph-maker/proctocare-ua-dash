@@ -382,7 +382,9 @@ function DayGrid({
 
   return (
     <div className="space-y-1">
-      {slots.map((slot, i) => (
+      {slots.map((slot, i) => {
+        const isSearchMatch = searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return (
         <div key={slot.hour} className="relative">
           <button
             onClick={() => {
@@ -397,7 +399,8 @@ function DayGrid({
               "active:scale-[0.98] animate-reveal-up",
               slot.patient
                 ? cn("border-l-2", statusColor[slot.patient.status])
-                : "hover:bg-accent/60 border border-transparent hover:border-border"
+                : "hover:bg-accent/60 border border-transparent hover:border-border",
+              isSearchMatch && "ring-2 ring-primary ring-offset-1"
             )}
             style={{ animationDelay: `${i * 40}ms` }}
           >
