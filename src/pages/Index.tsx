@@ -235,35 +235,33 @@ export default function Index() {
                 onOpenReply={handleOpenReply}
               />
 
-              {/* Tomorrow toggle */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => setShowTomorrow(!showTomorrow)}
-                  className={cn(
-                    "relative flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 active:scale-[0.96]",
-                    showTomorrow
-                      ? "bg-primary text-primary-foreground shadow-card"
-                      : "bg-[#DCFCE7] text-green-800 border border-green-300/60 shadow-card hover:shadow-card-hover"
-                  )}
-                >
-                  <ChevronRight size={12} className={cn("transition-transform duration-200", showTomorrow && "rotate-90")} />
-                  Завтра · {tomorrowStr}
+              {/* Tomorrow card — same size as AI alerts */}
+              <button
+                onClick={() => setShowTomorrow(!showTomorrow)}
+                className={cn(
+                  "w-full rounded-xl p-4 text-left transition-all duration-200 active:scale-[0.98] animate-reveal-up",
+                  showTomorrow
+                    ? "bg-primary text-primary-foreground shadow-card"
+                    : "bg-[hsl(210,40%,96%)] border-2 border-border/60 shadow-card hover:shadow-card-hover"
+                )}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays size={16} className={showTomorrow ? "text-primary-foreground" : "text-foreground"} />
+                    <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-primary-foreground" : "text-foreground")}>
+                      Завтра · {tomorrowStr}
+                    </h3>
+                  </div>
                   {tomorrowRiskCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shadow-sm">
+                    <span className="w-6 h-6 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold shadow-sm">
                       {tomorrowRiskCount}
                     </span>
                   )}
-                </button>
-                {!showTomorrow && (() => {
-                  const riskPatients = MOCK_TOMORROW.filter((p) => p.status === "risk" || p.status === "progress");
-                  const first = riskPatients.sort((a, b) => a.time.localeCompare(b.time))[0];
-                  return riskPatients.length > 0 && first ? (
-                    <span className="text-xs font-semibold text-status-risk animate-fade-in">
-                      ⚠ {riskPatients.length} потребує уваги о {first.time}
-                    </span>
-                  ) : null;
-                })()}
-              </div>
+                </div>
+                <p className={cn("text-xs", showTomorrow ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                  {MOCK_TOMORROW.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
+                </p>
+              </button>
             </div>
 
             {/* Column 2: Patient Timeline — toggles between today and tomorrow */}
