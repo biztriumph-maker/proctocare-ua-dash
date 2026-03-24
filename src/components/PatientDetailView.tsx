@@ -244,14 +244,16 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({
+    phone: profile.phone,
+    allergies: profile.allergies,
     diagnosis: profile.diagnosis,
     notes: profile.notes,
   });
 
   const rows = [
     { label: "Вік", value: `${profile.age} років` },
-    { label: "Телефон", value: profile.phone },
-    { label: "Алергії", value: profile.allergies, highlight: true },
+    { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
+    { label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" },
     { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
     { label: "Останній візит", value: profile.lastVisit },
     { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
@@ -274,27 +276,27 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
                     setEditingField(row.field!);
                   }
                 }}
-                className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all"
+                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
               >
                 {editingField === row.field ? (
-                  <Check size={12} className="text-status-ready" />
+                  <Check size={16} className="text-status-ready" />
                 ) : (
-                  <Pencil size={11} className="text-muted-foreground" />
+                  <Pencil size={14} className="text-muted-foreground" />
                 )}
               </button>
             )}
           </div>
-          {row.highlight ? (
-            <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
-              ⚠ {row.value}
-            </p>
-          ) : row.editable && editingField === row.field ? (
+          {row.editable && editingField === row.field ? (
             <textarea
               value={editValues[row.field as keyof typeof editValues]}
               onChange={(e) => setEditValues(prev => ({ ...prev, [row.field!]: e.target.value }))}
               className="w-full text-sm leading-snug font-bold text-foreground bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/40 resize-none min-h-[36px]"
               autoFocus
             />
+          ) : row.highlight ? (
+            <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
+              ⚠ {row.value}
+            </p>
           ) : (
             <p className="text-sm leading-snug font-bold text-foreground">{row.value}</p>
           )}
