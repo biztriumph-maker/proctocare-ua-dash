@@ -293,6 +293,18 @@ function WeekGrid({
     return weekDates.map((d) => getMockSlots(dateToStr(d)));
   }, [weekDates]);
 
+  const isPast = (d: Date) => {
+    const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    return target < t;
+  };
+
+  const getDaySummary = (daySlots: CalendarSlot[]) => {
+    const total = daySlots.filter(s => s.patient).length;
+    const done = daySlots.filter(s => s.patient && s.patient.status === "ready").length;
+    return { total, done };
+  };
+
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
       {/* Header row */}
@@ -300,6 +312,7 @@ function WeekGrid({
         <div className="border-r border-border bg-[hsl(204,100%,97%)]" />
         {weekDates.map((d, i) => {
           const isToday = isSameDay(d, today);
+          const past = isPast(d);
           return (
             <button
               key={i}
@@ -307,7 +320,8 @@ function WeekGrid({
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96]",
                 i < 6 && "border-r border-border",
-                isToday && "bg-[hsl(204,100%,93%)]"
+                isToday && "bg-[hsl(204,100%,93%)]",
+                past && !isToday && "bg-muted/60 opacity-70"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
@@ -315,7 +329,7 @@ function WeekGrid({
               </p>
               <p className={cn(
                 "text-base font-bold tabular-nums leading-tight mt-0.5",
-                isToday ? "text-primary" : "text-foreground"
+                isToday ? "text-primary" : past ? "text-muted-foreground" : "text-foreground"
               )}>
                 {d.getDate()}
               </p>
@@ -338,6 +352,7 @@ function WeekGrid({
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
+              const past = isPast(d);
               const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
@@ -351,7 +366,8 @@ function WeekGrid({
                 <div
                   key={di}
                   className={cn(
-                    "relative p-[5px] bg-white",
+                    "relative p-[5px]",
+                    past ? "bg-muted/40" : "bg-white",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -365,14 +381,22 @@ function WeekGrid({
                       }
                     }}
                     className={cn(
-                      "w-full h-[28px] rounded transition-all duration-150",
+                      "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
                       "active:scale-[0.90]",
                       statusBg
-                        ? cn(statusBg, "hover:opacity-85")
+                        ? cn(statusBg, past && "opacity-70", "hover:opacity-85")
                         : "bg-transparent",
                       isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
-                  />
+                  >
+                    {past && slot?.patient && (
+                      <div className="flex items-center gap-0.5">
+                        {slot.patient.status === "ready" && <Check size={10} className="text-status-ready" />}
+                        {slot.patient.status === "risk" && <span className="text-[8px] font-bold text-status-risk">Н/З</span>}
+                        {slot.patient.status === "progress" && <span className="text-[8px] font-bold text-status-progress">₴</span>}
+                      </div>
+                    )}
+                  </button>
                   {slot?.patient && activePopover === popoverKey && (
                     <SlotPopover
                       slot={slot.patient}
@@ -386,6 +410,35 @@ function WeekGrid({
             })}
           </div>
         ))}
+      </div>
+
+      {/* Daily summaries */}
+      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-t border-border">
+        <div className="border-r border-border bg-[hsl(204,100%,97%)] flex items-center justify-center">
+          <span className="text-[9px] font-bold text-muted-foreground">Σ</span>
+        </div>
+        {weekDates.map((d, di) => {
+          const past = isPast(d);
+          const summary = getDaySummary(slotsPerDay[di] || []);
+          return (
+            <div
+              key={di}
+              className={cn(
+                "text-center py-1.5",
+                di < 6 && "border-r border-border",
+                past ? "bg-muted/40" : "bg-white"
+              )}
+            >
+              {past && summary.total > 0 ? (
+                <p className="text-[9px] text-muted-foreground font-medium leading-tight">
+                  {summary.total} віз. | {summary.done} вик.
+                </p>
+              ) : (
+                <p className="text-[9px] text-muted-foreground/40">—</p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
