@@ -241,11 +241,16 @@ function SlotPopover({
   openHorizontal: "left" | "right" | "center";
 }) {
   return (
-    <div className={cn(
-      "absolute z-20 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
-      openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1",
-      openHorizontal === "left" ? "right-0" : openHorizontal === "right" ? "left-0" : "left-1/2 -translate-x-1/2"
-    )}>
+    <div
+      className={cn(
+        "absolute z-20 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
+        openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1",
+        openHorizontal === "left" ? "right-0" : openHorizontal === "right" ? "left-0" : "left-1/2 -translate-x-1/2"
+      )}
+      style={{
+        maxWidth: "calc(100vw - 32px)",
+      }}
+    >
       <div className="flex items-center justify-between">
         <button
           onClick={(e) => {
