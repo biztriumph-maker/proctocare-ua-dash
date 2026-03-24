@@ -46,7 +46,7 @@ export function SearchBar({ onSearch, className }: SearchBarProps) {
       ) : (
         <button
           onClick={() => setExpanded(true)}
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-white border-2 border-muted-foreground/40 shadow-sm hover:shadow-md active:scale-[0.93] transition-all"
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white border-2 border-foreground/50 shadow-sm hover:shadow-md hover:border-primary active:scale-[0.93] transition-all"
         >
           <Search size={16} className="text-muted-foreground" />
         </button>

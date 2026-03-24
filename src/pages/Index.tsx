@@ -364,19 +364,19 @@ export default function Index() {
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
                         return filtered.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                         ));
                       }
                       return (
                         <>
                           <div className="space-y-2 sm:space-y-3">
                             {morning.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                             ))}
                           </div>
                           <div className="space-y-2 sm:space-y-3">
                             {afternoon.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                             ))}
                           </div>
                         </>

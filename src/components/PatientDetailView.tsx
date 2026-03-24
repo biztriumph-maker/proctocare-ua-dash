@@ -298,7 +298,12 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
               ⚠ {row.value}
             </p>
           ) : (
-            <p className="text-sm leading-snug font-bold text-foreground">{row.value}</p>
+            <button
+              onClick={() => row.editable && setEditingField(row.field!)}
+              className={cn("text-sm leading-snug font-bold text-foreground text-left", row.editable && "cursor-pointer hover:text-primary transition-colors")}
+            >
+              {row.value}
+            </button>
           )}
         </div>
       ))}
@@ -388,10 +393,10 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
   );
 }
 
-// ── Chat Pane — Messenger style ──
+// ── Chat Pane — Messenger Premium style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
-    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(220,13%,91%)]">
+    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(220,14%,90%)]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
@@ -439,13 +444,13 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
   );
 }
 
-// ── Chat Input — Telegram style ──
+// ── Chat Input — single mic button, no arrow ──
 function ChatInput() {
   const [value, setValue] = useState("");
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-        <div className="flex items-center gap-2 bg-[hsl(200,100%,96%)] rounded-full px-4 py-1.5">
+      <div className="flex items-center gap-2 bg-[hsl(200,100%,96%)] rounded-full px-4 py-1.5">
         <input
           type="text"
           value={value}

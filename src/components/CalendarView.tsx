@@ -14,12 +14,6 @@ interface CalendarViewProps {
   searchQuery?: string;
 }
 
-const statusColor: Record<PatientStatus, string> = {
-  ready: "bg-status-ready-bg border-status-ready/30",
-  progress: "bg-status-progress-bg border-status-progress/30",
-  risk: "bg-status-risk-bg border-status-risk/30",
-};
-
 const statusDot: Record<PatientStatus, string> = {
   ready: "bg-status-ready",
   progress: "bg-status-progress",
@@ -230,20 +224,25 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "" }: 
   );
 }
 
-// ── Slot Popover (clickable) ──
+// ── Slot Popover ──
 function SlotPopover({
   slot,
   hour,
   onClose,
   onPatientClick,
+  openDirection,
 }: {
   slot: { name: string; status: PatientStatus; procedure: string };
   hour: number;
   onClose: () => void;
   onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
+  openDirection: "up" | "down";
 }) {
   return (
-    <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up sm:bottom-auto sm:top-full sm:mb-0 sm:mt-1">
+    <div className={cn(
+      "absolute z-20 left-1/2 -translate-x-1/2 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
+      openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
+    )}>
       <div className="flex items-center justify-between">
         <button
           onClick={(e) => {
@@ -299,7 +298,6 @@ function WeekGrid({
     return target < t;
   };
 
-
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
       {/* Header row */}
@@ -316,7 +314,7 @@ function WeekGrid({
                 "text-center py-2 transition-all active:scale-[0.96]",
                 i < 6 && "border-r border-border",
                 isToday && "bg-[hsl(204,100%,93%)]",
-                past && !isToday && "bg-muted/60 opacity-70"
+                past && !isToday && "bg-[hsl(214,20%,89%)] opacity-70"
               )}
             >
               <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
@@ -349,6 +347,10 @@ function WeekGrid({
               const popoverKey = `${di}-${hour}`;
               const past = isPast(d);
               const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+
+              // Determine popover direction: open up if in bottom half of grid
+              const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
+
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
                   ? "bg-status-ready-bg border border-status-ready/25"
@@ -362,7 +364,7 @@ function WeekGrid({
                   key={di}
                   className={cn(
                     "relative p-[5px]",
-                    past ? "bg-muted/40" : "bg-white",
+                    past ? "bg-[hsl(214,20%,89%)]" : "bg-white",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -379,16 +381,16 @@ function WeekGrid({
                       "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
                       "active:scale-[0.90]",
                       statusBg
-                        ? cn(statusBg, past && "opacity-70", "hover:opacity-85")
+                        ? cn(statusBg, past && "opacity-50", "hover:opacity-85")
                         : "bg-transparent",
                       isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
                   >
                     {past && slot?.patient && (
                       <div className="flex items-center gap-0.5">
-                        {slot.patient.status === "ready" && <Check size={10} className="text-status-ready" />}
-                        {slot.patient.status === "risk" && <span className="text-[8px] font-bold text-status-risk">Н/З</span>}
-                        {slot.patient.status === "progress" && <span className="text-[8px] font-bold text-status-progress">₴</span>}
+                        {slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
+                        {slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
+                        {slot.patient.status === "progress" && <span className="text-[9px] font-extrabold text-status-risk">₴</span>}
                       </div>
                     )}
                   </button>
@@ -398,6 +400,7 @@ function WeekGrid({
                       hour={hour}
                       onClose={() => setActivePopover(null)}
                       onPatientClick={onPatientClick}
+                      openDirection={openDirection as "up" | "down"}
                     />
                   )}
                 </div>
@@ -406,7 +409,6 @@ function WeekGrid({
           </div>
         ))}
       </div>
-
     </div>
   );
 }
@@ -424,50 +426,55 @@ function DayGrid({
   searchQuery?: string;
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
-  
+
+  const statusColor: Record<PatientStatus, string> = {
+    ready: "bg-status-ready-bg border-status-ready/30",
+    progress: "bg-status-progress-bg border-status-progress/30",
+    risk: "bg-status-risk-bg border-status-risk/30",
+  };
 
   return (
     <div className="space-y-1">
       {slots.map((slot, i) => {
         const isSearchMatch = searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
         return (
-        <div key={slot.hour} className="relative">
-          <button
-            onClick={() => {
-              if (slot.patient) {
-                onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00` });
-              } else {
-                onSlotClick(date, slot.hour);
-              }
-            }}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
-              "active:scale-[0.98] animate-reveal-up",
-              slot.patient
-                ? cn("border-l-2", statusColor[slot.patient.status])
-                : "hover:bg-accent/60 border border-transparent hover:border-border",
-              isSearchMatch && "ring-2 ring-primary ring-offset-1"
-            )}
-            style={{ animationDelay: `${i * 40}ms` }}
-          >
-            <span className="text-sm font-bold text-foreground tabular-nums w-12 shrink-0">
-              {String(slot.hour).padStart(2, "0")}:00
-            </span>
-            {slot.patient ? (
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                <span className="text-[15px] font-semibold text-foreground truncate">
-                  {slot.patient.name}
-                </span>
-                <span className="text-sm text-muted-foreground truncate ml-auto">
-                  {slot.patient.procedure}
-                </span>
-              </div>
-            ) : (
-              <span className="text-xs text-muted-foreground/50">— вільно —</span>
-            )}
-          </button>
-        </div>
+          <div key={slot.hour} className="relative">
+            <button
+              onClick={() => {
+                if (slot.patient) {
+                  onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00` });
+                } else {
+                  onSlotClick(date, slot.hour);
+                }
+              }}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
+                "active:scale-[0.98] animate-reveal-up",
+                slot.patient
+                  ? cn("border-l-2", statusColor[slot.patient.status])
+                  : "hover:bg-accent/60 border border-transparent hover:border-border",
+                isSearchMatch && "ring-2 ring-primary ring-offset-1"
+              )}
+              style={{ animationDelay: `${i * 40}ms` }}
+            >
+              <span className="text-sm font-bold text-foreground tabular-nums w-12 shrink-0">
+                {String(slot.hour).padStart(2, "0")}:00
+              </span>
+              {slot.patient ? (
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                  <span className="text-[15px] font-semibold text-foreground truncate">
+                    {slot.patient.name}
+                  </span>
+                  <span className="text-sm text-muted-foreground truncate ml-auto">
+                    {slot.patient.procedure}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground/50">— вільно —</span>
+              )}
+            </button>
+          </div>
         );
       })}
     </div>
