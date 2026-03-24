@@ -146,27 +146,29 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               maxLength={10}
               className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Вік:{" "}
-              {(() => {
-                const parts = birthDate.split(".");
-                if (parts.length === 3 && parts[2].length === 4) {
-                  const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
-                  if (!isNaN(bd.getTime())) {
-                    const today = new Date();
-                    let age = today.getFullYear() - bd.getFullYear();
-                    const m = today.getMonth() - bd.getMonth();
-                    if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
-                    if (age >= 0 && age < 150) {
-                      const ld = age % 10, lt = age % 100;
-                      const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
-                      return <span className="text-primary font-semibold">{age} {s}</span>;
+            <div className="flex items-center gap-2 mt-1.5 px-3 py-2 rounded-lg border bg-background">
+              <span className="text-sm font-medium text-foreground">Вік:</span>
+              <span className="text-sm font-medium text-foreground">
+                {(() => {
+                  const parts = birthDate.split(".");
+                  if (parts.length === 3 && parts[2].length === 4) {
+                    const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+                    if (!isNaN(bd.getTime())) {
+                      const today = new Date();
+                      let age = today.getFullYear() - bd.getFullYear();
+                      const m = today.getMonth() - bd.getMonth();
+                      if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+                      if (age >= 0 && age < 150) {
+                        const ld = age % 10, lt = age % 100;
+                        const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
+                        return `${age} ${s}`;
+                      }
                     }
                   }
-                }
-                return <span className="text-muted-foreground/50">—</span>;
-              })()}
-            </p>
+                  return "—";
+                })()}
+              </span>
+            </div>
           </div>
 
           {/* Phone */}
