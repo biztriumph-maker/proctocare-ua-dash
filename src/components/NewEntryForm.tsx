@@ -44,6 +44,7 @@ const HOURS = Array.from({ length: 10 }, (_, i) => i + 8);
 
 export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
   const [procedure, setProcedure] = useState("");
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
