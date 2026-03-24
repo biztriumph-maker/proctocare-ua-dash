@@ -176,6 +176,15 @@ export default function Index() {
     setSelectedPatient(patient);
   }, []);
 
+  const handleNoShow = useCallback((patientId: string) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, noShow: true } : p
+      )
+    );
+    toast("Пацієнта позначено як «Не з'явився»");
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
@@ -185,7 +194,7 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/60 px-3 sm:px-6 pt-2 pb-2 sm:pt-3 sm:pb-3 space-y-1.5 sm:space-y-2.5">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b-[2px] border-white px-3 sm:px-6 pt-2 pb-2 sm:pt-3 sm:pb-3 space-y-1.5 sm:space-y-2.5 shadow-[0_2px_4px_rgba(0,0,0,0.06)]">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div>
             <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
@@ -346,19 +355,19 @@ export default function Index() {
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
                         return filtered.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
                         ));
                       }
                       return (
                         <>
                           <div className="space-y-2 sm:space-y-3">
                             {morning.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
                             ))}
                           </div>
                           <div className="space-y-2 sm:space-y-3">
                             {afternoon.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
                             ))}
                           </div>
                         </>

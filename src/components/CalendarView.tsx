@@ -243,7 +243,7 @@ function SlotPopover({
   onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
 }) {
   return (
-    <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
+    <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up sm:bottom-auto sm:top-full sm:mb-0 sm:mt-1">
       <div className="flex items-center justify-between">
         <button
           onClick={(e) => {
@@ -299,11 +299,6 @@ function WeekGrid({
     return target < t;
   };
 
-  const getDaySummary = (daySlots: CalendarSlot[]) => {
-    const total = daySlots.filter(s => s.patient).length;
-    const done = daySlots.filter(s => s.patient && s.patient.status === "ready").length;
-    return { total, done };
-  };
 
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
@@ -412,34 +407,6 @@ function WeekGrid({
         ))}
       </div>
 
-      {/* Daily summaries */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-t border-border">
-        <div className="border-r border-border bg-[hsl(204,100%,97%)] flex items-center justify-center">
-          <span className="text-[9px] font-bold text-muted-foreground">Σ</span>
-        </div>
-        {weekDates.map((d, di) => {
-          const past = isPast(d);
-          const summary = getDaySummary(slotsPerDay[di] || []);
-          return (
-            <div
-              key={di}
-              className={cn(
-                "text-center py-1.5",
-                di < 6 && "border-r border-border",
-                past ? "bg-muted/40" : "bg-white"
-              )}
-            >
-              {past && summary.total > 0 ? (
-                <p className="text-[9px] text-muted-foreground font-medium leading-tight">
-                  {summary.total} віз. | {summary.done} вик.
-                </p>
-              ) : (
-                <p className="text-[9px] text-muted-foreground/40">—</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
