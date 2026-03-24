@@ -399,12 +399,13 @@ function WeekGrid({
                     )}
                   </button>
                   {slot?.patient && activePopover === popoverKey && (
-                    <SlotPopover
+                     <SlotPopover
                       slot={slot.patient}
                       hour={hour}
                       onClose={() => setActivePopover(null)}
                       onPatientClick={onPatientClick}
                       openDirection={openDirection as "up" | "down"}
+                      openHorizontal={openHorizontal}
                     />
                   )}
                 </div>

@@ -91,16 +91,16 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
         </button>
       </div>
 
-      {/* Action buttons — OUTSIDE the card, with safety spacing */}
+      {/* Action buttons — OUTSIDE the card, full width, grey outline */}
       {!patient.noShow && !patient.completed && (onNoShow || onComplete) && (
-        <div className="flex items-center gap-2 pl-3 sm:pl-4 mt-1">
+        <div className="flex items-center gap-2 mt-2">
           {onComplete && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onComplete(patient.id);
               }}
-              className="flex items-center gap-1 text-[11px] font-bold text-status-ready bg-transparent hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-ready/40"
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-ready hover:border-status-ready/60 hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-ready border border-border"
             >
               <Check size={12} strokeWidth={3} />
               Прийом завершено
@@ -112,10 +112,10 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                 e.stopPropagation();
                 onNoShow(patient.id);
               }}
-              className="flex items-center gap-1 text-[11px] font-bold text-status-risk bg-transparent hover:bg-status-risk-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] border border-status-risk/40"
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-risk hover:border-status-risk/60 hover:bg-status-risk-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-risk border border-border"
             >
               <X size={12} strokeWidth={3} />
-              Пацієнт не з'явився
+              Не з'явився
             </button>
           )}
         </div>
