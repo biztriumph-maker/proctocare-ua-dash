@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Clock, Activity } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Clock, Activity, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -104,7 +104,7 @@ function getPreparationProgress(status: PatientStatus): { percent: number; steps
 
 export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState<"profile" | "chat" | "tracker">("chat");
+  const [activeTab, setActiveTab] = useState<"card" | "assistant">("card");
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
@@ -114,14 +114,14 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
 
-      <div className="relative w-full max-w-4xl bg-background rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-4xl bg-[hsl(210,20%,98%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-muted-foreground/25" />
         </div>
 
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60">
+        {/* Sticky Header */}
+        <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60 bg-card rounded-t-2xl">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5 mb-1.5">
               <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[patient.status])} />
@@ -139,23 +139,32 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               </span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {isMobile && (
+              <a
+                href={`tel:${profile.phone}`}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-status-ready text-white shadow-sm active:scale-[0.93] transition-all"
+              >
+                <Phone size={16} />
+              </a>
+            )}
+            <button
+              onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Mobile: tabs | Desktop: side-by-side */}
         {isMobile ? (
           <>
-            {/* Tab bar — pill style */}
-            <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-surface-sunken border border-border/60">
+            {/* Tab bar — 2 tabs: Карта / Асистент */}
+            <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-[hsl(var(--surface-sunken))] border border-border/60">
               {([
-                { key: "profile" as const, label: "Профіль", icon: <User size={14} /> },
-                { key: "chat" as const, label: "Чат", icon: <MessageCircle size={14} />, badge: unanswered.length },
-                { key: "tracker" as const, label: "Трекер", icon: <Activity size={14} /> },
+                { key: "card" as const, label: "Карта", icon: <User size={14} /> },
+                { key: "assistant" as const, label: "Асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
                   key={tab.key}
@@ -177,10 +186,21 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {activeTab === "profile" ? (
-                <ProfilePane profile={profile} />
-              ) : activeTab === "tracker" ? (
-                <TrackerPane preparation={preparation} status={patient.status} />
+              {activeTab === "card" ? (
+                <div className="p-4 space-y-3">
+                  <InfoCard>
+                    <ProfilePane profile={profile} />
+                  </InfoCard>
+                  <InfoCard>
+                    <div className="px-4 py-3">
+                      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-3">
+                        <Activity size={13} />
+                        Трекер підготовки
+                      </h3>
+                      <TrackerPane preparation={preparation} status={patient.status} />
+                    </div>
+                  </InfoCard>
+                </div>
               ) : (
                 <ChatPane chat={chat} unanswered={unanswered} />
               )}
@@ -189,45 +209,59 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
         ) : (
           /* Desktop: side-by-side — 30/70 split */
           <div className="flex flex-1 overflow-hidden">
-            {/* Left: Profile — fixed width */}
-            <div className="w-[300px] xl:w-[340px] border-r border-border/60 overflow-y-auto shrink-0">
-              <div className="px-5 py-3 border-b border-border/40">
-                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <User size={13} />
-                  Профіль пацієнта
-                </h3>
-              </div>
-              <ProfilePane profile={profile} />
+            {/* Left: Profile */}
+            <div className="w-[300px] xl:w-[340px] overflow-y-auto shrink-0 p-4 space-y-3">
+              <InfoCard>
+                <div className="px-4 py-3 border-b border-border/40">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <User size={13} />
+                    Профіль пацієнта
+                  </h3>
+                </div>
+                <ProfilePane profile={profile} />
+              </InfoCard>
 
-              {/* Preparation tracker inline on desktop */}
-              <div className="px-5 py-3 border-t border-border/40">
-                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-3">
-                  <Activity size={13} />
-                  Трекер підготовки
-                </h3>
-                <TrackerPaneCompact preparation={preparation} status={patient.status} />
-              </div>
+              <InfoCard>
+                <div className="px-4 py-3">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-3">
+                    <Activity size={13} />
+                    Трекер підготовки
+                  </h3>
+                  <TrackerPaneCompact preparation={preparation} status={patient.status} />
+                </div>
+              </InfoCard>
             </div>
 
             {/* Right: Chat workspace */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-5 py-3 border-b border-border/40 flex items-center justify-between">
-                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <MessageCircle size={13} />
-                  Чат підготовки
-                </h3>
-                {unanswered.length > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
-                    <AlertTriangle size={12} />
-                    {unanswered.length} без відповіді
-                  </span>
-                )}
-              </div>
-              <ChatPane chat={chat} unanswered={unanswered} />
+            <div className="flex-1 flex flex-col overflow-hidden p-4 pl-0">
+              <InfoCard className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-5 py-3 border-b border-border/40 flex items-center justify-between shrink-0">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <MessageCircle size={13} />
+                    Чат підготовки
+                  </h3>
+                  {unanswered.length > 0 && (
+                    <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
+                      <AlertTriangle size={12} />
+                      {unanswered.length} без відповіді
+                    </span>
+                  )}
+                </div>
+                <ChatPane chat={chat} unanswered={unanswered} />
+              </InfoCard>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── White Info Card wrapper ──
+function InfoCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("bg-card rounded-xl border border-border/50 shadow-sm overflow-hidden", className)}>
+      {children}
     </div>
   );
 }
@@ -244,18 +278,19 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
   ];
 
   return (
-    <div className="p-5 space-y-3.5">
+    <div className="p-4 space-y-3">
       {rows.map((row) => (
         <div key={row.label}>
           <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-0.5">
             {row.label}
           </p>
-          <p className={cn(
-            "text-sm leading-snug",
-            row.highlight ? "text-status-risk font-semibold" : "text-foreground"
-          )}>
-            {row.value}
-          </p>
+          {row.highlight ? (
+            <p className="text-sm leading-snug font-semibold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
+              ⚠ {row.value}
+            </p>
+          ) : (
+            <p className="text-sm leading-snug text-foreground">{row.value}</p>
+          )}
         </div>
       ))}
     </div>
@@ -265,7 +300,7 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
 // ── Tracker Pane (mobile full) ──
 function TrackerPane({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
   return (
-    <div className="p-5 space-y-4">
+    <div className="space-y-4">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-semibold text-foreground">Прогрес підготовки</span>
@@ -289,16 +324,11 @@ function TrackerPane({ preparation, status }: { preparation: ReturnType<typeof g
           <div key={i} className="flex items-center gap-3">
             <div className={cn(
               "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
-              step.done
-                ? "bg-status-ready text-white"
-                : "bg-muted text-muted-foreground"
+              step.done ? "bg-status-ready text-white" : "bg-muted text-muted-foreground"
             )}>
               {step.done ? "✓" : i + 1}
             </div>
-            <span className={cn(
-              "text-sm",
-              step.done ? "text-foreground" : "text-muted-foreground"
-            )}>
+            <span className={cn("text-sm", step.done ? "text-foreground" : "text-muted-foreground")}>
               {step.label}
             </span>
           </div>
@@ -335,16 +365,11 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
           <div key={i} className="flex items-center gap-2">
             <div className={cn(
               "w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
-              step.done
-                ? "bg-status-ready text-white"
-                : "bg-muted text-muted-foreground"
+              step.done ? "bg-status-ready text-white" : "bg-muted text-muted-foreground"
             )}>
               {step.done ? "✓" : i + 1}
             </div>
-            <span className={cn(
-              "text-xs",
-              step.done ? "text-foreground" : "text-muted-foreground"
-            )}>
+            <span className={cn("text-xs", step.done ? "text-foreground" : "text-muted-foreground")}>
               {step.label}
             </span>
           </div>
@@ -381,10 +406,10 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
           className={cn(
             "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%]",
             msg.sender === "patient"
-              ? "bg-muted/60 text-foreground mr-auto"
+              ? "bg-card text-foreground mr-auto border border-border/40"
               : msg.sender === "doctor"
                 ? "bg-primary/15 text-foreground ml-auto"
-                : "bg-primary/8 text-foreground ml-auto"
+                : "bg-[hsl(200,80%,96%)] text-foreground ml-auto"
           )}
         >
           <p className="text-xs font-semibold text-muted-foreground mb-0.5">
