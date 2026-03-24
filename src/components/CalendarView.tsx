@@ -243,7 +243,7 @@ function SlotPopover({
   onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
 }) {
   return (
-    <div className="absolute z-20 top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up">
+    <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up sm:bottom-auto sm:top-full sm:mb-0 sm:mt-1">
       <div className="flex items-center justify-between">
         <button
           onClick={(e) => {
