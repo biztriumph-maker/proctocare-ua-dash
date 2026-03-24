@@ -239,7 +239,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 <Bot size={16} className="text-primary" />
               </div>
               <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-foreground">Запустити ІІ-підготовку</p>
+                <p className="text-[12px] font-semibold text-foreground">Запустити ШІ-підготовку</p>
                 <p className="text-[10px] text-muted-foreground">Бот надішле інструкції пацієнту</p>
               </div>
             </div>
