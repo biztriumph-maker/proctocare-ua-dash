@@ -162,7 +162,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                 >
                   {tab.icon}
                   {tab.label}
-                  {tab.badge && tab.badge > 0 && (
+                  {tab.badge != null && tab.badge > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-status-risk animate-pulse" />
                   )}
                 </button>
