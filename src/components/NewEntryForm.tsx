@@ -60,7 +60,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
   const handleSave = () => {
     if (!name || !date || !time || !procedure) return;
-    onSave({ name, phone, procedure, date, time, notes, aiPrep });
+    onSave({ name, birthDate, phone, procedure, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
