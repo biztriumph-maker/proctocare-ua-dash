@@ -391,12 +391,12 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
 // ── Chat Pane — Messenger style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
-    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1">
+    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(210,40%,96%)]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
           key={`pinned-${i}`}
-          className="rounded-xl px-4 py-3 text-sm leading-relaxed bg-status-risk-bg border-2 border-status-risk/30 animate-reveal-up"
+          className="rounded-xl px-4 py-3 text-sm leading-relaxed bg-status-risk-bg border-2 border-status-risk/30 shadow-[0_2px_8px_rgba(0,0,0,0.06)] animate-reveal-up"
         >
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={14} className="text-status-risk shrink-0" />
@@ -419,12 +419,12 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
           >
             <div
               className={cn(
-                "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%]",
+                "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%] shadow-[0_2px_6px_rgba(0,0,0,0.06)]",
                 isPatient
-                  ? "bg-card border border-border/50 rounded-br-md"
+                  ? "bg-white border border-border/50 rounded-br-sm"
                   : isDoctor
-                    ? "bg-primary/15 rounded-bl-md"
-                    : "bg-[hsl(204,100%,95%)] rounded-bl-md"
+                    ? "bg-primary/15 rounded-bl-sm"
+                    : "bg-[hsl(204,100%,94%)] rounded-bl-sm"
               )}
             >
               <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
