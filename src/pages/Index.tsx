@@ -143,7 +143,7 @@ export default function Index() {
       setPatients((prev) => [...prev, newPatient]);
       setSelectedPatient(newPatient);
       toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
-        description: entry.aiPrep ? "ІІ-бот розпочав підготовку" : undefined,
+        description: entry.aiPrep ? "ШІ-бот розпочав підготовку" : undefined,
       });
     }, 1500);
     setTimeout(() => setNewlyCreatedId(null), 4500);
