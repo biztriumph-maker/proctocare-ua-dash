@@ -126,6 +126,36 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             )}
           </div>
 
+          {/* Birth Date */}
+          <div>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              Дата народження *
+            </label>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+            />
+            {birthDate && (() => {
+              const today = new Date();
+              const bd = new Date(birthDate + "T00:00:00");
+              let age = today.getFullYear() - bd.getFullYear();
+              const m = today.getMonth() - bd.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+              if (age >= 0 && age < 150) {
+                const lastDigit = age % 10;
+                const lastTwo = age % 100;
+                const suffix = (lastTwo >= 11 && lastTwo <= 14) ? "років"
+                  : lastDigit === 1 ? "рік"
+                  : (lastDigit >= 2 && lastDigit <= 4) ? "роки"
+                  : "років";
+                return <p className="text-xs text-primary font-medium mt-1">{age} {suffix}</p>;
+              }
+              return null;
+            })()}
+          </div>
+
           {/* Phone */}
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
