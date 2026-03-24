@@ -10,6 +10,8 @@ export interface Patient {
   procedure: string;
   status: PatientStatus;
   aiSummary: string;
+  paid?: boolean;
+  noShow?: boolean;
 }
 
 interface PatientCardProps {
