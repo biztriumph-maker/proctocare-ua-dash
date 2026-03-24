@@ -367,13 +367,12 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 
 // ── Profile Pane with editable fields ──
 function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getMockProfile>; onFocusEdit: (field: string, value: string) => void }) {
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState({
+  const editValues = {
     phone: profile.phone,
     allergies: profile.allergies,
     diagnosis: profile.diagnosis,
     notes: profile.notes,
-  });
+  };
 
   const rows = [
     { label: "Вік", value: `${profile.age} років` },
