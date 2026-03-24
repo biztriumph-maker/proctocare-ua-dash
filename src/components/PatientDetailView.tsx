@@ -180,6 +180,15 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                     <TrackerPane preparation={preparation} status={patient.status} />
                   </ContentBlock>
                 </div>
+              ) : activeTab === "files" ? (
+                <div className="p-4 space-y-3">
+                  <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
+                    <FilesPane />
+                  </ContentBlock>
+                  <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
+                    <PricePane />
+                  </ContentBlock>
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <ChatPane chat={chat} unanswered={unanswered} />
