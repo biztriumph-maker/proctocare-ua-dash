@@ -19,6 +19,7 @@ interface PatientCardProps {
   index: number;
   onClick?: (patient: Patient) => void;
   isNew?: boolean;
+  onNoShow?: (patientId: string) => void;
 }
 
 const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string }> = {
