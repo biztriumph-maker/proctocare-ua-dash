@@ -445,7 +445,7 @@ function ChatInput() {
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-center gap-2 bg-[hsl(200,100%,95%)] rounded-full px-4 py-1.5">
+        <div className="flex items-center gap-2 bg-[hsl(200,100%,96%)] rounded-full px-4 py-1.5">
         <input
           type="text"
           value={value}
