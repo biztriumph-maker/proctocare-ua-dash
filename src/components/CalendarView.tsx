@@ -215,13 +215,14 @@ export function CalendarView({ onSlotClick, searchQuery = "" }: CalendarViewProp
         <WeekGrid
           weekDates={weekDates}
           onSlotClick={onSlotClick}
+          searchQuery={searchQuery}
           onSelectDay={(d) => {
             setCurrentDate(d);
             setViewMode("day");
           }}
         />
       ) : (
-        <DayGrid date={currentDate} onSlotClick={onSlotClick} />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} searchQuery={searchQuery} />
       )}
     </div>
   );
