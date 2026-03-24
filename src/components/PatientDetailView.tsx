@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Check, FileText, Upload, Plus } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Check, FileText, Upload, Plus, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -87,16 +87,33 @@ function getPreparationProgress(status: PatientStatus): { percent: number; steps
 export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
+  const [focusField, setFocusField] = useState<{ field: string; value: string } | null>(null);
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient.status);
 
+  const handleFocusOpen = (field: string, value: string) => {
+    setFocusField({ field, value });
+  };
+
+  const handleFocusSave = () => {
+    // In real app, save the value
+    setFocusField(null);
+  };
+
+  const handleFocusCancel = () => {
+    setFocusField(null);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
 
-      <div className="relative w-full max-w-4xl bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col">
+      <div className={cn(
+        "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
+        "max-w-[90vw]"
+      )}>
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-muted-foreground/25" />
@@ -148,7 +165,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             <div className="flex gap-1 p-1.5 mx-4 mt-2 rounded-xl bg-[hsl(199,89%,86%)] border border-sky-300/60">
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
-                { key: "files" as const, label: "Файли", icon: <FileText size={14} /> },
+                { key: "files" as const, label: "Обстеження", icon: <FileText size={14} /> },
                 { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
@@ -174,7 +191,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               {activeTab === "card" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                    <ProfilePane profile={profile} />
+                    <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                     <TrackerPane preparation={preparation} status={patient.status} />
@@ -183,7 +200,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane />
+                    <FilesPane onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                   <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
                     <PricePane />
@@ -199,22 +216,24 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
           </>
         ) : (
           <div className="flex flex-1 overflow-hidden">
-            <div className="w-[300px] xl:w-[340px] overflow-y-auto shrink-0 p-4 space-y-3">
+            {/* Left column: 40% */}
+            <div className="w-[40%] overflow-y-auto shrink-0 p-4 space-y-3">
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                <ProfilePane profile={profile} />
+                <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane />
+                <FilesPane onFocusEdit={handleFocusOpen} />
               </ContentBlock>
               <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
                 <PricePane />
               </ContentBlock>
             </div>
 
-            <div className="flex-1 flex flex-col overflow-hidden p-4 pl-0">
+            {/* Right column: 60% */}
+            <div className="w-[60%] flex flex-col overflow-hidden p-4 pl-0">
               <ContentBlock title="Штучний інтелект" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={unanswered.length > 0 ? (
                   <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
@@ -229,6 +248,96 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             </div>
           </div>
         )}
+
+        {/* ── Focus Mode Overlay ── */}
+        {focusField && (
+          <FocusOverlay
+            field={focusField.field}
+            value={focusField.value}
+            patientName={patient.name}
+            allergies={profile.allergies}
+            onSave={handleFocusSave}
+            onCancel={handleFocusCancel}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Focus Mode Overlay ──
+function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }: {
+  field: string;
+  value: string;
+  patientName: string;
+  allergies: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(value);
+
+  const fieldLabels: Record<string, string> = {
+    protocol: "Протокол огляду",
+    phone: "Телефон",
+    allergies: "Алергії",
+    diagnosis: "Діагноз",
+    notes: "Нотатки",
+  };
+
+  return (
+    <div className="absolute inset-0 z-60 flex flex-col animate-fade-in">
+      {/* Blurred backdrop */}
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+
+      {/* Content */}
+      <div className="relative flex flex-col h-full">
+        {/* Pinned patient safety header */}
+        <div className="shrink-0 px-5 py-3 bg-card border-b border-border/60 shadow-sm">
+          <div className="flex items-center gap-3">
+            <User size={16} className="text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-foreground">{patientName}</p>
+              <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-block mt-0.5">
+                ⚠ Алергія: {allergies}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Centered editing area — 70-80% of workspace */}
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
+          <div className="w-full max-w-3xl bg-card rounded-2xl shadow-2xl border border-border/40 overflow-hidden" style={{ maxHeight: "75vh" }}>
+            <div className="px-5 py-3 border-b border-border/40 bg-[hsl(204,100%,97%)]">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <Pencil size={14} className="text-primary" />
+                {fieldLabels[field] || field}
+              </h3>
+            </div>
+            <div className="p-5">
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                style={{ minHeight: "200px", maxHeight: "50vh" }}
+                autoFocus
+              />
+            </div>
+            <div className="px-5 py-3 border-t border-border/40 flex items-center justify-end gap-3">
+              <button
+                onClick={onCancel}
+                className="px-5 py-2 text-sm font-bold text-muted-foreground bg-transparent border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={onSave}
+                className="px-5 py-2 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
+              >
+                Зберегти
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -257,7 +366,7 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }) {
+function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getMockProfile>; onFocusEdit: (field: string, value: string) => void }) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({
     phone: profile.phone,
@@ -285,37 +394,20 @@ function ProfilePane({ profile }: { profile: ReturnType<typeof getMockProfile> }
             </p>
             {row.editable && (
               <button
-                onClick={() => {
-                  if (editingField === row.field) {
-                    setEditingField(null);
-                  } else {
-                    setEditingField(row.field!);
-                  }
-                }}
+                onClick={() => onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
               >
-                {editingField === row.field ? (
-                  <Check size={16} className="text-status-ready" />
-                ) : (
-                  <Pencil size={14} className="text-muted-foreground" />
-                )}
+                <Pencil size={14} className="text-muted-foreground" />
               </button>
             )}
           </div>
-          {row.editable && editingField === row.field ? (
-            <textarea
-              value={editValues[row.field as keyof typeof editValues]}
-              onChange={(e) => setEditValues(prev => ({ ...prev, [row.field!]: e.target.value }))}
-              className="w-full text-sm leading-snug font-bold text-foreground bg-background border border-border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/40 resize-none min-h-[36px]"
-              autoFocus
-            />
-          ) : row.highlight ? (
+          {row.highlight ? (
             <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
               ⚠ {row.value}
             </p>
           ) : (
             <button
-              onClick={() => row.editable && setEditingField(row.field!)}
+              onClick={() => row.editable && onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
               className={cn("text-sm leading-snug font-bold text-foreground text-left", row.editable && "cursor-pointer hover:text-primary transition-colors")}
             >
               {row.value}
@@ -416,9 +508,8 @@ const MOCK_FILES = [
   { name: "Протокол колоноскопії.pdf", type: "doctor" as const, date: "24.03.2026" },
 ];
 
-function FilesPane() {
-  const [protocolText, setProtocolText] = useState("Огляд проведено. Слизова без патологій. Рекомендовано контрольний огляд через 6 місяців.");
-  const [editingProtocol, setEditingProtocol] = useState(false);
+function FilesPane({ onFocusEdit }: { onFocusEdit: (field: string, value: string) => void }) {
+  const [protocolText] = useState("Огляд проведено. Слизова без патологій. Рекомендовано контрольний огляд через 6 місяців.");
 
   return (
     <div className="px-4 pb-4 space-y-4">
@@ -430,22 +521,13 @@ function FilesPane() {
             Протокол огляду
           </h4>
           <button
-            onClick={() => setEditingProtocol(!editingProtocol)}
+            onClick={() => onFocusEdit("protocol", protocolText)}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
           >
-            {editingProtocol ? <Check size={14} className="text-status-ready" /> : <Pencil size={12} className="text-muted-foreground" />}
+            <Pencil size={12} className="text-muted-foreground" />
           </button>
         </div>
-        {editingProtocol ? (
-          <textarea
-            value={protocolText}
-            onChange={(e) => setProtocolText(e.target.value)}
-            className="w-full text-sm leading-relaxed text-foreground bg-white border border-border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/40 resize-none min-h-[80px]"
-            autoFocus
-          />
-        ) : (
-          <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
-        )}
+        <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
       </div>
 
       {/* Files block */}
@@ -464,7 +546,7 @@ function FilesPane() {
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
-                <FileText size={12} className="text-muted-foreground" />
+                <Eye size={12} className="text-muted-foreground" />
               </button>
               <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Редагувати">
                 <Pencil size={12} className="text-muted-foreground" />
