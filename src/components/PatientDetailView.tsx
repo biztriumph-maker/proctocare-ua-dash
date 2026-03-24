@@ -391,7 +391,7 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
 // ── Chat Pane — Messenger style ──
 function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
   return (
-    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(210,40%,96%)]">
+    <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(215,25%,89%)]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
