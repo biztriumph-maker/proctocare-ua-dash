@@ -185,6 +185,15 @@ export default function Index() {
     toast("Пацієнта позначено як «Не з'явився»");
   }, []);
 
+  const handleComplete = useCallback((patientId: string) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, completed: true, status: "ready" as PatientStatus } : p
+      )
+    );
+    toast.success("Процедуру позначено як виконану");
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
