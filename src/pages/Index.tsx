@@ -264,7 +264,7 @@ export default function Index() {
                 )}
               >
                 <div className="flex items-center justify-center gap-2 mb-2">
-                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-primary-foreground" : "text-foreground")}>
+                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-white" : "text-foreground")}>
                     Завтра · {tomorrowStr}
                   </h3>
                   {tomorrowRiskCount > 0 && (

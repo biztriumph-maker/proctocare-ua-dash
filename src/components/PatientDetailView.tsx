@@ -406,7 +406,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={14} className="text-status-risk shrink-0" />
             <span className="text-xs font-bold text-status-risk">
-              Питання без відповіді · {msg.time}
+              Питання без відповіді · 24.03 | {msg.time}
             </span>
           </div>
           <p className="text-foreground font-bold">{msg.text}</p>
