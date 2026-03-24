@@ -299,11 +299,6 @@ function WeekGrid({
     return target < t;
   };
 
-  const getDaySummary = (daySlots: CalendarSlot[]) => {
-    const total = daySlots.filter(s => s.patient).length;
-    const done = daySlots.filter(s => s.patient && s.patient.status === "ready").length;
-    return { total, done };
-  };
 
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
