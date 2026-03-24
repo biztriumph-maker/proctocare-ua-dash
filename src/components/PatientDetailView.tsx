@@ -35,9 +35,31 @@ const statusBadgeBg: Record<PatientStatus, string> = {
   risk: "bg-status-risk-bg text-status-risk",
 };
 
+function calcAge(birthDate: string): { age: number | null; ageStr: string } {
+  const parts = birthDate.split(".");
+  if (parts.length === 3 && parts[2].length === 4) {
+    const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+    if (!isNaN(bd.getTime())) {
+      const today = new Date();
+      let age = today.getFullYear() - bd.getFullYear();
+      const m = today.getMonth() - bd.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+      if (age >= 0 && age < 150) {
+        const ld = age % 10, lt = age % 100;
+        const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
+        return { age, ageStr: `${age} ${s}` };
+      }
+    }
+  }
+  return { age: null, ageStr: "—" };
+}
+
 function getMockProfile(patient: Patient) {
+  const birthDateStr = patient.birthDate || "";
+  const { ageStr } = calcAge(birthDateStr);
   return {
-    age: 47,
+    birthDate: birthDateStr,
+    age: ageStr,
     phone: "+380 67 123 45 67",
     allergies: "Пеніцилін",
     diagnosis: "Поліп сигмовидної кишки (K63.5)",
