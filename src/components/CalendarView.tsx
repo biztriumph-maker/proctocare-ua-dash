@@ -316,6 +316,7 @@ function WeekGrid({
             {weekDates.map((d, di) => {
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
+              const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
               const statusBg = slot?.patient
                 ? slot.patient.status === "ready"
                   ? "bg-status-ready-bg border border-status-ready/25"
