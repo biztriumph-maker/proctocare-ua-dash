@@ -185,6 +185,15 @@ export default function Index() {
     toast("Пацієнта позначено як «Не з'явився»");
   }, []);
 
+  const handleComplete = useCallback((patientId: string) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, completed: true, status: "ready" as PatientStatus } : p
+      )
+    );
+    toast.success("Процедуру позначено як виконану");
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
@@ -355,19 +364,19 @@ export default function Index() {
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
                         return filtered.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                         ));
                       }
                       return (
                         <>
                           <div className="space-y-2 sm:space-y-3">
                             {morning.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                             ))}
                           </div>
                           <div className="space-y-2 sm:space-y-3">
                             {afternoon.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
                             ))}
                           </div>
                         </>
