@@ -33,7 +33,7 @@ export function PatientCard({ patient, index, onClick, isNew }: PatientCardProps
       onClick={() => onClick?.(patient)}
       className={cn(
         "w-full text-left bg-surface-raised rounded-lg border-l-4 px-3 py-2 sm:px-4 sm:py-3 sm:rounded-xl",
-        "border border-border/50 shadow-[0_1px_4px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]",
+        "border border-[hsl(214,32%,91%)] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)]",
         "transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] active:scale-[0.98]",
         "animate-reveal-up",
         config.border,

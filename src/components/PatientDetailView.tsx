@@ -445,7 +445,7 @@ function ChatInput() {
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-center gap-2 bg-[hsl(204,100%,95%)] rounded-full px-4 py-1.5">
+      <div className="flex items-center gap-2 bg-[hsl(200,100%,95%)] rounded-full px-4 py-1.5">
         <input
           type="text"
           value={value}
@@ -453,8 +453,8 @@ function ChatInput() {
           placeholder="Відповісти..."
           className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
         />
-        <button className="w-10 h-10 flex items-center justify-center rounded-full bg-[hsl(30,95%,62%)] text-white hover:opacity-90 active:scale-[0.93] transition-all">
-          <Mic size={24} />
+        <button className="w-12 h-12 flex items-center justify-center rounded-full bg-[hsl(30,95%,62%)] text-white hover:opacity-90 active:scale-[0.93] transition-all shadow-md">
+          <Mic size={28} />
         </button>
       </div>
     </div>
