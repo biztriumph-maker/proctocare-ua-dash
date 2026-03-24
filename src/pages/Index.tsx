@@ -355,7 +355,7 @@ export default function Index() {
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
                         return filtered.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} />
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} />
                         ));
                       }
                       return (
