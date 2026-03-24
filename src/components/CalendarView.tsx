@@ -412,34 +412,6 @@ function WeekGrid({
         ))}
       </div>
 
-      {/* Daily summaries */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-t border-border">
-        <div className="border-r border-border bg-[hsl(204,100%,97%)] flex items-center justify-center">
-          <span className="text-[9px] font-bold text-muted-foreground">Σ</span>
-        </div>
-        {weekDates.map((d, di) => {
-          const past = isPast(d);
-          const summary = getDaySummary(slotsPerDay[di] || []);
-          return (
-            <div
-              key={di}
-              className={cn(
-                "text-center py-1.5",
-                di < 6 && "border-r border-border",
-                past ? "bg-muted/40" : "bg-white"
-              )}
-            >
-              {past && summary.total > 0 ? (
-                <p className="text-[9px] text-muted-foreground font-medium leading-tight">
-                  {summary.total} віз. | {summary.done} вик.
-                </p>
-              ) : (
-                <p className="text-[9px] text-muted-foreground/40">—</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
