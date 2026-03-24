@@ -347,7 +347,8 @@ function WeekGrid({
                       "active:scale-[0.90]",
                       statusBg
                         ? cn(statusBg, "hover:opacity-85")
-                        : "bg-transparent"
+                        : "bg-transparent",
+                      isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
                   />
                   {slot?.patient && activePopover === popoverKey && (
