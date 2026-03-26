@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Plus, Eye, Trash2, ClipboardList, ChevronRight } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, ClipboardList, ChevronRight, Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -229,12 +229,13 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                     <FilesPane onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                 </div>
-              ) : (
+              ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
+                  <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
                   <ChatInput />
                 </div>
-              )}
+              ) : null}
             </div>
           </>
         ) : (
@@ -265,6 +266,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                   </span>
                 ) : undefined}
               >
+                <AssistantToggle />
                 <ChatPane chat={chat} unanswered={unanswered} />
                 <ChatInput />
               </ContentBlock>
@@ -649,25 +651,44 @@ const MOCK_SERVICES = [
 function ServicesPane() {
   const [services, setServices] = useState<string[]>(MOCK_SERVICES);
   const [showSelector, setShowSelector] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
     <div className="px-4 pb-4 space-y-2">
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">Видалити послугу?</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Ви впевнені, що хочете видалити «{confirmDelete}»?
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={() => {
+                  setServices((prev) => prev.filter((x) => x !== confirmDelete));
+                  setConfirmDelete(null);
+                }}
+                className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Видалити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {services.length > 0 ? (
         <div className="space-y-1.5">
           {services.map((s) => (
             <div key={s} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border/60">
               <span className="text-xs font-bold text-foreground flex-1">{s}</span>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Ви точно хочете видалити послугу "${s}"?`)) {
-                    setServices((prev) => prev.filter((x) => x !== s));
-                  }
-                }}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-destructive/10 active:scale-[0.9] transition-all"
-                title="Видалити"
-              >
-                <Trash2 size={12} className="text-muted-foreground hover:text-destructive" />
-              </button>
             </div>
           ))}
         </div>
@@ -679,8 +700,8 @@ function ServicesPane() {
         className="w-full flex items-center justify-between text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 px-3 transition-colors active:scale-[0.97]"
       >
         <div className="flex items-center gap-1.5">
-          <Plus size={14} />
-          Обрати послуги
+          <Pencil size={14} />
+          Змінити послуги
         </div>
         <ChevronRight size={14} className="text-primary/60" />
       </button>
@@ -767,6 +788,39 @@ function ChatInput() {
           <Mic size={28} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Assistant Toggle — moved from NewEntryForm ──
+function AssistantToggle() {
+  const [enabled, setEnabled] = useState(true);
+
+  return (
+    <div className="mx-4 mt-3 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+          <Headphones size={16} className="text-primary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold text-foreground">Підключити асистента</p>
+          <p className="text-[10px] text-muted-foreground">Асистент надішле інструкції у Viber</p>
+        </div>
+      </div>
+      <button
+        onClick={() => setEnabled(!enabled)}
+        className={cn(
+          "relative w-10 h-[22px] rounded-full transition-all duration-200 shrink-0",
+          enabled ? "bg-primary" : "bg-border"
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200",
+            enabled ? "left-[22px]" : "left-[3px]"
+          )}
+        />
+      </button>
     </div>
   );
 }
