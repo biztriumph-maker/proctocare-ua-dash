@@ -211,7 +211,7 @@ export default function Index() {
 
   const allCalendarPatients = useMemo(() => [
     ...patients.map(p => p.date ? p : { ...p, date: todayDateStr }),
-    ...MOCK_TOMORROW.map(p => ({ ...p, date: tomorrowDateStr })),
+    ...MOCK_TOMORROW.map(p => ({ ...p, date: tomorrowDateStr })).filter(p => p.date < "2026-03-27"),
   ], [patients]);
 
   return (

@@ -28,6 +28,7 @@ const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const PROCEDURES = ["Колоноскопія", "Ректоскопія", "Аноскопія", "Консультація"];
 
 function getMockSlots(dateStr: string): CalendarSlot[] {
+  if (dateStr >= "2026-03-27") return HOURS.map((hour) => ({ hour }));
   const seed = dateStr.split("-").reduce((a, b) => a + parseInt(b), 0);
   return HOURS.map((hour) => {
     const hash = (seed * 31 + hour * 7) % 100;
