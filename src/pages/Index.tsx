@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
@@ -87,22 +87,44 @@ export default function Index() {
   const [showForm, setShowForm] = useState(false);
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
   const [showTomorrow, setShowTomorrow] = useState(false);
-  const [patients, setPatients] = useState(MOCK_PATIENTS);
+  
+  const [patients, setPatients] = useState<Patient[]>(() => {
+    const saved = localStorage.getItem("proctocare_all_patients");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved patients", e);
+      }
+    }
+    return [
+      ...MOCK_PATIENTS.map(p => ({ ...p, date: p.date || todayDateStr })),
+      ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || tomorrowDateStr })),
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem("proctocare_all_patients", JSON.stringify(patients));
+  }, [patients]);
+
   const [replyAlert, setReplyAlert] = useState<AIAlertDetail | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
   const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const todayPatients = useMemo(() => patients.filter(p => !p.date || p.date === todayDateStr), [patients]);
+  const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowDateStr), [patients]);
+
   const counts = useMemo(() => ({
-    total: patients.length,
-    ready: patients.filter((p) => p.status === "ready").length,
-    risk: patients.filter((p) => p.status === "risk").length,
-    attention: patients.filter((p) => p.status === "progress").length,
-  }), [patients]);
+    total: todayPatients.length,
+    ready: todayPatients.filter((p) => p.status === "ready").length,
+    risk: todayPatients.filter((p) => p.status === "risk").length,
+    attention: todayPatients.filter((p) => p.status === "progress").length,
+  }), [todayPatients]);
 
   const filtered = useMemo(() => {
-    let list = patients;
+    let list = todayPatients;
     if (filter !== "all") {
       list = list.filter((p) => statusToFilter[p.status] === filter);
     }
@@ -111,13 +133,16 @@ export default function Index() {
       list = list.filter((p) => p.name.toLowerCase().includes(q));
     }
     return list;
-  }, [filter, patients, searchQuery]);
+  }, [filter, todayPatients, searchQuery]);
 
   const filteredTomorrow = useMemo(() => {
-    if (!searchQuery.trim()) return MOCK_TOMORROW;
-    const q = searchQuery.toLowerCase();
-    return MOCK_TOMORROW.filter((p) => p.name.toLowerCase().includes(q));
-  }, [searchQuery]);
+    let list = tomorrowPatients;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((p) => p.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [tomorrowPatients, searchQuery]);
 
   const openNewEntry = useCallback((date?: string, hour?: number) => {
     setFormPrefill({
@@ -207,11 +232,10 @@ export default function Index() {
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
 
-  const tomorrowRiskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
+  const tomorrowRiskCount = tomorrowPatients.filter(p => p.status === "risk").length;
 
   const allCalendarPatients = useMemo(() => [
-    ...patients.map(p => p.date ? p : { ...p, date: todayDateStr }),
-    ...MOCK_TOMORROW.map(p => ({ ...p, date: tomorrowDateStr })).filter(p => p.date < "2026-03-27"),
+    ...patients,
   ], [patients]);
 
   return (
@@ -288,7 +312,7 @@ export default function Index() {
                   )}
                 </div>
                 <p className={cn("text-xs", showTomorrow ? "text-white/80" : "text-muted-foreground")}>
-                  {MOCK_TOMORROW.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
+                  {tomorrowPatients.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
                 </p>
               </button>
             </div>
