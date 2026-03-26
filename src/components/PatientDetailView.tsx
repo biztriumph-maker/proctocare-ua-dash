@@ -148,6 +148,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   });
   const nameInputRef = useRef<HTMLInputElement>(null);
   const profile = getMockProfile(patient);
+  const [fields, setFields] = useState({
+    phone: profile.phone,
+    allergies: profile.allergies,
+    diagnosis: profile.diagnosis,
+    notes: profile.notes,
+    protocol: "",
+  });
+  const mergedProfile = { ...profile, ...fields };
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient);
@@ -170,8 +178,10 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     }
   };
 
-  const handleFocusSave = () => {
-    // In real app, save the value
+  const handleFocusSave = (value: string) => {
+    if (focusField) {
+      setFields((prev) => ({ ...prev, [focusField.field]: value }));
+    }
     setFocusField(null);
   };
 
@@ -285,7 +295,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               {activeTab === "card" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                    <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
+                    <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                   <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
                     <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
@@ -297,7 +307,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} />
+                    <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -314,7 +324,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
             {/* Left column: 40% */}
             <div className="w-[40%] overflow-y-auto shrink-0 p-4 space-y-3">
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
+                <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
               <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
                 <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
@@ -323,7 +333,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} />
+                <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
               </ContentBlock>
             </div>
 
@@ -351,7 +361,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
             field={focusField.field}
             value={focusField.value}
             patientName={patient.name}
-            allergies={profile.allergies}
+            allergies={fields.allergies}
             onSave={handleFocusSave}
             onCancel={handleFocusCancel}
           />
@@ -367,7 +377,7 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
   value: string;
   patientName: string;
   allergies: string;
-  onSave: () => void;
+  onSave: (value: string) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState(value);
@@ -393,9 +403,11 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
             <User size={16} className="text-muted-foreground shrink-0" />
             <div>
               <p className="text-sm font-bold text-foreground">{patientName}</p>
-              <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-block mt-0.5">
-                ⚠ Алергія: {allergies}
-              </p>
+              {allergies && (
+                <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-block mt-0.5">
+                  ⚠ Алергія: {allergies}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -426,7 +438,7 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
                 Скасувати
               </button>
               <button
-                onClick={onSave}
+                onClick={() => onSave(text)}
                 className="px-5 py-2 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
               >
                 Зберегти
@@ -670,8 +682,7 @@ const MOCK_FILES = [
   { name: "Протокол колоноскопії.pdf", type: "doctor" as const, date: "24.03.2026" },
 ];
 
-function FilesPane({ onFocusEdit, fromForm }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean }) {
-  const [protocolText, setProtocolText] = useState("");
+function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
 
   return (
     <div className="px-4 pb-4 space-y-4">
