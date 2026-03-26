@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Plus, Eye, Trash2, ClipboardList } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Plus, Eye, Trash2, ClipboardList, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
+import { ProcedureSelector } from "./ProcedureSelector";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -585,7 +586,7 @@ function FilesPane({ onFocusEdit }: { onFocusEdit: (field: string, value: string
   );
 }
 
-// ── Services Pane — list without prices, editable ──
+// ── Services Pane — uses full ProcedureSelector overlay ──
 const MOCK_SERVICES = [
   "Колоноскопія з медичним сном",
   "Взяття біопсії одноразовими щипцями",
@@ -593,19 +594,7 @@ const MOCK_SERVICES = [
 
 function ServicesPane() {
   const [services, setServices] = useState<string[]>(MOCK_SERVICES);
-  const [showAdd, setShowAdd] = useState(false);
-
-  const ALL_SERVICES = [
-    "Колоноскопія",
-    "Колоноскопія з медичним сном",
-    "Гастроскопія",
-    "Ректоскопія з використанням ендоскопу",
-    "Взяття біопсії одноразовими щипцями",
-    "Поліпектомія при колоноскопії 1 клас 1А",
-    "Медичний сон до 20хв.",
-  ];
-
-  const available = ALL_SERVICES.filter((s) => !services.includes(s));
+  const [showSelector, setShowSelector] = useState(false);
 
   return (
     <div className="px-4 pb-4 space-y-2">
@@ -628,27 +617,24 @@ function ServicesPane() {
         <p className="text-xs text-muted-foreground py-2 text-center">Послуги не додані</p>
       )}
       <button
-        onClick={() => setShowAdd(!showAdd)}
-        className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]"
+        onClick={() => setShowSelector(true)}
+        className="w-full flex items-center justify-between text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 px-3 transition-colors active:scale-[0.97]"
       >
-        <Plus size={14} />
-        Додати послугу
-      </button>
-      {showAdd && (
-        <div className="space-y-1 animate-reveal-up">
-          {available.map((item) => (
-            <button
-              key={item}
-              onClick={() => {
-                setServices((prev) => [...prev, item]);
-                setShowAdd(false);
-              }}
-              className="w-full flex items-center p-2.5 rounded-lg text-left bg-background border border-border/60 hover:bg-accent/40 transition-colors active:scale-[0.98]"
-            >
-              <span className="text-xs font-bold text-foreground">{item}</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5">
+          <Plus size={14} />
+          Обрати послуги
         </div>
+        <ChevronRight size={14} className="text-primary/60" />
+      </button>
+      {showSelector && (
+        <ProcedureSelector
+          selected={services}
+          onConfirm={(sel) => {
+            setServices(sel);
+            setShowSelector(false);
+          }}
+          onClose={() => setShowSelector(false)}
+        />
       )}
     </div>
   );
