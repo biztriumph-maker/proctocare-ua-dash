@@ -1,12 +1,14 @@
-import { X, Phone, Headphones, ChevronDown } from "lucide-react";
+import { X, Phone, Headphones, ChevronDown, ChevronRight } from "lucide-react";
 import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { ProcedureSelector } from "./ProcedureSelector";
 
 export interface NewEntryData {
   name: string;
   birthDate: string;
   phone: string;
   procedure: string;
+  procedures: string[];
   date: string;
   time: string;
   notes: string;
