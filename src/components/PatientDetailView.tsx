@@ -256,7 +256,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
 
             {/* Right column: 60% */}
             <div className="w-[60%] flex flex-col overflow-hidden p-4 pl-0">
-              <ContentBlock title="Штучний інтелект" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
+              <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={unanswered.length > 0 ? (
                   <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
                     <AlertTriangle size={12} />
