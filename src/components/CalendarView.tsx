@@ -352,21 +352,27 @@ function WeekGrid({
               key={i}
               onClick={() => onSelectDay(d)}
               className={cn(
-                "text-center py-2 transition-all active:scale-[0.96]",
+                "text-center py-2 transition-all active:scale-[0.96] relative",
                 i < 6 && "border-r border-border",
-                isToday && "bg-[hsl(204,100%,93%)]",
-                past && !isToday && "bg-[hsl(214,20%,89%)] opacity-70"
+                isToday && "bg-[hsl(204,100%,93%)] border-l-2 border-l-primary/50",
+                past && !isToday && "bg-[hsl(220,18%,96%)]"
               )}
             >
-              <p className="text-[11px] font-bold text-foreground/50 uppercase leading-none">
+              <p className={cn(
+                "text-[11px] font-bold uppercase leading-none",
+                past && !isToday ? "text-slate-400" : "text-foreground/50"
+              )}>
                 {DAY_LABELS[i]}
               </p>
               <p className={cn(
                 "text-base font-bold tabular-nums leading-tight mt-0.5",
-                isToday ? "text-primary" : past ? "text-muted-foreground" : "text-foreground"
+                isToday ? "text-primary" : past ? "text-slate-400" : "text-foreground"
               )}>
                 {d.getDate()}
               </p>
+              {past && !isToday && (
+                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-4 h-[2px] rounded-full bg-slate-300/70" />
+              )}
             </button>
           );
         })}
@@ -403,6 +409,7 @@ function WeekGrid({
 
               const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
 
+              const isToday = isSameDay(d, today);
               return (
                 <div
                   key={di}
@@ -410,10 +417,13 @@ function WeekGrid({
                     "relative p-[5px]",
                     isSearchMatch
                       ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
-                      : past ? "bg-[hsl(214,20%,89%)]" : isSelected ? "bg-primary/10" : "bg-white",
+                      : past ? "bg-[hsl(220,18%,97%)]"
+                      : isSelected ? "bg-primary/10" : "bg-white",
+                    isToday && "border-l-2 border-l-primary/40",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
+                  style={past ? { backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(148,163,184,0.07) 5px, rgba(148,163,184,0.07) 6px)" } : undefined}
                 >
                   <button
                     onClick={() => {
@@ -431,7 +441,7 @@ function WeekGrid({
                         : isSelected
                           ? "bg-primary/30 border border-primary/60"
                           : statusBg
-                          ? cn(statusBg, past && "opacity-50", "hover:opacity-85")
+                          ? cn(statusBg, past && "opacity-60 saturate-50", "hover:opacity-85")
                           : "bg-transparent",
                     )}
                   >
