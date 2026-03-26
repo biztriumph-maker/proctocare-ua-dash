@@ -28,15 +28,7 @@ const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const PROCEDURES = ["Колоноскопія", "Ректоскопія", "Аноскопія", "Консультація"];
 
 function getMockSlots(dateStr: string): CalendarSlot[] {
-  if (dateStr >= "2026-03-27") return HOURS.map((hour) => ({ hour }));
-  const seed = dateStr.split("-").reduce((a, b) => a + parseInt(b), 0);
-  return HOURS.map((hour) => {
-    const hash = (seed * 31 + hour * 7) % 100;
-    if (hash < 25) return { hour, patient: { name: "Коваленко Олена", patronymic: "Василівна", status: "ready" as PatientStatus, procedure: PROCEDURES[hash % 4] } };
-    if (hash < 35) return { hour, patient: { name: "Мельник Ігор", patronymic: "Петрович", status: "progress" as PatientStatus, procedure: PROCEDURES[(hash + 1) % 4] } };
-    if (hash < 42) return { hour, patient: { name: "Шевченко Тарас", patronymic: "Олексійович", status: "risk" as PatientStatus, procedure: PROCEDURES[(hash + 2) % 4] } };
-    return { hour };
-  });
+  return HOURS.map((hour) => ({ hour }));
 }
 
 function getWeekDates(refDate: Date): Date[] {
