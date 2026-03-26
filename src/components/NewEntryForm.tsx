@@ -293,6 +293,17 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           Зберегти запис
         </button>
       </div>
+
+      {showProcedureSelector && (
+        <ProcedureSelector
+          selected={procedures}
+          onConfirm={(sel) => {
+            setProcedures(sel);
+            setShowProcedureSelector(false);
+          }}
+          onClose={() => setShowProcedureSelector(false)}
+        />
+      )}
     </div>
   );
 }
