@@ -50,6 +50,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showPlanningPicker, setShowPlanningPicker] = useState(false);
   const nameRef = useRef<HTMLTextAreaElement>(null);
+  const birthDateRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
 
   const filteredSuggestions = name.length > 0
     ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))
@@ -60,7 +62,9 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
     const words = name.trim().split(/\s+/);
     const parsedName = words.slice(0, 2).join(" ");
     const patronymic = words.slice(2).join(" ");
-    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    const finalBirthDate = birthDateRef.current?.value || birthDate;
+    const finalPhone = phoneRef.current?.value || phone;
+    onSave({ name: parsedName, patronymic, birthDate: finalBirthDate, phone: finalPhone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -146,13 +150,15 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 Дата народження
               </label>
               <input
+                ref={birthDateRef}
                 type="text"
-                value={birthDate}
+                defaultValue=""
                 onChange={(e) => {
                   const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
                   let formatted = raw;
                   if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
                   if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                  e.target.value = formatted;
                   setBirthDate(formatted);
                 }}
                 placeholder="ДД.ММ.РРРР"
@@ -196,7 +202,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               Телефон *
             </label>
             <input
-              value={phone}
+              ref={phoneRef}
+              defaultValue="+380"
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+380 __ ___ __ __"
               type="text"
