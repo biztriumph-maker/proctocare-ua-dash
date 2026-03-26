@@ -188,7 +188,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
                 { key: "files" as const, label: "Обстеження", icon: <FileText size={14} /> },
-                { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
+                { key: "assistant" as const, label: "Асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
                   key={tab.key}
