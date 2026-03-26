@@ -157,8 +157,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 }}
                 placeholder="ДД.ММ.РРРР"
                 maxLength={10}
-                autoComplete="off"
-                inputMode="numeric"
                 className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               />
             </div>
@@ -202,8 +200,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+380 __ ___ __ __"
               type="text"
-              inputMode="tel"
-              autoComplete="off"
               className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
           </div>
