@@ -1,4 +1,4 @@
-import { X, Phone, Bot, ChevronDown } from "lucide-react";
+import { X, Phone, Headphones, ChevronDown } from "lucide-react";
 import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 
