@@ -143,72 +143,36 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             )}
           </div>
 
-          {/* Birth Date + Age in one row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          {/* Birth Date + Phone — simple native inputs */}
+          <div style={{display:'flex',gap:'12px'}}>
+            <div style={{flex:1}}>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
                 Дата народження
               </label>
               <input
+                id="newentry-birthdate"
                 ref={birthDateRef}
                 type="text"
                 defaultValue=""
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
-                  let formatted = raw;
-                  if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
-                  if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
-                  e.target.value = formatted;
-                  setBirthDate(formatted);
-                }}
                 placeholder="ДД.ММ.РРРР"
                 maxLength={10}
-                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                style={{width:'100%',padding:'10px 12px',fontSize:'14px',fontWeight:'bold',borderRadius:'8px',border:'1px solid hsl(220,12%,90%)',outline:'none',fontFamily:'inherit',fontVariantNumeric:'tabular-nums'}}
               />
             </div>
-            <div>
+            <div style={{flex:1}}>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-                Вік
+                <Phone size={10} className="inline mr-1 -mt-0.5" />
+                Телефон
               </label>
-              <div className="flex items-center px-3 py-2.5 rounded-lg border bg-background h-[42px]">
-                <span className="text-sm font-bold text-foreground tabular-nums">
-                  {(() => {
-                    const parts = birthDate.split(".");
-                    if (parts.length === 3 && parts[2].length === 4) {
-                      const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
-                      if (!isNaN(bd.getTime())) {
-                        const today = new Date();
-                        let age = today.getFullYear() - bd.getFullYear();
-                        const m = today.getMonth() - bd.getMonth();
-                        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
-                        if (age >= 0 && age < 150) {
-                          const ld = age % 10, lt = age % 100;
-                          const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
-                          return `${age} ${s}`;
-                        }
-                      }
-                    }
-                    return "... років";
-                  })()}
-                </span>
-              </div>
+              <input
+                id="newentry-phone"
+                ref={phoneRef}
+                type="text"
+                defaultValue="+380"
+                placeholder="+380"
+                style={{width:'100%',padding:'10px 12px',fontSize:'14px',borderRadius:'8px',border:'1px solid hsl(220,12%,90%)',outline:'none',fontFamily:'inherit'}}
+              />
             </div>
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              <Phone size={10} className="inline mr-1 -mt-0.5" />
-              Телефон *
-            </label>
-            <input
-              ref={phoneRef}
-              defaultValue="+380"
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+380 __ ___ __ __"
-              type="text"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-            />
           </div>
 
           {/* Procedure — fullscreen selector */}
