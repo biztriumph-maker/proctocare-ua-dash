@@ -213,9 +213,10 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               type="tel"
               className={cn(
                 "w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium transition-all focus:outline-none focus:ring-2",
-                phone.replace(/\D/g, "").length > 12
+                phone && phone.replace(/\D/g, "").length !== 12
                   ? "border-status-risk text-status-risk focus:border-status-risk focus:ring-status-risk/20"
-                  : "placeholder:text-muted-foreground/40 focus:border-primary/40 focus:ring-primary/20"
+                  : "text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:ring-primary/20",
+                phone && phone.replace(/\D/g, "").length === 12 && "border-status-ready focus:border-status-ready focus:ring-status-ready/20"
               )}
             />
           </div>
@@ -333,7 +334,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name.trim() || !date || !time || procedures.length === 0 || phone.replace(/\D/g, "").length < 10 || birthDate.replace(/\D/g, "").length !== 8}
+          disabled={!name.trim() || !date || !time || procedures.length === 0 || phone.replace(/\D/g, "").length !== 12 || birthDate.replace(/\D/g, "").length !== 8}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
