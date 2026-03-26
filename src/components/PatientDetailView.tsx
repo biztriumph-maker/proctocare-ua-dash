@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, ClipboardList, ChevronRight, Headphones } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus } from "./PatientCard";
@@ -657,17 +657,18 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
 }
 
 // ── Files Pane — upload and manage documents ──
-type FileItem = { name: string, type: "doctor" | "patient", date: string, url?: string };
+type FileItem = { id: string, name: string, type: "doctor" | "patient", date: string, url?: string };
 
 const MOCK_FILES: FileItem[] = [
-  { name: "Аналіз крові 20.03.pdf", type: "patient", date: "20.03.2026" },
-  { name: "МРТ черевної порожнини.jpg", type: "patient", date: "18.03.2026" },
-  { name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
+  { id: "mock1", name: "Аналіз крові 20.03.pdf", type: "patient", date: "20.03.2026" },
+  { id: "mock2", name: "МРТ черевної порожнини.jpg", type: "patient", date: "18.03.2026" },
+  { id: "mock3", name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
 ];
 
 function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<FileItem[]>(fromForm ? [] : [...MOCK_FILES]);
+  const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -675,13 +676,14 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
         const today = new Date();
         const dateStr = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
         return {
+          id: Math.random().toString(36).substring(7),
           name: file.name,
           type: "doctor" as const,
           date: dateStr,
           url: URL.createObjectURL(file)
         };
       });
-      setUploadedFiles(prev => [...prev, ...newFiles]);
+      setFiles(prev => [...prev, ...newFiles]);
     }
   };
 
@@ -690,17 +692,42 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
   };
 
   const handleViewFile = (file: FileItem) => {
-    if (file.url) {
-      window.open(file.url, '_blank');
-    } else {
-      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, відкриються у новій вкладці.`);
+    if (!file.url) {
+      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
     }
   };
 
-  const allFiles = fromForm ? uploadedFiles : [...MOCK_FILES, ...uploadedFiles];
-
   return (
-    <div className="px-4 pb-4 space-y-4">
+    <div className="px-4 pb-4 space-y-4 relative">
+      {/* Delete file confirmation dialog */}
+      {confirmDeleteFile && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDeleteFile(null)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">Видалити файл?</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Ви впевнені, що хочете видалити файл «{files.find(f => f.id === confirmDeleteFile)?.name}»?
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmDeleteFile(null)}
+                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={() => {
+                  setFiles(files.filter((x) => x.id !== confirmDeleteFile));
+                  setConfirmDeleteFile(null);
+                }}
+                className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Видалити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Protocol block — always shown, empty for new patients */}
       <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2">
         <div className="flex items-center justify-between">
@@ -727,8 +754,8 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
         <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
           Файли та аналізи
         </h4>
-        {allFiles.map((file, i) => (
-          <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
+        {files.map((file) => (
+          <div key={file.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
             <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
@@ -737,15 +764,31 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
               </p>
             </div>
             <div className="flex items-center gap-1 shrink-0">
+              {file.url ? (
+                <a 
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
+                  title="Переглянути"
+                >
+                  <Eye size={12} className="text-muted-foreground" />
+                </a>
+              ) : (
+                <button 
+                  onClick={() => handleViewFile(file)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
+                  title="Переглянути"
+                >
+                  <Eye size={12} className="text-muted-foreground" />
+                </button>
+              )}
               <button 
-                onClick={() => handleViewFile(file)}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
-                title="Переглянути"
+                onClick={() => setConfirmDeleteFile(file.id)}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-destructive/70 hover:text-destructive active:scale-[0.9] transition-all" 
+                title="Видалити"
               >
-                <Eye size={12} className="text-muted-foreground" />
-              </button>
-              <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Редагувати">
-                <Pencil size={12} className="text-muted-foreground" />
+                <Trash2 size={12} />
               </button>
             </div>
           </div>
