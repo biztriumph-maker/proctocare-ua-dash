@@ -254,8 +254,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 <Headphones size={16} className="text-primary" />
               </div>
               <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-foreground">Запустити ШІ-підготовку</p>
-                <p className="text-[10px] text-muted-foreground">Бот надішле інструкції пацієнту</p>
+                <p className="text-[12px] font-semibold text-foreground">Підключити асистента</p>
+                <p className="text-[10px] text-muted-foreground">Асистент надішле інструкції у Viber</p>
               </div>
             </div>
             <button

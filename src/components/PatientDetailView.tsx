@@ -690,7 +690,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
               )}
             >
               <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
-                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "ШІ-асистент"} · 24.03 | {msg.time}
+                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "Асистент"} · 24.03 | {msg.time}
               </p>
               <p className="text-foreground">{msg.text}</p>
             </div>
