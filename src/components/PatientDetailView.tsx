@@ -657,15 +657,17 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
 }
 
 // ── Files Pane — upload and manage documents ──
-const MOCK_FILES = [
-  { name: "Аналіз крові 20.03.pdf", type: "patient" as const, date: "20.03.2026" },
-  { name: "МРТ черевної порожнини.jpg", type: "patient" as const, date: "18.03.2026" },
-  { name: "Протокол колоноскопії.pdf", type: "doctor" as const, date: "24.03.2026" },
+type FileItem = { name: string, type: "doctor" | "patient", date: string, url?: string };
+
+const MOCK_FILES: FileItem[] = [
+  { name: "Аналіз крові 20.03.pdf", type: "patient", date: "20.03.2026" },
+  { name: "МРТ черевної порожнини.jpg", type: "patient", date: "18.03.2026" },
+  { name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
 ];
 
 function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<{name: string, type: "doctor" | "patient", date: string}[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<FileItem[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -675,7 +677,8 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
         return {
           name: file.name,
           type: "doctor" as const,
-          date: dateStr
+          date: dateStr,
+          url: URL.createObjectURL(file)
         };
       });
       setUploadedFiles(prev => [...prev, ...newFiles]);
@@ -684,6 +687,14 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleViewFile = (file: FileItem) => {
+    if (file.url) {
+      window.open(file.url, '_blank');
+    } else {
+      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, відкриються у новій вкладці.`);
+    }
   };
 
   const allFiles = fromForm ? uploadedFiles : [...MOCK_FILES, ...uploadedFiles];
@@ -726,7 +737,11 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
               </p>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
+              <button 
+                onClick={() => handleViewFile(file)}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
+                title="Переглянути"
+              >
                 <Eye size={12} className="text-muted-foreground" />
               </button>
               <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Редагувати">
