@@ -90,7 +90,7 @@ export function ProcedureSelector({ selected, onConfirm, onClose }: ProcedureSel
 
       {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto pb-24">
-        {PROCEDURE_CATALOG.map((cat) => (
+        {filteredCatalog.map((cat) => (
           <div key={cat.title}>
             <div className="px-4 py-2.5 bg-muted/50 border-b border-border/40">
               <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
