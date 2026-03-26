@@ -22,13 +22,6 @@ interface NewEntryFormProps {
   onSave: (entry: NewEntryData) => void;
 }
 
-const PROCEDURES = [
-  "Колоноскопія",
-  "Ректоскопія",
-  "Аноскопія",
-  "Консультація",
-  "Сигмоскопія",
-];
 
 const PATIENT_SUGGESTIONS = [
   "Коваленко Олена",
