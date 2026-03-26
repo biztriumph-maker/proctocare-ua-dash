@@ -235,7 +235,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                   <ChatPane chat={chat} unanswered={unanswered} />
                   <ChatInput />
                 </div>
-              )}
+              ) : null}
             </div>
           </>
         ) : (
