@@ -368,9 +368,12 @@ export default function Index() {
                 </>
               ) : (
                 <>
-                  <h3 className="text-sm font-bold text-foreground hidden md:block">
-                    Сьогоднішні записи
-                  </h3>
+                  <div className="hidden md:flex items-baseline gap-3 mb-1">
+                    <h3 className="text-lg font-bold text-foreground">Сьогоднішні записи</h3>
+                    <span className="text-base font-semibold text-primary">
+                      {new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long" })}
+                    </span>
+                  </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
                     {(() => {
                       const morning = filtered.filter(p => parseInt(p.time) < 13);
