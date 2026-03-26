@@ -309,32 +309,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             />
           </div>
 
-          {/* AI Prep toggle */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Headphones size={16} className="text-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-foreground">Підключити асистента</p>
-                <p className="text-[10px] text-muted-foreground">Асистент надішле інструкції у Viber</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setAiPrep(!aiPrep)}
-              className={cn(
-                "relative w-10 h-[22px] rounded-full transition-all duration-200 shrink-0",
-                aiPrep ? "bg-primary" : "bg-border"
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200",
-                  aiPrep ? "left-[22px]" : "left-[3px]"
-                )}
-              />
-            </button>
-          </div>
+          {/* AI Prep toggle removed — moved to patient card */}
         </div>
 
         {/* Save button */}
