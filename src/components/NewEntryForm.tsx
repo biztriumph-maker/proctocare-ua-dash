@@ -203,7 +203,11 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                     <span className="text-xs font-medium text-foreground flex-1 truncate">{p}</span>
                     <button
                       type="button"
-                      onClick={() => setProcedures(prev => prev.filter(x => x !== p))}
+                      onClick={() => {
+                        if (window.confirm(`Ви точно хочете видалити послугу "${p}"?`)) {
+                          setProcedures(prev => prev.filter(x => x !== p));
+                        }
+                      }}
                       className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-colors"
                     >
                       <X size={10} className="text-muted-foreground" />
