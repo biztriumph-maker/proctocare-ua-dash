@@ -15,6 +15,7 @@ export interface Patient {
   birthDate?: string;
   phone?: string;
   primaryNotes?: string;
+  date?: string;
   fromForm?: boolean;
   paid?: boolean;
   noShow?: boolean;

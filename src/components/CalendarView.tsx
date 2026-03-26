@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
-import type { PatientStatus } from "./PatientCard";
+import type { Patient, PatientStatus } from "./PatientCard";
 
 interface CalendarSlot {
   hour: number;
@@ -13,6 +13,7 @@ interface CalendarViewProps {
   onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
+  realPatients?: Patient[];
 }
 
 const statusDot: Record<PatientStatus, string> = {
@@ -66,7 +67,7 @@ function dateToStr(d: Date): string {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
@@ -214,13 +215,14 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
           onPatientClick={onPatientClick}
           searchQuery={searchQuery}
           selectedSlot={selectedSlot}
+          realPatients={realPatients}
           onSelectDay={(d) => {
             setCurrentDate(d);
             setViewMode("day");
           }}
         />
       ) : (
-        <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} selectedSlot={selectedSlot} />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} selectedSlot={selectedSlot} realPatients={realPatients} />
       )}
     </div>
   );
@@ -295,6 +297,7 @@ function WeekGrid({
   onPatientClick,
   searchQuery = "",
   selectedSlot,
+  realPatients,
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
@@ -302,13 +305,24 @@ function WeekGrid({
   onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
+  realPatients?: Patient[];
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
 
   const slotsPerDay = useMemo(() => {
-    return weekDates.map((d) => getMockSlots(dateToStr(d)));
-  }, [weekDates]);
+    return weekDates.map((d) => {
+      const dateStr = dateToStr(d);
+      const mock = getMockSlots(dateStr);
+      if (!realPatients?.length) return mock;
+      return mock.map(slot => {
+        const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
+        const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
+        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: real.status, procedure: real.procedure } };
+        return slot;
+      });
+    });
+  }, [weekDates, realPatients]);
 
   const isPast = (d: Date) => {
     const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -449,14 +463,26 @@ function DayGrid({
   onPatientClick,
   searchQuery = "",
   selectedSlot,
+  realPatients,
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
   onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
+  realPatients?: Patient[];
 }) {
-  const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
+  const slots = useMemo(() => {
+    const dateStr = dateToStr(date);
+    const mock = getMockSlots(dateStr);
+    if (!realPatients?.length) return mock;
+    return mock.map(slot => {
+      const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
+      const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
+      if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: real.status, procedure: real.procedure } };
+      return slot;
+    });
+  }, [date, realPatients]);
 
   const statusColor: Record<PatientStatus, string> = {
     ready: "bg-status-ready-bg border-status-ready/30",

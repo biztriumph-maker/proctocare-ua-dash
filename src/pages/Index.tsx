@@ -17,6 +17,8 @@ const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
 const nextWeek = new Date();
 nextWeek.setDate(nextWeek.getDate() + 5);
+const todayDateStr = today.toISOString().slice(0, 10);
+const tomorrowDateStr = tomorrow.toISOString().slice(0, 10);
 
 const MOCK_PATIENTS: Patient[] = [
   { id: "1", name: "Коваленко Олена", patronymic: "Василівна", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
@@ -139,6 +141,7 @@ export default function Index() {
       birthDate: entry.birthDate,
       phone: entry.phone,
       primaryNotes: entry.notes,
+      date: entry.date,
       fromForm: true,
     };
     setSkeletonPatient(newPatient);
@@ -205,6 +208,11 @@ export default function Index() {
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
 
   const tomorrowRiskCount = MOCK_TOMORROW.filter(p => p.status === "risk").length;
+
+  const allCalendarPatients = useMemo(() => [
+    ...patients.map(p => p.date ? p : { ...p, date: todayDateStr }),
+    ...MOCK_TOMORROW.map(p => ({ ...p, date: tomorrowDateStr })),
+  ], [patients]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -393,6 +401,7 @@ export default function Index() {
                   {filtered.length === 0 && !skeletonPatient && (
                     <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
                       Немає пацієнтів з таким статусом
+            realPatients={allCalendarPatients}
                     </div>
                   )}
                 </>

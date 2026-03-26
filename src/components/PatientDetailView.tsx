@@ -85,6 +85,7 @@ function getMockProfile(patient: Patient) {
 }
 
 function getMockChat(patient: Patient): ChatMessage[] {
+  if (patient.fromForm) return [];
   const base: ChatMessage[] = [
     { sender: "ai", text: "Доброго дня! Починайте підготовку за інструкцією: дієта без клітковини за 3 дні до процедури.", time: "09:00" },
     { sender: "patient", text: "Дякую. А що саме не можна їсти?", time: "09:15" },
@@ -110,7 +111,19 @@ function getMockChat(patient: Patient): ChatMessage[] {
   return base;
 }
 
-function getPreparationProgress(status: PatientStatus): { percent: number; steps: { label: string; done: boolean }[] } {
+function getPreparationProgress(patient: Patient): { percent: number; steps: { label: string; done: boolean }[] } {
+  if (patient.fromForm) {
+    return {
+      percent: 0,
+      steps: [
+        { label: "Дієта 3 дні", done: false },
+        { label: "Прийом препарату", done: false },
+        { label: "Очищення завершено", done: false },
+        { label: "Аналізи в нормі", done: false },
+      ],
+    };
+  }
+  const status = patient.status;
   const steps = [
     { label: "Дієта 3 дні", done: status === "ready" || status === "progress" || status === "risk" },
     { label: "Прийом препарату", done: status === "ready" || status === "progress" },
@@ -129,7 +142,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
-  const preparation = getPreparationProgress(patient.status);
+  const preparation = getPreparationProgress(patient);
 
   const handleFocusOpen = (field: string, value: string) => {
     setFocusField({ field, value });
@@ -173,7 +186,11 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             </div>
             <div className="flex items-center gap-1.5 text-xs flex-wrap">
               <span className="text-muted-foreground font-normal">Дата:</span>
-              <span className="font-bold text-foreground">24.03.2026</span>
+              <span className="font-bold text-foreground">
+                {patient.date
+                  ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
+                  : "—"}
+              </span>
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
               <span className="font-bold text-foreground">{patient.time}</span>
