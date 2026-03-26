@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
 
 interface CalendarSlot {
@@ -14,6 +14,7 @@ interface CalendarViewProps {
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
+  focusDate?: string;
 }
 
 const statusDot: Record<PatientStatus, string> = {
@@ -67,10 +68,17 @@ function dateToStr(d: Date): string {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients, focusDate }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
+
+  // Auto-navigate to the week/day of the matching patient
+  useEffect(() => {
+    if (!focusDate) return;
+    const d = new Date(focusDate + "T00:00:00");
+    if (!isNaN(d.getTime())) setCurrentDate(d);
+  }, [focusDate]);
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
 
@@ -378,7 +386,7 @@ function WeekGrid({
               const slot = slotsPerDay[di]?.find((s) => s.hour === hour);
               const popoverKey = `${di}-${hour}`;
               const past = isPast(d);
-              const isSearchMatch = searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+              const isSearchMatch = !!(searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
               // Smart positioning: open up if bottom half, open left if right side
               const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
@@ -399,7 +407,9 @@ function WeekGrid({
                   key={di}
                   className={cn(
                     "relative p-[5px]",
-                    past ? "bg-[hsl(214,20%,89%)]" : isSelected ? "bg-primary/10" : "bg-white",
+                    isSearchMatch
+                      ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
+                      : past ? "bg-[hsl(214,20%,89%)]" : isSelected ? "bg-primary/10" : "bg-white",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -415,12 +425,13 @@ function WeekGrid({
                     className={cn(
                       "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
                       "active:scale-[0.90]",
-                      isSelected
-                        ? "bg-primary/30 border border-primary/60"
-                        : statusBg
+                      isSearchMatch
+                        ? "bg-primary/40 border-2 border-primary"
+                        : isSelected
+                          ? "bg-primary/30 border border-primary/60"
+                          : statusBg
                           ? cn(statusBg, past && "opacity-50", "hover:opacity-85")
                           : "bg-transparent",
-                      isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
                   >
                     {isSelected && selectedSlot?.name && (

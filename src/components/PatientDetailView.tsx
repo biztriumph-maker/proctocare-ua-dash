@@ -287,7 +287,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                     <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                   <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
-                    <ServicesPane />
+                    <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                     <TrackerPane preparation={preparation} status={patient.status} />
@@ -316,7 +316,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
               <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
-                <ServicesPane />
+                <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
               </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
@@ -725,13 +725,9 @@ function FilesPane({ onFocusEdit }: { onFocusEdit: (field: string, value: string
 }
 
 // ── Services Pane — uses full ProcedureSelector overlay ──
-const MOCK_SERVICES = [
-  "Колоноскопія з медичним сном",
-  "Взяття біопсії одноразовими щипцями",
-];
 
-function ServicesPane() {
-  const [services, setServices] = useState<string[]>(MOCK_SERVICES);
+function ServicesPane({ initialServices }: { initialServices: string[] }) {
+  const [services, setServices] = useState<string[]>(initialServices);
   const [showSelector, setShowSelector] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -767,15 +763,22 @@ function ServicesPane() {
       )}
 
       {services.length > 0 ? (
-        <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-2 px-4 pb-2 pt-1">
           {services.map((s) => (
-            <div key={s} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border/60">
-              <span className="text-xs font-bold text-foreground flex-1">{s}</span>
-            </div>
+            <button
+              key={s}
+              onClick={() => setConfirmDelete(s)}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-all active:scale-[0.96]"
+              style={{ backgroundColor: "#E3F2FD", color: "#1565C0" }}
+              title="Натисніть для видалення"
+            >
+              {s}
+              <X size={11} className="shrink-0 opacity-60" />
+            </button>
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground py-2 text-center">Послуги не додані</p>
+        <p className="text-xs text-muted-foreground py-2 px-4 text-center">Послуги не додані</p>
       )}
       <button
         onClick={() => setShowSelector(true)}

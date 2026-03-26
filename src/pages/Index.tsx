@@ -401,7 +401,6 @@ export default function Index() {
                   {filtered.length === 0 && !skeletonPatient && (
                     <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
                       Немає пацієнтів з таким статусом
-            realPatients={allCalendarPatients}
                     </div>
                   )}
                 </>
@@ -423,6 +422,13 @@ export default function Index() {
               });
             }}
             searchQuery={searchQuery}
+            realPatients={allCalendarPatients}
+            focusDate={(() => {
+              if (!searchQuery.trim()) return undefined;
+              const q = searchQuery.toLowerCase();
+              const match = allCalendarPatients.find(p => p.name.toLowerCase().includes(q) && p.date);
+              return match?.date || undefined;
+            })()}
           />
         )}
       </main>
