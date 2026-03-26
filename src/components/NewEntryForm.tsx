@@ -48,6 +48,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [notes, setNotes] = useState("");
   const [aiPrep, setAiPrep] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const filteredSuggestions = name.length > 0
