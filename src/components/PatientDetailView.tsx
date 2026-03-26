@@ -734,7 +734,14 @@ function ServicesPane({ services, onServicesChange }: { services: string[]; onSe
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
-    <div className="px-4 pb-4 space-y-2">
+    <div className="px-4 pb-4 space-y-2 relative">
+      <button
+        onClick={() => setShowSelector(true)}
+        className="absolute -top-10 right-4 w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all z-10"
+      >
+        <Pencil size={11} className="text-muted-foreground" />
+      </button>
+
       {/* Delete confirmation dialog */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDelete(null)}>
@@ -782,16 +789,6 @@ function ServicesPane({ services, onServicesChange }: { services: string[]; onSe
       ) : (
         <p className="text-xs text-muted-foreground py-2 px-4 text-center">Послуги не додані</p>
       )}
-      <button
-        onClick={() => setShowSelector(true)}
-        className="w-full flex items-center justify-between text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 px-3 transition-colors active:scale-[0.97]"
-      >
-        <div className="flex items-center gap-1.5">
-          <Pencil size={14} />
-          Змінити послуги
-        </div>
-        <ChevronRight size={14} className="text-primary/60" />
-      </button>
       {showSelector && (
         <ProcedureSelector
           selected={services}
