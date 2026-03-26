@@ -156,6 +156,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     protocol: "",
   });
   const mergedProfile = { ...profile, ...fields };
+  const [localServices, setLocalServices] = useState<string[]>(
+    patient.procedure ? patient.procedure.split(", ") : []
+  );
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient);
@@ -228,11 +231,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 </h2>
               )}
             </div>
-            <div className="flex items-center gap-2.5 mb-1">
-              <span className={cn("text-xs font-bold px-2.5 py-0.5 rounded-full", statusBadgeBg[patient.status])}>
-                {statusLabel[patient.status]}
-              </span>
-            </div>
             <div className="flex items-center gap-1.5 text-xs flex-wrap">
               <span className="text-muted-foreground font-normal">Дата:</span>
               <span className="font-bold text-foreground">
@@ -297,8 +295,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                     <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
-                  <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
-                    <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
+                  <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"} icon={<ClipboardList size={13} />}>
+                    <ServicesPane services={localServices} onServicesChange={setLocalServices} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                     <TrackerPane preparation={preparation} status={patient.status} />
@@ -326,8 +324,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
-              <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
-                <ServicesPane initialServices={patient.procedure ? patient.procedure.split(", ") : []} />
+              <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"} icon={<ClipboardList size={13} />}>
+                <ServicesPane services={localServices} onServicesChange={setLocalServices} />
               </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
@@ -475,118 +473,126 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 
 // ── Profile Pane with editable fields ──
 function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getMockProfile>; onFocusEdit: (field: string, value: string) => void }) {
-  const editValues = {
-    phone: profile.phone,
-    allergies: profile.allergies,
-    diagnosis: profile.diagnosis,
-    notes: profile.notes,
-  };
-
-  const rows = [
-    { label: "birthDateAge", value: "", isBirthDateAge: true },
-    { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
-    { label: "Алергії", value: editValues.allergies, highlight: !!editValues.allergies, editable: true, field: "allergies" },
-    { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
-    { label: "Останній візит", value: profile.lastVisit },
-    { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
-  ];
-
   const [editingBirthDate, setEditingBirthDate] = useState(false);
   const [localBirthDate, setLocalBirthDate] = useState(profile.birthDate || "");
+  const { ageStr } = calcAge(localBirthDate);
 
   return (
     <div className="px-4 pb-4 space-y-3">
-      {rows.map((row) => {
-        if (row.isBirthDateAge) {
-          const { ageStr } = calcAge(localBirthDate);
-          return (
-            <div key="birthDateAge" className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-1.5">
-                  Дата народження
-                </p>
-                {editingBirthDate ? (
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={localBirthDate}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
-                      let formatted = raw;
-                      if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
-                      if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
-                      setLocalBirthDate(formatted);
-                    }}
-                    placeholder="ДД.ММ.РРРР"
-                    maxLength={10}
-                    autoFocus
-                    onBlur={() => setEditingBirthDate(false)}
-                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all h-[36px]"
-                  />
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-bold text-foreground tabular-nums h-[36px] flex items-center">{localBirthDate || "—"}</p>
-                    <button
-                      onClick={() => setEditingBirthDate(true)}
-                      className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all shrink-0"
-                    >
-                      <Pencil size={12} className="text-muted-foreground" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div>
-                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-1.5">
-                  Вік
-                </p>
-                <p className="text-sm font-bold text-foreground tabular-nums h-[36px] flex items-center">
-                  {ageStr === "—" ? "... років" : ageStr}
-                </p>
-              </div>
-            </div>
-          );
-        }
 
-        return (
-          <div key={row.label}>
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
-                {row.label}
-              </p>
-              {row.editable && (
-                <button
-                  onClick={() => onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
-                  className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
-                >
-                  <Pencil size={14} className="text-muted-foreground" />
-                </button>
-              )}
-            </div>
-            {row.highlight ? (
-              <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
-                ⚠ {row.value}
-              </p>
-            ) : (
-              <button
-                onClick={() => row.editable && onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
-                className={cn("text-sm leading-snug font-bold text-left", row.editable && "cursor-pointer hover:text-primary transition-colors", row.value ? "text-foreground" : "text-muted-foreground/40 italic")}
-              >
-                {row.value || "—"}
+      {/* Row 1: Дата народження + Вік */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Дата народження</p>
+          {editingBirthDate ? (
+            <input
+              type="text" inputMode="numeric"
+              value={localBirthDate}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                let f = raw;
+                if (raw.length > 2) f = raw.slice(0, 2) + "." + raw.slice(2);
+                if (raw.length > 4) f = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                setLocalBirthDate(f);
+              }}
+              placeholder="ДД.ММ.РРРР" maxLength={10} autoFocus
+              onBlur={() => setEditingBirthDate(false)}
+              className="w-full bg-transparent text-sm font-bold tabular-nums outline-none border-b border-primary"
+            />
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-foreground tabular-nums">{localBirthDate || "—"}</span>
+              <button onClick={() => setEditingBirthDate(true)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all shrink-0">
+                <Pencil size={11} className="text-muted-foreground" />
               </button>
-            )}
-          </div>
-        );
-      })}
+            </div>
+          )}
+        </div>
+        <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Вік</p>
+          <span className="text-sm font-bold text-foreground tabular-nums">{ageStr === "—" ? "—" : ageStr}</span>
+        </div>
+      </div>
 
-      {/* Первинні нотатки — лише для нових пацієнтів з форми */}
+      {/* Row 2: Телефон */}
+      <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+            <Phone size={10} /> Телефон
+          </p>
+          <button onClick={() => onFocusEdit("phone", profile.phone)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+            <Pencil size={11} className="text-muted-foreground" />
+          </button>
+        </div>
+        <button onClick={() => onFocusEdit("phone", profile.phone)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.phone ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
+          {profile.phone || "Натисніть для введення"}
+        </button>
+      </div>
+
+      {/* Row 3: Алергії — highlighted red if filled */}
+      {profile.allergies ? (
+        <div className="bg-status-risk-bg rounded-xl border border-status-risk/30 px-3 py-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-status-risk uppercase tracking-wide">⚠ Алергії</p>
+            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-status-risk/10 transition-all">
+              <Pencil size={11} className="text-status-risk" />
+            </button>
+          </div>
+          <span className="text-sm font-bold text-status-risk">{profile.allergies}</span>
+        </div>
+      ) : (
+        <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Алергії</p>
+            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+              <Pencil size={11} className="text-muted-foreground" />
+            </button>
+          </div>
+          <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="text-sm italic text-muted-foreground/40 text-left w-full hover:text-muted-foreground transition-colors">Не зазначено</button>
+        </div>
+      )}
+
+      {/* Row 4: Діагноз */}
+      <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Діагноз</p>
+          <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+            <Pencil size={11} className="text-muted-foreground" />
+          </button>
+        </div>
+        <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.diagnosis ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
+          {profile.diagnosis || "Не встановлено"}
+        </button>
+      </div>
+
+      {/* Row 5: Останній візит */}
+      <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Останній візит</p>
+        <span className={cn("text-sm font-bold", profile.lastVisit ? "text-foreground" : "text-muted-foreground/40 italic")}>
+          {profile.lastVisit || "Перший прийом"}
+        </span>
+      </div>
+
+      {/* Row 6: Нотатки — highlighted blue block */}
+      <div className={cn("rounded-xl border px-3 py-2.5", profile.notes ? "bg-primary/5 border-primary/20" : "bg-background border-border/60")}>
+        <div className="flex items-center justify-between mb-1">
+          <p className={cn("text-[10px] font-bold uppercase tracking-wide", profile.notes ? "text-primary" : "text-muted-foreground")}>
+            📋 Нотатки
+          </p>
+          <button onClick={() => onFocusEdit("notes", profile.notes)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+            <Pencil size={11} className="text-muted-foreground" />
+          </button>
+        </div>
+        <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
+          {profile.notes || "Додайте нотатки про пацієнта"}
+        </button>
+      </div>
+
+      {/* Первинні нотатки з форми */}
       {profile.primaryNotes && (
-        <div className="pt-1">
-          <p className="text-[11px] font-bold text-primary uppercase tracking-wide mb-1">
-            Первинні нотатки
-          </p>
-          <p className="text-sm font-bold text-foreground leading-snug bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
-            {profile.primaryNotes}
-          </p>
+        <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2.5">
+          <p className="text-[10px] font-bold text-primary uppercase tracking-wide mb-1">Первинні нотатки</p>
+          <p className="text-sm font-bold text-foreground leading-relaxed">{profile.primaryNotes}</p>
         </div>
       )}
     </div>
@@ -742,8 +748,7 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
 
 // ── Services Pane — uses full ProcedureSelector overlay ──
 
-function ServicesPane({ initialServices }: { initialServices: string[] }) {
-  const [services, setServices] = useState<string[]>(initialServices);
+function ServicesPane({ services, onServicesChange }: { services: string[]; onServicesChange: (s: string[]) => void }) {
   const [showSelector, setShowSelector] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -766,7 +771,7 @@ function ServicesPane({ initialServices }: { initialServices: string[] }) {
               </button>
               <button
                 onClick={() => {
-                  setServices((prev) => prev.filter((x) => x !== confirmDelete));
+                  onServicesChange(services.filter((x) => x !== confirmDelete));
                   setConfirmDelete(null);
                 }}
                 className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
@@ -810,7 +815,7 @@ function ServicesPane({ initialServices }: { initialServices: string[] }) {
         <ProcedureSelector
           selected={services}
           onConfirm={(sel) => {
-            setServices(sel);
+            onServicesChange(sel);
             setShowSelector(false);
           }}
           onClose={() => setShowSelector(false)}
