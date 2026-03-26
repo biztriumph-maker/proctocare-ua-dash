@@ -87,7 +87,9 @@ export default function Index() {
     const saved = localStorage.getItem("proctocare_all_patients");
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Clean up legacy tomorrow mock patients just in case they were cached
+        return parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
       } catch (e) {
         console.error("Failed to parse saved patients", e);
       }
