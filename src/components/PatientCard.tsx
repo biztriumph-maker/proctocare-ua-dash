@@ -87,12 +87,11 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
           "transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]",
           "animate-reveal-up",
           patient.completed
-            ? "border-l-status-ready border-2 border-status-ready/40"
+            ? "border-l-status-ready border-2 border-status-ready/50 bg-[hsl(142,60%,93%)]"
             : patient.noShow
-              ? "border-l-status-risk border-2 border-status-risk/30 bg-status-risk-bg/30"
+              ? "border-l-status-risk border-2 border-status-risk/40 bg-[hsl(0,72%,93%)]"
               : cn("border border-[hsl(220,14%,82%)]", config.border),
-          isNew && "animate-new-slot-pulse",
-          patient.noShow && "opacity-50"
+          isNew && "animate-new-slot-pulse"
         )}
         style={{ animationDelay: isNew ? "0ms" : `${index * 60}ms` }}
       >
@@ -135,8 +134,10 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
         </button>
       </div>
 
-      {!patient.noShow && !patient.completed && (onNoShow || onComplete) && (
-        <div className="flex items-center gap-2 mt-2">
+      <div className={cn(
+        "flex items-center gap-2 mt-2",
+        (patient.noShow || patient.completed) && "invisible pointer-events-none"
+      )}>
           {onComplete && (
             <button
               onClick={(e) => {
@@ -162,7 +163,6 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
             </button>
           )}
         </div>
-      )}
     </div>
   );
 }
