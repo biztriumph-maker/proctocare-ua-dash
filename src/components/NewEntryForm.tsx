@@ -46,7 +46,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(prefillTime || "");
   const [notes, setNotes] = useState("");
-  const [aiPrep, setAiPrep] = useState(true);
+  const aiPrep = true; // default, toggle moved to patient card
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
