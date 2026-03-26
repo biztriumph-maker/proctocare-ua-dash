@@ -411,7 +411,9 @@ export default function Index() {
           <CalendarView
             onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
             onPatientClick={(p) => {
-              setSelectedPatient({
+              // Preserve full patient data (fromForm, date, etc.) when clicking from calendar
+              const real = allCalendarPatients.find(rp => rp.name === p.name && rp.time === p.time);
+              setSelectedPatient(real || {
                 id: `cal-${p.name}-${p.time}`,
                 name: p.name,
                 patronymic: p.patronymic,

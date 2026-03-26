@@ -142,9 +142,10 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const [focusField, setFocusField] = useState<{ field: string; value: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
-  const [localFullName, setLocalFullName] = useState(
-    `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`
-  );
+  const [localFullName, setLocalFullName] = useState(() => {
+    const raw = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`;
+    return correctNameSpelling(raw);
+  });
   const nameInputRef = useRef<HTMLInputElement>(null);
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
@@ -296,7 +297,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane onFocusEdit={handleFocusOpen} />
+                    <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -322,7 +323,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane onFocusEdit={handleFocusOpen} />
+                <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} />
               </ContentBlock>
             </div>
 
@@ -669,8 +670,19 @@ const MOCK_FILES = [
   { name: "Протокол колоноскопії.pdf", type: "doctor" as const, date: "24.03.2026" },
 ];
 
-function FilesPane({ onFocusEdit }: { onFocusEdit: (field: string, value: string) => void }) {
+function FilesPane({ onFocusEdit, fromForm }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean }) {
   const [protocolText] = useState("Огляд проведено. Слизова без патологій. Рекомендовано контрольний огляд через 6 місяців.");
+
+  if (fromForm) {
+    return (
+      <div className="px-4 pb-4 space-y-4">
+        <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
+          <Upload size={14} />
+          Завантажити файл
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pb-4 space-y-4">
@@ -879,7 +891,7 @@ function ChatInput() {
 
 // ── Assistant Toggle — moved from NewEntryForm ──
 function AssistantToggle() {
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
 
   return (
     <div className="mx-4 mt-3 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
