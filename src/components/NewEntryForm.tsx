@@ -94,8 +94,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         <div className="space-y-3.5">
           {/* Patient full name (ПІБ) — searchable textarea */}
           <div className="relative">
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              ПІБ пацієнта *
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">
+              ПІБ ПАЦІЄНТА <span className="text-status-risk text-sm leading-none">*</span>
             </label>
             <textarea
               ref={nameRef}
@@ -154,8 +154,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           {/* Birth Date + Age in one row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-                Дата народження
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">
+                ДАТА НАРОДЖЕННЯ <span className="text-status-risk text-sm leading-none">*</span>
               </label>
               <input
                 type="text"
@@ -203,16 +203,20 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
           {/* Phone */}
           <div>
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              <Phone size={10} className="inline mr-1 -mt-0.5" />
-              Телефон *
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">
+              <span className="flex items-center gap-1"><Phone size={10} className="-mt-0.5" /> ТЕЛЕФОН</span> <span className="text-status-risk text-sm leading-none">*</span>
             </label>
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+380 __ ___ __ __"
               type="tel"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              className={cn(
+                "w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium transition-all focus:outline-none focus:ring-2",
+                phone.replace(/\D/g, "").length > 12
+                  ? "border-status-risk text-status-risk focus:border-status-risk focus:ring-status-risk/20"
+                  : "placeholder:text-muted-foreground/40 focus:border-primary/40 focus:ring-primary/20"
+              )}
             />
           </div>
 
@@ -223,8 +227,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               onClick={() => setShowProcedureSelector(true)}
               className="w-full text-left"
             >
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-                {procedures.length > 0 ? "Змінити послуги" : "Обрати послуги"} *
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">
+                {procedures.length > 0 ? "ЗМІНИТИ ПОСЛУГИ" : "ОБРАТИ ПОСЛУГИ"} <span className="text-status-risk text-sm leading-none">*</span>
               </span>
               {procedures.length === 0 ? (
                 <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium text-muted-foreground/40 hover:border-primary/40 transition-all">
@@ -249,7 +253,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
           {/* Date & Time — opens planning calendar */}
           <div>
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Дата та час</label>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">ДАТА ТА ЧАС <span className="text-status-risk text-sm leading-none">*</span></label>
             <button
               type="button"
               onClick={() => setShowPlanningPicker(true)}
@@ -329,7 +333,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name || !date || !time || procedures.length === 0}
+          disabled={!name.trim() || !date || !time || procedures.length === 0 || phone.replace(/\D/g, "").length !== 12 || birthDate.replace(/\D/g, "").length !== 8}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
