@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Plus, Eye } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Plus, Eye, Trash2, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -215,6 +215,9 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                     <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
+                  <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
+                    <ServicesPane />
+                  </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                     <TrackerPane preparation={preparation} status={patient.status} />
                   </ContentBlock>
@@ -223,9 +226,6 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                     <FilesPane onFocusEdit={handleFocusOpen} />
-                  </ContentBlock>
-                  <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
-                    <PricePane />
                   </ContentBlock>
                 </div>
               ) : (
@@ -243,14 +243,14 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
+              <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
+                <ServicesPane />
+              </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                 <FilesPane onFocusEdit={handleFocusOpen} />
-              </ContentBlock>
-              <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
-                <PricePane />
               </ContentBlock>
             </div>
 
@@ -585,63 +585,67 @@ function FilesPane({ onFocusEdit }: { onFocusEdit: (field: string, value: string
   );
 }
 
-// ── Price Pane — add services from pricelist ──
-const PRICE_LIST = [
-  { name: "Колоноскопія діагностична", price: 3200 },
-  { name: "Колоноскопія з біопсією", price: 4500 },
-  { name: "Ректоскопія", price: 1800 },
-  { name: "Аноскопія", price: 1200 },
-  { name: "Консультація проктолога", price: 900 },
-  { name: "Видалення поліпа", price: 5500 },
+// ── Services Pane — list without prices, editable ──
+const MOCK_SERVICES = [
+  "Колоноскопія з медичним сном",
+  "Взяття біопсії одноразовими щипцями",
 ];
 
-function PricePane() {
-  const [added, setAdded] = useState<number[]>([]);
-  const [showList, setShowList] = useState(false);
+function ServicesPane() {
+  const [services, setServices] = useState<string[]>(MOCK_SERVICES);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const ALL_SERVICES = [
+    "Колоноскопія",
+    "Колоноскопія з медичним сном",
+    "Гастроскопія",
+    "Ректоскопія з використанням ендоскопу",
+    "Взяття біопсії одноразовими щипцями",
+    "Поліпектомія при колоноскопії 1 клас 1А",
+    "Медичний сон до 20хв.",
+  ];
+
+  const available = ALL_SERVICES.filter((s) => !services.includes(s));
 
   return (
     <div className="px-4 pb-4 space-y-2">
-      {added.length > 0 && (
+      {services.length > 0 ? (
         <div className="space-y-1.5">
-          {added.map((idx) => (
-            <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-status-ready-bg border border-status-ready/20">
-              <span className="text-xs font-bold text-foreground">{PRICE_LIST[idx].name}</span>
-              <span className="text-xs font-bold text-status-ready">{PRICE_LIST[idx].price} ₴</span>
+          {services.map((s) => (
+            <div key={s} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border/60">
+              <span className="text-xs font-bold text-foreground flex-1">{s}</span>
+              <button
+                onClick={() => setServices((prev) => prev.filter((x) => x !== s))}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-destructive/10 active:scale-[0.9] transition-all"
+                title="Видалити"
+              >
+                <Trash2 size={12} className="text-muted-foreground hover:text-destructive" />
+              </button>
             </div>
           ))}
-          <div className="flex justify-end pt-1">
-            <span className="text-sm font-bold text-foreground">
-              Разом: {added.reduce((sum, idx) => sum + PRICE_LIST[idx].price, 0)} ₴
-            </span>
-          </div>
         </div>
+      ) : (
+        <p className="text-xs text-muted-foreground py-2 text-center">Послуги не додані</p>
       )}
       <button
-        onClick={() => setShowList(!showList)}
+        onClick={() => setShowAdd(!showAdd)}
         className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]"
       >
         <Plus size={14} />
         Додати послугу
       </button>
-      {showList && (
+      {showAdd && (
         <div className="space-y-1 animate-reveal-up">
-          {PRICE_LIST.map((item, i) => (
+          {available.map((item) => (
             <button
-              key={i}
+              key={item}
               onClick={() => {
-                if (!added.includes(i)) setAdded([...added, i]);
-                setShowList(false);
+                setServices((prev) => [...prev, item]);
+                setShowAdd(false);
               }}
-              disabled={added.includes(i)}
-              className={cn(
-                "w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors active:scale-[0.98]",
-                added.includes(i)
-                  ? "bg-muted/50 opacity-50"
-                  : "bg-background border border-border/60 hover:bg-accent/40"
-              )}
+              className="w-full flex items-center p-2.5 rounded-lg text-left bg-background border border-border/60 hover:bg-accent/40 transition-colors active:scale-[0.98]"
             >
-              <span className="text-xs font-bold text-foreground">{item.name}</span>
-              <span className="text-xs font-bold text-muted-foreground">{item.price} ₴</span>
+              <span className="text-xs font-bold text-foreground">{item}</span>
             </button>
           ))}
         </div>

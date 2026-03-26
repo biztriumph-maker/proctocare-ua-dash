@@ -1,12 +1,14 @@
-import { X, Phone, Headphones, ChevronDown } from "lucide-react";
+import { X, Phone, Headphones, ChevronDown, ChevronRight } from "lucide-react";
 import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { ProcedureSelector } from "./ProcedureSelector";
 
 export interface NewEntryData {
   name: string;
   birthDate: string;
   phone: string;
   procedure: string;
+  procedures: string[];
   date: string;
   time: string;
   notes: string;
@@ -20,13 +22,6 @@ interface NewEntryFormProps {
   onSave: (entry: NewEntryData) => void;
 }
 
-const PROCEDURES = [
-  "Колоноскопія",
-  "Ректоскопія",
-  "Аноскопія",
-  "Консультація",
-  "Сигмоскопія",
-];
 
 const PATIENT_SUGGESTIONS = [
   "Коваленко Олена",
@@ -46,7 +41,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
-  const [procedure, setProcedure] = useState("");
+  const [procedures, setProcedures] = useState<string[]>([]);
+  const [showProcedureSelector, setShowProcedureSelector] = useState(false);
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(prefillTime || "");
   const [notes, setNotes] = useState("");
@@ -59,8 +55,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
     : [];
 
   const handleSave = () => {
-    if (!name || !date || !time || !procedure) return;
-    onSave({ name, birthDate, phone, procedure, date, time, notes, aiPrep });
+    if (!name || !date || !time || procedures.length === 0) return;
+    onSave({ name, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -186,24 +182,37 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             />
           </div>
 
-          {/* Procedure — dropdown */}
-          <div className="relative">
+          {/* Procedure — fullscreen selector */}
+          <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              Процедура *
+              Процедури *
             </label>
-            <div className="relative">
-              <select
-                value={procedure}
-                onChange={(e) => setProcedure(e.target.value)}
-                className="w-full appearance-none px-3 py-2.5 pr-8 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-              >
-                <option value="">Обрати процедуру</option>
-                {PROCEDURES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+            <button
+              type="button"
+              onClick={() => setShowProcedureSelector(true)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left"
+            >
+              <span className={procedures.length > 0 ? "text-foreground" : "text-muted-foreground/40"}>
+                {procedures.length > 0 ? `Обрано: ${procedures.length}` : "Обрати процедуру"}
+              </span>
+              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+            </button>
+            {procedures.length > 0 && (
+              <div className="mt-1.5 space-y-1">
+                {procedures.map((p) => (
+                  <div key={p} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-primary/5 border border-primary/15">
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">{p}</span>
+                    <button
+                      type="button"
+                      onClick={() => setProcedures(prev => prev.filter(x => x !== p))}
+                      className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-colors"
+                    >
+                      <X size={10} className="text-muted-foreground" />
+                    </button>
+                  </div>
                 ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Date & Time */}
@@ -278,12 +287,23 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name || !date || !time || !procedure}
+          disabled={!name || !date || !time || procedures.length === 0}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
         </button>
       </div>
+
+      {showProcedureSelector && (
+        <ProcedureSelector
+          selected={procedures}
+          onConfirm={(sel) => {
+            setProcedures(sel);
+            setShowProcedureSelector(false);
+          }}
+          onClose={() => setShowProcedureSelector(false)}
+        />
+      )}
     </div>
   );
 }

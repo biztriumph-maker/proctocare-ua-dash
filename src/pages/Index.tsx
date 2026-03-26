@@ -131,7 +131,7 @@ export default function Index() {
       id: newId,
       name: entry.name,
       time: entry.time,
-      procedure: entry.procedure,
+      procedure: entry.procedures?.length > 0 ? entry.procedures.join(", ") : entry.procedure,
       status: "progress",
       aiSummary: entry.aiPrep ? "Асистент надсилає інструкції..." : "Очікує підготовки",
       birthDate: entry.birthDate,
