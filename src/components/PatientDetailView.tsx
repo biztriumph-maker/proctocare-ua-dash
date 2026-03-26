@@ -266,6 +266,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                   </span>
                 ) : undefined}
               >
+                <AssistantToggle />
                 <ChatPane chat={chat} unanswered={unanswered} />
                 <ChatInput />
               </ContentBlock>
