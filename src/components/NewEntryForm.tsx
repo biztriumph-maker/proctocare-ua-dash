@@ -124,9 +124,14 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
           {/* Birth Date + Age in one row */}
           <div>
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              Дата народження & Вік *
-            </label>
+            <div className="grid grid-cols-2 gap-3 mb-1.5">
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block">
+                Дата народження
+              </label>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block">
+                Вік
+              </label>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
