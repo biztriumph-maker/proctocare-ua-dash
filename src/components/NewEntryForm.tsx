@@ -123,16 +123,11 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           </div>
 
           {/* Birth Date + Age in one row */}
-          <div>
-            <div className="grid grid-cols-2 gap-3 mb-1.5">
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
                 Дата народження
               </label>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide block">
-                Вік
-              </label>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
                 inputMode="numeric"
@@ -148,9 +143,14 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 maxLength={10}
                 className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               />
-              <div className="flex items-center px-3 py-2.5 rounded-lg border bg-background">
-                <span className="text-sm font-bold text-foreground">
-                  Вік: {(() => {
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Вік
+              </label>
+              <div className="flex items-center px-3 py-2.5 rounded-lg border bg-background h-[42px]">
+                <span className="text-sm font-bold text-foreground tabular-nums">
+                  {(() => {
                     const parts = birthDate.split(".");
                     if (parts.length === 3 && parts[2].length === 4) {
                       const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
@@ -166,7 +166,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                         }
                       }
                     }
-                    return "—";
+                    return "... років";
                   })()}
                 </span>
               </div>

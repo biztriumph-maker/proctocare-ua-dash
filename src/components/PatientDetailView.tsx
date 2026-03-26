@@ -417,17 +417,9 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
           return (
             <div key="birthDateAge" className="grid grid-cols-2 gap-3">
               <div>
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
-                    Дата народження
-                  </p>
-                  <button
-                    onClick={() => setEditingBirthDate(!editingBirthDate)}
-                    className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
-                  >
-                    <Pencil size={14} className="text-muted-foreground" />
-                  </button>
-                </div>
+                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-1.5">
+                  Дата народження
+                </p>
                 {editingBirthDate ? (
                   <input
                     type="text"
@@ -444,17 +436,27 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
                     maxLength={10}
                     autoFocus
                     onBlur={() => setEditingBirthDate(false)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all h-[36px]"
                   />
                 ) : (
-                  <p className="text-sm font-bold text-foreground">{localBirthDate || "—"}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-foreground tabular-nums h-[36px] flex items-center">{localBirthDate || "—"}</p>
+                    <button
+                      onClick={() => setEditingBirthDate(true)}
+                      className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all shrink-0"
+                    >
+                      <Pencil size={12} className="text-muted-foreground" />
+                    </button>
+                  </div>
                 )}
               </div>
               <div>
-                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-0.5">
+                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-1.5">
                   Вік
                 </p>
-                <p className="text-sm font-bold text-foreground mt-[0.35rem]">{ageStr}</p>
+                <p className="text-sm font-bold text-foreground tabular-nums h-[36px] flex items-center">
+                  {ageStr === "—" ? "... років" : ageStr}
+                </p>
               </div>
             </div>
           );
