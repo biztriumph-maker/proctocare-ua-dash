@@ -243,14 +243,14 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane profile={profile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
+              <ContentBlock title="Послуги" icon={<ClipboardList size={13} />}>
+                <ServicesPane />
+              </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                 <FilesPane onFocusEdit={handleFocusOpen} />
-              </ContentBlock>
-              <ContentBlock title="Послуги (Прайс)" icon={<Activity size={13} />}>
-                <PricePane />
               </ContentBlock>
             </div>
 
