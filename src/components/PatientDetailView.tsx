@@ -397,9 +397,8 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
     notes: profile.notes,
   };
 
-  const rows = [
-    { label: "Дата народження", value: profile.birthDate || "—" },
-    { label: "Вік", value: profile.age },
+   const rows = [
+    { label: "Дата народження / Вік", value: `${profile.birthDate || "—"}  ·  ${profile.age}`, inline: true },
     { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
     { label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" },
     { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
@@ -604,7 +603,11 @@ function ServicesPane() {
             <div key={s} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border/60">
               <span className="text-xs font-bold text-foreground flex-1">{s}</span>
               <button
-                onClick={() => setServices((prev) => prev.filter((x) => x !== s))}
+                onClick={() => {
+                  if (window.confirm(`Ви точно хочете видалити послугу "${s}"?`)) {
+                    setServices((prev) => prev.filter((x) => x !== s));
+                  }
+                }}
                 className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-destructive/10 active:scale-[0.9] transition-all"
                 title="Видалити"
               >

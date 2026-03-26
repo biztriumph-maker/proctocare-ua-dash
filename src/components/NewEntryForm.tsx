@@ -122,48 +122,49 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             )}
           </div>
 
-          {/* Birth Date */}
+          {/* Birth Date + Age in one row */}
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              Дата народження *
+              Дата народження & Вік *
             </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={birthDate}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
-                let formatted = raw;
-                if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
-                if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
-                setBirthDate(formatted);
-              }}
-              placeholder="ДД.ММ.РРРР"
-              maxLength={10}
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-            />
-            <div className="flex items-center gap-2 mt-1.5 px-3 py-2 rounded-lg border bg-background">
-              <span className="text-sm font-medium text-foreground">Вік:</span>
-              <span className="text-sm font-medium text-foreground">
-                {(() => {
-                  const parts = birthDate.split(".");
-                  if (parts.length === 3 && parts[2].length === 4) {
-                    const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
-                    if (!isNaN(bd.getTime())) {
-                      const today = new Date();
-                      let age = today.getFullYear() - bd.getFullYear();
-                      const m = today.getMonth() - bd.getMonth();
-                      if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
-                      if (age >= 0 && age < 150) {
-                        const ld = age % 10, lt = age % 100;
-                        const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
-                        return `${age} ${s}`;
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={birthDate}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                  let formatted = raw;
+                  if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
+                  if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                  setBirthDate(formatted);
+                }}
+                placeholder="ДД.ММ.РРРР"
+                maxLength={10}
+                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              />
+              <div className="flex items-center px-3 py-2.5 rounded-lg border bg-background">
+                <span className="text-sm font-bold text-foreground">
+                  Вік: {(() => {
+                    const parts = birthDate.split(".");
+                    if (parts.length === 3 && parts[2].length === 4) {
+                      const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+                      if (!isNaN(bd.getTime())) {
+                        const today = new Date();
+                        let age = today.getFullYear() - bd.getFullYear();
+                        const m = today.getMonth() - bd.getMonth();
+                        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+                        if (age >= 0 && age < 150) {
+                          const ld = age % 10, lt = age % 100;
+                          const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
+                          return `${age} ${s}`;
+                        }
                       }
                     }
-                  }
-                  return "—";
-                })()}
-              </span>
+                    return "—";
+                  })()}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -202,7 +203,11 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                     <span className="text-xs font-medium text-foreground flex-1 truncate">{p}</span>
                     <button
                       type="button"
-                      onClick={() => setProcedures(prev => prev.filter(x => x !== p))}
+                      onClick={() => {
+                        if (window.confirm(`Ви точно хочете видалити послугу "${p}"?`)) {
+                          setProcedures(prev => prev.filter(x => x !== p));
+                        }
+                      }}
                       className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-colors"
                     >
                       <X size={10} className="text-muted-foreground" />
