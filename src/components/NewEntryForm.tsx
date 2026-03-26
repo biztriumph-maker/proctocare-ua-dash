@@ -251,7 +251,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Bot size={16} className="text-primary" />
+                <Headphones size={16} className="text-primary" />
               </div>
               <div className="min-w-0">
                 <p className="text-[12px] font-semibold text-foreground">Запустити ШІ-підготовку</p>
