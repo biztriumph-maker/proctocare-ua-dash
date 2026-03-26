@@ -398,7 +398,7 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
   };
 
    const rows = [
-    { label: "Дата народження / Вік", value: `${profile.birthDate || "—"}  ·  ${profile.age}`, inline: true },
+    { label: "birthDateAge", value: "", isBirthDateAge: true },
     { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
     { label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" },
     { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
@@ -406,37 +406,90 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
     { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
   ];
 
+  const [editingBirthDate, setEditingBirthDate] = useState(false);
+  const [localBirthDate, setLocalBirthDate] = useState(profile.birthDate || "");
+
   return (
     <div className="px-4 pb-4 space-y-3">
-      {rows.map((row) => (
-        <div key={row.label}>
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
-              {row.label}
-            </p>
-            {row.editable && (
+      {rows.map((row) => {
+        if (row.isBirthDateAge) {
+          const { ageStr } = calcAge(localBirthDate);
+          return (
+            <div key="birthDateAge" className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
+                    Дата народження
+                  </p>
+                  <button
+                    onClick={() => setEditingBirthDate(!editingBirthDate)}
+                    className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
+                  >
+                    <Pencil size={14} className="text-muted-foreground" />
+                  </button>
+                </div>
+                {editingBirthDate ? (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={localBirthDate}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                      let formatted = raw;
+                      if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
+                      if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                      setLocalBirthDate(formatted);
+                    }}
+                    placeholder="ДД.ММ.РРРР"
+                    maxLength={10}
+                    autoFocus
+                    onBlur={() => setEditingBirthDate(false)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                  />
+                ) : (
+                  <p className="text-sm font-bold text-foreground">{localBirthDate || "—"}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide mb-0.5">
+                  Вік
+                </p>
+                <p className="text-sm font-bold text-foreground mt-[0.35rem]">{ageStr}</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={row.label}>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <p className="text-[11px] font-normal text-muted-foreground uppercase tracking-wide">
+                {row.label}
+              </p>
+              {row.editable && (
+                <button
+                  onClick={() => onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
+                  className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
+                >
+                  <Pencil size={14} className="text-muted-foreground" />
+                </button>
+              )}
+            </div>
+            {row.highlight ? (
+              <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
+                ⚠ {row.value}
+              </p>
+            ) : (
               <button
-                onClick={() => onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
+                onClick={() => row.editable && onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
+                className={cn("text-sm leading-snug font-bold text-foreground text-left", row.editable && "cursor-pointer hover:text-primary transition-colors")}
               >
-                <Pencil size={14} className="text-muted-foreground" />
+                {row.value}
               </button>
             )}
           </div>
-          {row.highlight ? (
-            <p className="text-sm leading-snug font-bold text-status-risk bg-status-risk-bg px-2 py-1 rounded-md inline-block">
-              ⚠ {row.value}
-            </p>
-          ) : (
-            <button
-              onClick={() => row.editable && onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
-              className={cn("text-sm leading-snug font-bold text-foreground text-left", row.editable && "cursor-pointer hover:text-primary transition-colors")}
-            >
-              {row.value}
-            </button>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
