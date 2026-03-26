@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Check } from "lucide-react";
+import { X, Check, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ProcedureCategory {
