@@ -473,10 +473,10 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
   const rows = [
     { label: "birthDateAge", value: "", isBirthDateAge: true },
     { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
-    ...(profile.allergies ? [{ label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" }] : []),
-    ...(profile.diagnosis ? [{ label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" }] : []),
-    ...(profile.lastVisit ? [{ label: "Останній візит", value: profile.lastVisit }] : []),
-    ...(profile.notes ? [{ label: "Нотатки", value: editValues.notes, editable: true, field: "notes" }] : []),
+    { label: "Алергії", value: editValues.allergies, highlight: !!editValues.allergies, editable: true, field: "allergies" },
+    { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
+    { label: "Останній візит", value: profile.lastVisit },
+    { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
   ];
 
   const [editingBirthDate, setEditingBirthDate] = useState(false);
@@ -557,9 +557,9 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
             ) : (
               <button
                 onClick={() => row.editable && onFocusEdit(row.field!, editValues[row.field as keyof typeof editValues])}
-                className={cn("text-sm leading-snug font-bold text-foreground text-left", row.editable && "cursor-pointer hover:text-primary transition-colors")}
+                className={cn("text-sm leading-snug font-bold text-left", row.editable && "cursor-pointer hover:text-primary transition-colors", row.value ? "text-foreground" : "text-muted-foreground/40 italic")}
               >
-                {row.value}
+                {row.value || "—"}
               </button>
             )}
           </div>
@@ -671,22 +671,11 @@ const MOCK_FILES = [
 ];
 
 function FilesPane({ onFocusEdit, fromForm }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean }) {
-  const [protocolText] = useState("Огляд проведено. Слизова без патологій. Рекомендовано контрольний огляд через 6 місяців.");
-
-  if (fromForm) {
-    return (
-      <div className="px-4 pb-4 space-y-4">
-        <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
-          <Upload size={14} />
-          Завантажити файл
-        </button>
-      </div>
-    );
-  }
+  const [protocolText, setProtocolText] = useState("");
 
   return (
     <div className="px-4 pb-4 space-y-4">
-      {/* Protocol block — highlighted with blue border */}
+      {/* Protocol block — always shown, empty for new patients */}
       <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
@@ -700,15 +689,19 @@ function FilesPane({ onFocusEdit, fromForm }: { onFocusEdit: (field: string, val
             <Pencil size={12} className="text-muted-foreground" />
           </button>
         </div>
-        <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+        {protocolText ? (
+          <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+        ) : (
+          <p className="text-sm leading-relaxed text-muted-foreground/40 italic">Протокол ще не заповнено</p>
+        )}
       </div>
 
-      {/* Files block */}
+      {/* Files block — always shown */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
           Файли та аналізи
         </h4>
-        {MOCK_FILES.map((file, i) => (
+        {!fromForm && MOCK_FILES.map((file, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
             <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
             <div className="min-w-0 flex-1">
