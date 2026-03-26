@@ -124,7 +124,7 @@ export function AIAlertSection({ alerts, onReply, onOpenReply }: AIAlertSectionP
       <div className="flex items-center gap-2">
         <AlertTriangle size={16} className="text-status-progress shrink-0" />
         <h3 className="text-sm font-semibold text-foreground">
-          ШІ потребує допомоги
+          Асистент: потрібна увага
         </h3>
         <span className="ml-auto bg-status-progress text-white text-xs font-bold px-2.5 py-0.5 rounded-full tabular-nums">
           {visible.length}

@@ -188,7 +188,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
               {([
                 { key: "card" as const, label: "Карта", icon: <User size={14} /> },
                 { key: "files" as const, label: "Обстеження", icon: <FileText size={14} /> },
-                { key: "assistant" as const, label: "ШІ-асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
+                { key: "assistant" as const, label: "Асистент", icon: <MessageCircle size={14} />, badge: unanswered.length },
               ]).map((tab) => (
                 <button
                   key={tab.key}
@@ -256,7 +256,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
 
             {/* Right column: 60% */}
             <div className="w-[60%] flex flex-col overflow-hidden p-4 pl-0">
-              <ContentBlock title="Штучний інтелект" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
+              <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={unanswered.length > 0 ? (
                   <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
                     <AlertTriangle size={12} />
@@ -690,7 +690,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
               )}
             >
               <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
-                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "ШІ-асистент"} · 24.03 | {msg.time}
+                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "Асистент"} · 24.03 | {msg.time}
               </p>
               <p className="text-foreground">{msg.text}</p>
             </div>

@@ -105,7 +105,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
               )}
             >
               <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">
-                {msg.sender === "patient" ? "Пацієнт" : "ІІ-асистент"} · {msg.time}
+                {msg.sender === "patient" ? "Пацієнт" : "Асистент"} · {msg.time}
               </p>
               <p>{msg.text}</p>
             </div>
