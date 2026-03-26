@@ -15,6 +15,9 @@ export interface Patient {
   birthDate?: string;
   phone?: string;
   primaryNotes?: string;
+  notes?: string;
+  protocol?: string;
+  files?: Array<{ id: string, name: string, type: "doctor" | "patient", date: string, url?: string }>;
   date?: string;
   fromForm?: boolean;
   paid?: boolean;

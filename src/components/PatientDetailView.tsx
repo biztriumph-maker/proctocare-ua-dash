@@ -6,6 +6,7 @@ import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
+import { toast } from "sonner";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -146,20 +147,35 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   });
   const nameInputRef = useRef<HTMLInputElement>(null);
   const profile = getMockProfile(patient);
+  
+  const initialNotes = patient.notes !== undefined ? patient.notes : profile.notes;
+  const initialProtocol = patient.protocol || "";
+  const initialPhone = patient.phone || profile.phone;
+  const initialServices = patient.procedure ? patient.procedure.split(", ") : [];
+
   const [fields, setFields] = useState({
-    phone: profile.phone,
+    phone: initialPhone,
     allergies: profile.allergies,
     diagnosis: profile.diagnosis,
-    notes: profile.notes,
-    protocol: "",
+    notes: initialNotes,
+    protocol: initialProtocol,
   });
   const mergedProfile = { ...profile, ...fields };
-  const [localServices, setLocalServices] = useState<string[]>(
-    patient.procedure ? patient.procedure.split(", ") : []
-  );
+  
+  const [localServices, setLocalServices] = useState<string[]>(initialServices);
+  
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient);
+
+  const [localFiles, setLocalFiles] = useState<FileItem[]>(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
+
+  const hasUnsavedChanges = 
+    fields.notes !== initialNotes || 
+    fields.protocol !== initialProtocol || 
+    fields.phone !== initialPhone ||
+    localServices.join(", ") !== (patient.procedure || "") ||
+    JSON.stringify(localFiles) !== JSON.stringify(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
 
   const handleFocusOpen = (field: string, value: string) => {
     setFocusField({ field, value });
@@ -188,6 +204,19 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
 
   const handleFocusCancel = () => {
     setFocusField(null);
+  };
+
+  const handleSaveChanges = () => {
+    if (onUpdatePatient) {
+      onUpdatePatient({
+        notes: fields.notes,
+        protocol: fields.protocol,
+        phone: fields.phone,
+        procedure: localServices.join(", "),
+        files: localFiles
+      });
+      toast.success("Дані пацієнта успішно збережено");
+    }
   };
 
   return (
@@ -303,7 +332,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
+                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -329,7 +358,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
+                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
               </ContentBlock>
             </div>
 
@@ -350,6 +379,24 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
             </div>
           </div>
         )}
+
+        {/* ── Sticky Save Footer ── */}
+        <div className={cn(
+          "shrink-0 bg-white border-t p-3 sm:p-4 px-4 sm:px-6 transition-all duration-300 transform",
+          hasUnsavedChanges ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 hidden"
+        )}>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-status-risk flex items-center gap-2">
+              <AlertTriangle size={16} /> Є незбережені зміни
+            </p>
+            <button
+              onClick={handleSaveChanges}
+              className="py-2.5 px-6 rounded-lg bg-primary text-primary-foreground font-bold text-sm shadow-md hover:shadow-lg hover:bg-primary/95 transition-all active:scale-[0.97]"
+            >
+              Зберегти зміни
+            </button>
+          </div>
+        </div>
 
         {/* ── Focus Mode Overlay ── */}
         {focusField && (
@@ -665,9 +712,8 @@ const MOCK_FILES: FileItem[] = [
   { id: "mock3", name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
 ];
 
-function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText }: { files: FileItem[], onFilesChange: (files: FileItem[]) => void, onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<FileItem[]>(fromForm ? [] : [...MOCK_FILES]);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -683,7 +729,7 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
           url: URL.createObjectURL(file)
         };
       });
-      setFiles(prev => [...prev, ...newFiles]);
+      onFilesChange([...files, ...newFiles]);
     }
   };
 
@@ -716,7 +762,7 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
               </button>
               <button
                 onClick={() => {
-                  setFiles(files.filter((x) => x.id !== confirmDeleteFile));
+                  onFilesChange(files.filter((x) => x.id !== confirmDeleteFile));
                   setConfirmDeleteFile(null);
                 }}
                 className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
