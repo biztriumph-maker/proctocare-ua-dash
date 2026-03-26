@@ -229,8 +229,9 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
                     <FilesPane onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
                 </div>
-              ) : (
+              ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
+                  <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
                   <ChatInput />
                 </div>
