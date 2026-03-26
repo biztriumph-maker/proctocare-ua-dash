@@ -206,6 +206,16 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     setFocusField(null);
   };
 
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const handleCloseRequest = () => {
+    if (hasUnsavedChanges) {
+      setShowExitConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
   const handleSaveChanges = () => {
     if (onUpdatePatient) {
       onUpdatePatient({
@@ -221,7 +231,42 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={handleCloseRequest} />
+
+      {/* Unsaved changes confirmation dialog */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setShowExitConfirm(false)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">Зберегти зміни?</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Ви внесли зміни в картку пацієнта. Що з ними зробити?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  handleSaveChanges();
+                  onClose();
+                }}
+                className="w-full py-2.5 text-sm font-bold bg-primary text-primary-foreground rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Зберегти та вийти
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 text-sm font-bold text-destructive hover:bg-destructive/10 border border-destructive/20 rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Вийти без збереження
+              </button>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted/40 rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Скасувати та продовжити редагування
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={cn(
         "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
@@ -280,7 +325,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               <Phone size={16} />
             </a>
             <button
-              onClick={onClose}
+              onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
             >
               <X size={18} />
