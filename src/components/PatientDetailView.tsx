@@ -69,8 +69,7 @@ function getMockProfile(patient: Patient) {
       allergies: "",
       diagnosis: "",
       lastVisit: "",
-      notes: "",
-      primaryNotes: patient.primaryNotes || "",
+      notes: patient.primaryNotes || "",
     };
   }
   // Existing mock patients
@@ -81,8 +80,7 @@ function getMockProfile(patient: Patient) {
     allergies: "Пеніцилін",
     diagnosis: "Поліп сигмовидної кишки (K63.5)",
     lastVisit: "12.01.2026",
-    notes: "Хронічний гастрит. Приймає омепразол 20мг.",
-    primaryNotes: patient.primaryNotes || "",
+    notes: ["Хронічний гастрит. Приймає омепразол 20мг.", patient.primaryNotes].filter(Boolean).join("\n\n"),
   };
 }
 
@@ -295,7 +293,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                     <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
                   </ContentBlock>
-                  <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"} icon={<ClipboardList size={13} />}>
+                  <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                     <ServicesPane services={localServices} onServicesChange={setLocalServices} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
@@ -324,7 +322,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
               </ContentBlock>
-              <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"} icon={<ClipboardList size={13} />}>
+              <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} />
               </ContentBlock>
               <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
@@ -414,8 +412,7 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
         <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
           <div className="w-full max-w-3xl bg-card rounded-2xl shadow-2xl border border-border/40 overflow-hidden" style={{ maxHeight: "75vh" }}>
             <div className="px-5 py-3 border-b border-border/40 bg-[hsl(204,100%,97%)]">
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <Pencil size={14} className="text-primary" />
+              <h3 className="text-sm font-bold text-foreground">
                 {fieldLabels[field] || field}
               </h3>
             </div>
@@ -454,7 +451,7 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
   children: React.ReactNode;
   className?: string;
   title: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   headerRight?: React.ReactNode;
 }) {
   return (
@@ -573,19 +570,16 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
         </span>
       </div>
 
-      {/* Row 6: Нотатки (merged with primaryNotes) */}
+        {/* Row 6: Нотатки */}
       <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
         <div className="flex items-center justify-between mb-1">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">📋 Нотатки</p>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Нотатки</p>
           <button onClick={() => onFocusEdit("notes", profile.notes)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
-        {profile.primaryNotes && (
-          <p className="text-sm font-bold text-foreground leading-relaxed mb-1">{profile.primaryNotes}</p>
-        )}
-        <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
-          {profile.notes || (profile.primaryNotes ? "" : "Додайте нотатки про пацієнта")}
+        <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors whitespace-pre-wrap", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
+          {profile.notes || "Додайте нотатки про пацієнта"}
         </button>
       </div>
     </div>
@@ -670,6 +664,29 @@ const MOCK_FILES = [
 ];
 
 function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, type: "doctor" | "patient", date: string}[]>([]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files).map(file => {
+        const today = new Date();
+        const dateStr = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
+        return {
+          name: file.name,
+          type: "doctor" as const,
+          date: dateStr
+        };
+      });
+      setUploadedFiles(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const allFiles = fromForm ? uploadedFiles : [...MOCK_FILES, ...uploadedFiles];
 
   return (
     <div className="px-4 pb-4 space-y-4">
@@ -699,7 +716,7 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
         <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
           Файли та аналізи
         </h4>
-        {!fromForm && MOCK_FILES.map((file, i) => (
+        {allFiles.map((file, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
             <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
             <div className="min-w-0 flex-1">
@@ -718,7 +735,21 @@ function FilesPane({ onFocusEdit, fromForm, protocolText }: { onFocusEdit: (fiel
             </div>
           </div>
         ))}
-        <button className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]">
+
+        {/* Hidden file input */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileChange} 
+          multiple
+          className="hidden" 
+          accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .txt" 
+        />
+
+        <button 
+          onClick={handleUploadClick}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]"
+        >
           <Upload size={14} />
           Завантажити файл
         </button>
