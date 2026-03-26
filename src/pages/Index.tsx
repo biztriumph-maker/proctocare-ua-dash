@@ -446,6 +446,10 @@ export default function Index() {
         <PatientDetailView
           patient={selectedPatient}
           onClose={() => setSelectedPatient(null)}
+          onUpdatePatient={(updates) => {
+            setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, ...updates } : p));
+            setSelectedPatient((prev) => prev ? { ...prev, ...updates } : prev);
+          }}
         />
       )}
     </div>

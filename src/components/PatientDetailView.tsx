@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, ClipboardList, ChevronRight, Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
@@ -16,6 +17,7 @@ interface ChatMessage {
 interface PatientDetailViewProps {
   patient: Patient;
   onClose: () => void;
+  onUpdatePatient?: (updates: Partial<Patient>) => void;
 }
 
 const statusLabel: Record<PatientStatus, string> = {
@@ -135,10 +137,15 @@ function getPreparationProgress(patient: Patient): { percent: number; steps: { l
   return { percent, steps };
 }
 
-export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) {
+export function PatientDetailView({ patient, onClose, onUpdatePatient }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const [focusField, setFocusField] = useState<{ field: string; value: string } | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [localFullName, setLocalFullName] = useState(
+    `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`
+  );
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const profile = getMockProfile(patient);
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
@@ -146,6 +153,20 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
 
   const handleFocusOpen = (field: string, value: string) => {
     setFocusField({ field, value });
+  };
+
+  const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const raw = e.target.value.trim();
+    if (!raw) { setEditingName(false); return; }
+    const corrected = correctNameSpelling(raw);
+    setLocalFullName(corrected);
+    setEditingName(false);
+    if (corrected !== raw || true) {
+      const parts = corrected.trim().split(/\s+/);
+      const newName = parts.slice(0, 2).join(" ");
+      const newPatronymic = parts.slice(2).join(" ");
+      if (onUpdatePatient) onUpdatePatient({ name: newName, patronymic: newPatronymic || undefined });
+    }
   };
 
   const handleFocusSave = () => {
@@ -175,9 +196,26 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5 mb-1">
               <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[patient.status])} />
-              <h2 className="text-base sm:text-lg font-bold text-foreground leading-tight truncate">
-                {patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}
-              </h2>
+              {editingName ? (
+                <input
+                  ref={nameInputRef}
+                  autoFocus
+                  type="text"
+                  defaultValue={localFullName}
+                  onBlur={handleNameBlur}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setEditingName(false); } }}
+                  className="text-base sm:text-lg font-bold text-foreground leading-tight bg-transparent border-b border-primary outline-none w-full min-w-0"
+                />
+              ) : (
+                <h2
+                  className="text-base sm:text-lg font-bold text-foreground leading-tight truncate flex items-center gap-1.5 cursor-pointer group"
+                  onClick={() => setEditingName(true)}
+                  title="Натисніть для редагування"
+                >
+                  {localFullName}
+                  <Pencil size={13} className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                </h2>
+              )}
             </div>
             <div className="flex items-center gap-2.5 mb-1">
               <span className={cn("text-xs font-bold px-2.5 py-0.5 rounded-full", statusBadgeBg[patient.status])}>
