@@ -649,25 +649,44 @@ const MOCK_SERVICES = [
 function ServicesPane() {
   const [services, setServices] = useState<string[]>(MOCK_SERVICES);
   const [showSelector, setShowSelector] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
     <div className="px-4 pb-4 space-y-2">
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDelete(null)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">Видалити послугу?</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Ви впевнені, що хочете видалити «{confirmDelete}»?
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={() => {
+                  setServices((prev) => prev.filter((x) => x !== confirmDelete));
+                  setConfirmDelete(null);
+                }}
+                className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Видалити
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {services.length > 0 ? (
         <div className="space-y-1.5">
           {services.map((s) => (
             <div key={s} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border border-border/60">
               <span className="text-xs font-bold text-foreground flex-1">{s}</span>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Ви точно хочете видалити послугу "${s}"?`)) {
-                    setServices((prev) => prev.filter((x) => x !== s));
-                  }
-                }}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-destructive/10 active:scale-[0.9] transition-all"
-                title="Видалити"
-              >
-                <Trash2 size={12} className="text-muted-foreground hover:text-destructive" />
-              </button>
             </div>
           ))}
         </div>
@@ -679,8 +698,8 @@ function ServicesPane() {
         className="w-full flex items-center justify-between text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 px-3 transition-colors active:scale-[0.97]"
       >
         <div className="flex items-center gap-1.5">
-          <Plus size={14} />
-          Обрати послуги
+          <Pencil size={14} />
+          Змінити послуги
         </div>
         <ChevronRight size={14} className="text-primary/60" />
       </button>
