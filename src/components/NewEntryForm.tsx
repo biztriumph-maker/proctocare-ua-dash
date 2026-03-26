@@ -192,9 +192,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               onClick={() => setShowProcedureSelector(true)}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left"
             >
-              <span className={procedures.length > 0 ? "text-foreground" : "text-muted-foreground/40"}>
-                {procedures.length > 0 ? `Обрано: ${procedures.length}` : "Обрати процедуру"}
-              </span>
+              <span className="text-muted-foreground/40">Обрати процедуру</span>
               <ChevronRight size={14} className="text-muted-foreground shrink-0" />
             </button>
             {procedures.length > 0 && (
