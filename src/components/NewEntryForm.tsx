@@ -288,6 +288,13 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           <div style={{padding:'12px',background:'#ffe0e0',borderRadius:'8px'}}>
             <p style={{fontSize:'11px',fontWeight:'bold',marginBottom:'6px',color:'#c00'}}>ТЕСТ (удалить потом):</p>
             <input type="text" placeholder="Введіть що-небудь тут..." style={{width:'100%',padding:'8px',border:'2px solid red',borderRadius:'6px',fontSize:'14px'}} />
+            <p id="key-debug" style={{fontSize:'11px',color:'#666',marginTop:'4px'}}>Натисніть будь-яку клавішу...</p>
+            <script dangerouslySetInnerHTML={{__html: `
+              document.addEventListener('keydown', function(e) {
+                var el = document.getElementById('key-debug');
+                if (el) el.textContent = 'key=' + e.key + ' code=' + e.code + ' prevented=' + e.defaultPrevented + ' target=' + e.target.tagName;
+              }, true);
+            `}} />
           </div>
         </div>
 
