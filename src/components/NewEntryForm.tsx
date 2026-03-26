@@ -223,34 +223,79 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             )}
           </div>
 
-          {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Дата</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Час</label>
-              <select
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-              >
-                <option value="">Обрати</option>
-                {HOURS.map((h) => {
-                  const val = `${String(h).padStart(2, "0")}:00`;
-                  return (
-                    <option key={h} value={val}>{val}</option>
-                  );
-                })}
-              </select>
-            </div>
+          {/* Date & Time — calendar picker */}
+          <div>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Дата та час</label>
+            <button
+              type="button"
+              onClick={() => setShowCalendarPicker(true)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left"
+            >
+              <span className={cn(date && time ? "text-foreground font-bold" : "text-muted-foreground/40")}>
+                {date && time ? `${new Date(date + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long" })} · ${time}` : "Обрати дату та час"}
+              </span>
+              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+            </button>
           </div>
+
+          {/* Calendar Picker Overlay */}
+          {showCalendarPicker && (
+            <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setShowCalendarPicker(false)}>
+              <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-slide-up max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-foreground">Оберіть дату та час</h3>
+                  <button onClick={() => setShowCalendarPicker(false)} className="p-1.5 rounded-md hover:bg-accent active:scale-[0.95] transition-all">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Simple date grid */}
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Дата</p>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                  />
+                </div>
+
+                {/* Time slots */}
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Час</p>
+                  <div className="grid grid-cols-5 gap-2">
+                    {HOURS.map((h) => {
+                      const val = `${String(h).padStart(2, "0")}:00`;
+                      return (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => setTime(val)}
+                          className={cn(
+                            "py-2.5 text-sm font-bold rounded-lg border transition-all active:scale-[0.95]",
+                            time === val
+                              ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                              : "bg-background text-foreground border-border hover:border-primary/40"
+                          )}
+                        >
+                          {val}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarPicker(false)}
+                  disabled={!date || !time}
+                  className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Підтвердити
+                </button>
+              </div>
+            </div>
+          )
 
           {/* Notes */}
           <div>
