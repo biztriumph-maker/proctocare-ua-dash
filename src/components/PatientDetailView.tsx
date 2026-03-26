@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
+import { ProcedureSelector } from "./ProcedureSelector";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
