@@ -172,10 +172,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               </div>
             </div>
           </div>
-                </span>
-              </div>
-            </div>
-          </div>
 
           {/* Phone */}
           <div>
