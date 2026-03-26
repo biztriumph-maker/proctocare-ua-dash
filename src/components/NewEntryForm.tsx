@@ -50,8 +50,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showPlanningPicker, setShowPlanningPicker] = useState(false);
   const nameRef = useRef<HTMLTextAreaElement>(null);
-  const birthDateRef = useRef<HTMLInputElement>(null);
-  const phoneRef = useRef<HTMLInputElement>(null);
 
   const filteredSuggestions = name.length > 0
     ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))
@@ -62,9 +60,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
     const words = name.trim().split(/\s+/);
     const parsedName = words.slice(0, 2).join(" ");
     const patronymic = words.slice(2).join(" ");
-    const finalBirthDate = birthDateRef.current?.value || birthDate;
-    const finalPhone = phoneRef.current?.value || phone;
-    onSave({ name: parsedName, patronymic, birthDate: finalBirthDate, phone: finalPhone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -77,8 +73,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20" style={{isolation:'isolate'}}>
-      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 max-h-[92vh] overflow-y-scroll safe-bottom">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in">
+      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-fade-in max-h-[92vh] overflow-y-auto safe-bottom">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -143,36 +139,69 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             )}
           </div>
 
-          {/* Birth Date + Phone — simple native inputs */}
-          <div style={{display:'flex',gap:'12px'}}>
-            <div style={{flex:1}}>
+          {/* Birth Date + Age in one row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
                 Дата народження
               </label>
               <input
-                id="newentry-birthdate"
-                ref={birthDateRef}
                 type="text"
-                defaultValue=""
+                value={birthDate}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                  let formatted = raw;
+                  if (raw.length > 2) formatted = raw.slice(0, 2) + "." + raw.slice(2);
+                  if (raw.length > 4) formatted = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+                  setBirthDate(formatted);
+                }}
                 placeholder="ДД.ММ.РРРР"
                 maxLength={10}
-                style={{width:'100%',padding:'10px 12px',fontSize:'14px',fontWeight:'bold',borderRadius:'8px',border:'1px solid hsl(220,12%,90%)',outline:'none',fontFamily:'inherit',fontVariantNumeric:'tabular-nums'}}
+                className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               />
             </div>
-            <div style={{flex:1}}>
+            <div>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-                <Phone size={10} className="inline mr-1 -mt-0.5" />
-                Телефон
+                Вік
               </label>
-              <input
-                id="newentry-phone"
-                ref={phoneRef}
-                type="text"
-                defaultValue="+380"
-                placeholder="+380"
-                style={{width:'100%',padding:'10px 12px',fontSize:'14px',borderRadius:'8px',border:'1px solid hsl(220,12%,90%)',outline:'none',fontFamily:'inherit'}}
-              />
+              <div className="flex items-center px-3 py-2.5 rounded-lg border bg-background h-[42px]">
+                <span className="text-sm font-bold text-foreground tabular-nums">
+                  {(() => {
+                    const parts = birthDate.split(".");
+                    if (parts.length === 3 && parts[2].length === 4) {
+                      const bd = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+                      if (!isNaN(bd.getTime())) {
+                        const today = new Date();
+                        let age = today.getFullYear() - bd.getFullYear();
+                        const m = today.getMonth() - bd.getMonth();
+                        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+                        if (age >= 0 && age < 150) {
+                          const ld = age % 10, lt = age % 100;
+                          const s = (lt >= 11 && lt <= 14) ? "років" : ld === 1 ? "рік" : (ld >= 2 && ld <= 4) ? "роки" : "років";
+                          return `${age} ${s}`;
+                        }
+                      }
+                    }
+                    return "... років";
+                  })()}
+                </span>
+              </div>
             </div>
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              <Phone size={10} className="inline mr-1 -mt-0.5" />
+              Телефон *
+            </label>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+380 __ ___ __ __"
+              type="tel"
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+            />
           </div>
 
           {/* Procedure — fullscreen selector */}
@@ -283,21 +312,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           </div>
 
           {/* AI Prep toggle removed — moved to patient card */}
-
-          {/* === ТЕСТ: простой input для диагностики === */}
-          <div style={{padding:'12px',background:'#ffe0e0',borderRadius:'8px'}}>
-            <p style={{fontSize:'11px',fontWeight:'bold',marginBottom:'6px',color:'#c00'}}>ТЕСТ (удалить потом):</p>
-            <input
-              type="text"
-              placeholder="Введіть цифру тут..."
-              style={{width:'100%',padding:'8px',border:'2px solid red',borderRadius:'6px',fontSize:'14px'}}
-              onKeyDown={(e) => {
-                const info = document.getElementById('key-debug');
-                if (info) info.textContent = `key="${e.key}" code=${e.code} prevented=${e.defaultPrevented} ctrl=${e.ctrlKey} alt=${e.altKey}`;
-              }}
-            />
-            <p id="key-debug" style={{fontSize:'12px',color:'#c00',marginTop:'6px',fontFamily:'monospace',fontWeight:'bold'}}>Натисніть будь-яку клавішу...</p>
-          </div>
         </div>
 
         {/* Save button */}
