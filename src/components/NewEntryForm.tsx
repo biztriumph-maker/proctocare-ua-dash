@@ -287,7 +287,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name || !date || !time || !procedure}
+          disabled={!name || !date || !time || procedures.length === 0}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
