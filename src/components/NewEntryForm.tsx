@@ -292,7 +292,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 </button>
               </div>
             </div>
-          )
+          )}
 
           {/* Notes */}
           <div>
