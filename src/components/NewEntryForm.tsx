@@ -287,14 +287,16 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           {/* === ТЕСТ: простой input для диагностики === */}
           <div style={{padding:'12px',background:'#ffe0e0',borderRadius:'8px'}}>
             <p style={{fontSize:'11px',fontWeight:'bold',marginBottom:'6px',color:'#c00'}}>ТЕСТ (удалить потом):</p>
-            <input type="text" placeholder="Введіть що-небудь тут..." style={{width:'100%',padding:'8px',border:'2px solid red',borderRadius:'6px',fontSize:'14px'}} />
-            <p id="key-debug" style={{fontSize:'11px',color:'#666',marginTop:'4px'}}>Натисніть будь-яку клавішу...</p>
-            <script dangerouslySetInnerHTML={{__html: `
-              document.addEventListener('keydown', function(e) {
-                var el = document.getElementById('key-debug');
-                if (el) el.textContent = 'key=' + e.key + ' code=' + e.code + ' prevented=' + e.defaultPrevented + ' target=' + e.target.tagName;
-              }, true);
-            `}} />
+            <input
+              type="text"
+              placeholder="Введіть цифру тут..."
+              style={{width:'100%',padding:'8px',border:'2px solid red',borderRadius:'6px',fontSize:'14px'}}
+              onKeyDown={(e) => {
+                const info = document.getElementById('key-debug');
+                if (info) info.textContent = `key="${e.key}" code=${e.code} prevented=${e.defaultPrevented} ctrl=${e.ctrlKey} alt=${e.altKey}`;
+              }}
+            />
+            <p id="key-debug" style={{fontSize:'12px',color:'#c00',marginTop:'6px',fontFamily:'monospace',fontWeight:'bold'}}>Натисніть будь-яку клавішу...</p>
           </div>
         </div>
 
