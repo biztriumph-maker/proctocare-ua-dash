@@ -133,7 +133,7 @@ export default function Index() {
       time: entry.time,
       procedure: entry.procedure,
       status: "progress",
-      aiSummary: entry.aiPrep ? "ШІ-бот надсилає інструкції..." : "Очікує підготовки",
+      aiSummary: entry.aiPrep ? "Асистент надсилає інструкції..." : "Очікує підготовки",
       birthDate: entry.birthDate,
     };
     setSkeletonPatient(newPatient);
