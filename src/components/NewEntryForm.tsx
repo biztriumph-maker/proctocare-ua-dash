@@ -41,7 +41,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
-  const [procedure, setProcedure] = useState("");
+  const [procedures, setProcedures] = useState<string[]>([]);
+  const [showProcedureSelector, setShowProcedureSelector] = useState(false);
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(prefillTime || "");
   const [notes, setNotes] = useState("");
