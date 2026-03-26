@@ -207,19 +207,15 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 {procedures.map((p) => (
                   <div key={p} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-primary/5 border border-primary/15">
                     <span className="text-xs font-medium text-foreground flex-1 truncate">{p}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Ви точно хочете видалити послугу "${p}"?`)) {
-                          setProcedures(prev => prev.filter(x => x !== p));
-                        }
-                      }}
-                      className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-colors"
-                    >
-                      <X size={10} className="text-muted-foreground" />
-                    </button>
                   </div>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setShowProcedureSelector(true)}
+                  className="w-full text-xs font-bold text-primary py-1.5 hover:underline transition-colors"
+                >
+                  Змінити послуги
+                </button>
               </div>
             )}
           </div>
