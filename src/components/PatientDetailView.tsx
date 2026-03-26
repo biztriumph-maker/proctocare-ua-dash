@@ -206,14 +206,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     setFocusField(null);
   };
 
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
-
   const handleCloseRequest = () => {
     if (hasUnsavedChanges) {
-      setShowExitConfirm(true);
-    } else {
-      onClose();
+      handleSaveChanges();
     }
+    onClose();
   };
 
   const handleSaveChanges = () => {
