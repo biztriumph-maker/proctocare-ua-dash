@@ -74,7 +74,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-slide-up max-h-[92vh] overflow-y-auto safe-bottom">
+      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-fade-in max-h-[92vh] overflow-y-scroll safe-bottom">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -116,7 +116,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all resize-none overflow-hidden"
             />
             {showSuggestions && filteredSuggestions.length > 0 && (
-              <div className="absolute z-[55] top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-elevated overflow-hidden animate-reveal-up">
+              <div className="absolute z-[55] bottom-full left-0 right-0 mb-1 bg-popover border rounded-lg shadow-elevated overflow-hidden">
                 {filteredSuggestions.slice(0, 4).map((suggestion) => (
                   <button
                     key={suggestion}
