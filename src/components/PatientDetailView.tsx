@@ -573,28 +573,21 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
         </span>
       </div>
 
-      {/* Row 6: Нотатки — highlighted blue block */}
-      <div className={cn("rounded-xl border px-3 py-2.5", profile.notes ? "bg-primary/5 border-primary/20" : "bg-background border-border/60")}>
+      {/* Row 6: Нотатки (merged with primaryNotes) */}
+      <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
         <div className="flex items-center justify-between mb-1">
-          <p className={cn("text-[10px] font-bold uppercase tracking-wide", profile.notes ? "text-primary" : "text-muted-foreground")}>
-            📋 Нотатки
-          </p>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">📋 Нотатки</p>
           <button onClick={() => onFocusEdit("notes", profile.notes)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
+        {profile.primaryNotes && (
+          <p className="text-sm font-bold text-foreground leading-relaxed mb-1">{profile.primaryNotes}</p>
+        )}
         <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
-          {profile.notes || "Додайте нотатки про пацієнта"}
+          {profile.notes || (profile.primaryNotes ? "" : "Додайте нотатки про пацієнта")}
         </button>
       </div>
-
-      {/* Первинні нотатки з форми */}
-      {profile.primaryNotes && (
-        <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2.5">
-          <p className="text-[10px] font-bold text-primary uppercase tracking-wide mb-1">Первинні нотатки</p>
-          <p className="text-sm font-bold text-foreground leading-relaxed">{profile.primaryNotes}</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -606,12 +599,6 @@ function TrackerPane({ preparation, status }: { preparation: ReturnType<typeof g
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-bold text-foreground">Прогрес підготовки</span>
-          <span className={cn(
-            "text-sm font-bold tabular-nums",
-            status === "ready" ? "text-status-ready" : status === "progress" ? "text-status-progress" : "text-status-risk"
-          )}>
-            {preparation.percent}%
-          </span>
         </div>
         <Progress
           value={preparation.percent}
@@ -647,12 +634,6 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs font-bold text-foreground">Прогрес</span>
-          <span className={cn(
-            "text-xs font-bold tabular-nums",
-            status === "ready" ? "text-status-ready" : status === "progress" ? "text-status-progress" : "text-status-risk"
-          )}>
-            {preparation.percent}%
-          </span>
         </div>
         <Progress
           value={preparation.percent}
