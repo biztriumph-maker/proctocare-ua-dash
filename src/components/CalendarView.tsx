@@ -355,7 +355,7 @@ function WeekGrid({
                 "text-center py-2 transition-all active:scale-[0.96] relative",
                 i < 6 && "border-r border-border",
                 isToday && "bg-[hsl(204,100%,93%)] border-l-2 border-l-primary/50",
-                past && !isToday && "bg-[hsl(220,18%,96%)]"
+                past && !isToday && "bg-slate-50"
               )}
             >
               <p className={cn(
@@ -417,13 +417,11 @@ function WeekGrid({
                     "relative p-[5px]",
                     isSearchMatch
                       ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
-                      : past ? "bg-[hsl(220,18%,97%)]"
                       : isSelected ? "bg-primary/10" : "bg-white",
                     isToday && "border-l-2 border-l-primary/40",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
-                  style={past ? { backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(148,163,184,0.07) 5px, rgba(148,163,184,0.07) 6px)" } : undefined}
                 >
                   <button
                     onClick={() => {
