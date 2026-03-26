@@ -1,10 +1,12 @@
-import { X, Phone, ChevronRight } from "lucide-react";
+import { X, Phone, CalendarDays, ChevronRight } from "lucide-react";
 import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ProcedureSelector } from "./ProcedureSelector";
+import { CalendarView } from "./CalendarView";
 
 export interface NewEntryData {
   name: string;
+  patronymic: string;
   birthDate: string;
   phone: string;
   procedure: string;
@@ -24,18 +26,16 @@ interface NewEntryFormProps {
 
 
 const PATIENT_SUGGESTIONS = [
-  "Коваленко Олена",
-  "Мельник Ігор",
-  "Шевченко Тарас",
-  "Бондаренко Вікторія",
-  "Ткаченко Наталія",
-  "Лисенко Андрій",
-  "Гриценко Марія",
-  "Петренко Олег",
-  "Сидоренко Ірина",
+  "Коваленко Олена Василівна",
+  "Мельник Ігор Петрович",
+  "Шевченко Тарас Олексійович",
+  "Бондаренко Вікторія Іванівна",
+  "Ткаченко Наталія Миколаївна",
+  "Лисенко Андрій Сергійович",
+  "Гриценко Марія Олексіївна",
+  "Петренко Олег Андрійович",
+  "Сидоренко Ірина Василівна",
 ];
-
-const HOURS = Array.from({ length: 10 }, (_, i) => i + 8);
 
 export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
@@ -48,8 +48,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [notes, setNotes] = useState("");
   const aiPrep = true; // default, toggle moved to patient card
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showCalendarPicker, setShowCalendarPicker] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const [showPlanningPicker, setShowPlanningPicker] = useState(false);
+  const nameRef = useRef<HTMLTextAreaElement>(null);
 
   const filteredSuggestions = name.length > 0
     ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))
@@ -57,7 +57,10 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
 
   const handleSave = () => {
     if (!name || !date || !time || procedures.length === 0) return;
-    onSave({ name, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    const words = name.trim().split(/\s+/);
+    const parsedName = words.slice(0, 2).join(" ");
+    const patronymic = words.slice(2).join(" ");
+    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -88,31 +91,44 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         </div>
 
         <div className="space-y-3.5">
-          {/* Patient name — searchable */}
+          {/* Patient full name (ПІБ) — searchable textarea */}
           <div className="relative">
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              Пацієнт *
+              ПІБ пацієнта *
             </label>
-            <input
+            <textarea
               ref={nameRef}
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
                 setShowSuggestions(true);
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
               }}
               onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              placeholder="Прізвище та ім'я"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              onBlur={() => setShowSuggestions(false)}
+              placeholder="Прізвище Ім'я По батькові"
+              rows={1}
+              spellCheck
+              lang="uk"
+              autoCorrect="on"
+              autoCapitalize="words"
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all resize-none overflow-hidden"
             />
             {showSuggestions && filteredSuggestions.length > 0 && (
-              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-elevated overflow-hidden animate-reveal-up">
-                {filteredSuggestions.slice(0, 5).map((suggestion) => (
+              <div className="absolute z-[55] top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-elevated overflow-hidden animate-reveal-up">
+                {filteredSuggestions.slice(0, 4).map((suggestion) => (
                   <button
                     key={suggestion}
-                    onMouseDown={() => {
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => {
                       setName(suggestion);
                       setShowSuggestions(false);
+                      // resize textarea
+                      if (nameRef.current) {
+                        nameRef.current.style.height = "auto";
+                        nameRef.current.style.height = nameRef.current.scrollHeight + "px";
+                      }
                     }}
                     className="w-full text-left px-3 py-2 text-[13px] text-foreground hover:bg-accent/60 transition-colors"
                   >
@@ -131,7 +147,6 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               </label>
               <input
                 type="text"
-                inputMode="numeric"
                 value={birthDate}
                 onChange={(e) => {
                   const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
@@ -142,6 +157,8 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                 }}
                 placeholder="ДД.ММ.РРРР"
                 maxLength={10}
+                autoComplete="off"
+                inputMode="numeric"
                 className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
               />
             </div>
@@ -184,112 +201,100 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+380 __ ___ __ __"
-              type="tel"
-              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+              type="text"
+              inputMode="tel"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
             />
           </div>
 
           {/* Procedure — fullscreen selector */}
           <div>
-            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-              Процедури *
-            </label>
             <button
               type="button"
               onClick={() => setShowProcedureSelector(true)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left"
+              className="w-full text-left"
             >
-              <span className="text-muted-foreground/40">Обрати процедуру</span>
-              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                {procedures.length > 0 ? "Змінити послуги" : "Обрати послуги"} *
+              </span>
+              {procedures.length === 0 ? (
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium text-muted-foreground/40 hover:border-primary/40 transition-all">
+                  <span>Обрати процедуру</span>
+                  <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {procedures.map((p) => (
+                    <span
+                      key={p}
+                      className="text-xs font-bold px-3 py-1.5 rounded-full"
+                      style={{ backgroundColor: "#E3F2FD", color: "#1976D2" }}
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              )}
             </button>
-            {procedures.length > 0 && (
-              <div className="mt-1.5 space-y-1">
-                {procedures.map((p) => (
-                  <div key={p} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-primary/5 border border-primary/15">
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">{p}</span>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowProcedureSelector(true)}
-                  className="w-full text-xs font-bold text-primary py-1.5 hover:underline transition-colors"
-                >
-                  Змінити послуги
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Date & Time — calendar picker */}
+          {/* Date & Time — opens planning calendar */}
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block">Дата та час</label>
             <button
               type="button"
-              onClick={() => setShowCalendarPicker(true)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left"
+              onClick={() => setShowPlanningPicker(true)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all text-left hover:border-primary/40"
             >
               <span className={cn(date && time ? "text-foreground font-bold" : "text-muted-foreground/40")}>
-                {date && time ? `${new Date(date + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long" })} · ${time}` : "Обрати дату та час"}
+                {date && time ? `${new Date(date + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long", weekday: "short" })} · ${time}` : "Обрати дату та час"}
               </span>
-              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+              <CalendarDays size={16} className="text-muted-foreground shrink-0" />
             </button>
           </div>
 
-          {/* Calendar Picker Overlay */}
-          {showCalendarPicker && (
-            <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setShowCalendarPicker(false)}>
-              <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-slide-up max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between">
+          {/* Planning Picker Overlay — full CalendarView */}
+          {showPlanningPicker && (
+            <div className="fixed inset-0 z-[60] flex flex-col bg-background animate-fade-in">
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-card shrink-0">
+                <div>
                   <h3 className="text-sm font-bold text-foreground">Оберіть дату та час</h3>
-                  <button onClick={() => setShowCalendarPicker(false)} className="p-1.5 rounded-md hover:bg-accent active:scale-[0.95] transition-all">
-                    <X size={18} />
+                  {date && time && (
+                    <p className="text-xs text-primary font-bold mt-0.5">
+                      {new Date(date + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long" })} · {time}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {date && time && (
+                    <button
+                      onClick={() => setShowPlanningPicker(false)}
+                      className="px-4 py-2 bg-primary text-primary-foreground text-sm font-bold rounded-lg active:scale-[0.96] transition-all"
+                    >
+                      Підтвердити
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowPlanningPicker(false)}
+                    className="p-1.5 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
+                  >
+                    <X size={20} />
                   </button>
                 </div>
-
-                {/* Simple date grid */}
-                <div>
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Дата</p>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-                  />
-                </div>
-
-                {/* Time slots */}
-                <div>
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Час</p>
-                  <div className="grid grid-cols-5 gap-2">
-                    {HOURS.map((h) => {
-                      const val = `${String(h).padStart(2, "0")}:00`;
-                      return (
-                        <button
-                          key={h}
-                          type="button"
-                          onClick={() => setTime(val)}
-                          className={cn(
-                            "py-2.5 text-sm font-bold rounded-lg border transition-all active:scale-[0.95]",
-                            time === val
-                              ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                              : "bg-background text-foreground border-border hover:border-primary/40"
-                          )}
-                        >
-                          {val}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowCalendarPicker(false)}
-                  disabled={!date || !time}
-                  className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  Підтвердити
-                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                <CalendarView
+                  onSlotClick={(selectedDate, hour) => {
+                    setDate(selectedDate.toISOString().slice(0, 10));
+                    setTime(`${String(hour).padStart(2, "0")}:00`);
+                  }}
+                  selectedSlot={date && time ? {
+                    dateStr: date,
+                    hour: parseInt(time),
+                    name: name.trim().split(/\s+/).filter(Boolean).slice(0, 2).join(" ") || undefined,
+                  } : undefined}
+                />
               </div>
             </div>
           )}
@@ -302,6 +307,10 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Додаткова інформація..."
               rows={2}
+              spellCheck
+              lang="uk"
+              autoCorrect="on"
+              autoCapitalize="sentences"
               className="w-full px-3 py-2.5 rounded-lg border bg-background text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all resize-none"
             />
           </div>

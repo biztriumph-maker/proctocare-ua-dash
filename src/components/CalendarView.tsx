@@ -5,13 +5,14 @@ import type { PatientStatus } from "./PatientCard";
 
 interface CalendarSlot {
   hour: number;
-  patient?: { name: string; status: PatientStatus; procedure: string };
+  patient?: { name: string; patronymic?: string; status: PatientStatus; procedure: string };
 }
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
+  selectedSlot?: { dateStr: string; hour: number; name?: string };
 }
 
 const statusDot: Record<PatientStatus, string> = {
@@ -28,9 +29,9 @@ function getMockSlots(dateStr: string): CalendarSlot[] {
   const seed = dateStr.split("-").reduce((a, b) => a + parseInt(b), 0);
   return HOURS.map((hour) => {
     const hash = (seed * 31 + hour * 7) % 100;
-    if (hash < 25) return { hour, patient: { name: "Коваленко О.", status: "ready" as PatientStatus, procedure: PROCEDURES[hash % 4] } };
-    if (hash < 35) return { hour, patient: { name: "Мельник І.", status: "progress" as PatientStatus, procedure: PROCEDURES[(hash + 1) % 4] } };
-    if (hash < 42) return { hour, patient: { name: "Шевченко Т.", status: "risk" as PatientStatus, procedure: PROCEDURES[(hash + 2) % 4] } };
+    if (hash < 25) return { hour, patient: { name: "Коваленко Олена", patronymic: "Василівна", status: "ready" as PatientStatus, procedure: PROCEDURES[hash % 4] } };
+    if (hash < 35) return { hour, patient: { name: "Мельник Ігор", patronymic: "Петрович", status: "progress" as PatientStatus, procedure: PROCEDURES[(hash + 1) % 4] } };
+    if (hash < 42) return { hour, patient: { name: "Шевченко Тарас", patronymic: "Олексійович", status: "risk" as PatientStatus, procedure: PROCEDURES[(hash + 2) % 4] } };
     return { hour };
   });
 }
@@ -65,7 +66,7 @@ function dateToStr(d: Date): string {
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "" }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
@@ -212,13 +213,14 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "" }: 
           onSlotClick={onSlotClick}
           onPatientClick={onPatientClick}
           searchQuery={searchQuery}
+          selectedSlot={selectedSlot}
           onSelectDay={(d) => {
             setCurrentDate(d);
             setViewMode("day");
           }}
         />
       ) : (
-        <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} />
+        <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} selectedSlot={selectedSlot} />
       )}
     </div>
   );
@@ -233,10 +235,10 @@ function SlotPopover({
   openDirection,
   openHorizontal,
 }: {
-  slot: { name: string; status: PatientStatus; procedure: string };
+  slot: { name: string; patronymic?: string; status: PatientStatus; procedure: string };
   hour: number;
   onClose: () => void;
-  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   openDirection: "up" | "down";
   openHorizontal: "left" | "right" | "center";
 }) {
@@ -260,7 +262,13 @@ function SlotPopover({
           className="flex items-center gap-1.5 min-w-0 hover:underline"
         >
           <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
-          <span className="text-xs font-semibold text-foreground truncate">{slot.name}</span>
+          <span className="text-xs font-semibold text-foreground truncate">{(() => {
+            const parts = slot.name.split(" ");
+            const surname = parts[0] || "";
+            const firstInit = parts[1]?.[0] ? parts[1][0] + "." : "";
+            const patronymicInit = slot.patronymic?.[0] ? slot.patronymic[0] + "." : "";
+            return `${surname} ${firstInit}${patronymicInit}`.trim();
+          })()}</span>
         </button>
         <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all shrink-0">
           <X size={12} className="text-muted-foreground" />
@@ -286,12 +294,14 @@ function WeekGrid({
   onSelectDay,
   onPatientClick,
   searchQuery = "",
+  selectedSlot,
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
-  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
+  selectedSlot?: { dateStr: string; hour: number; name?: string };
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
@@ -368,12 +378,14 @@ function WeekGrid({
                     : "bg-status-risk-bg border border-status-risk/25"
                 : null;
 
+              const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
+
               return (
                 <div
                   key={di}
                   className={cn(
                     "relative p-[5px]",
-                    past ? "bg-[hsl(214,20%,89%)]" : "bg-white",
+                    past ? "bg-[hsl(214,20%,89%)]" : isSelected ? "bg-primary/10" : "bg-white",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -389,13 +401,20 @@ function WeekGrid({
                     className={cn(
                       "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
                       "active:scale-[0.90]",
-                      statusBg
-                        ? cn(statusBg, past && "opacity-50", "hover:opacity-85")
-                        : "bg-transparent",
+                      isSelected
+                        ? "bg-primary/30 border border-primary/60"
+                        : statusBg
+                          ? cn(statusBg, past && "opacity-50", "hover:opacity-85")
+                          : "bg-transparent",
                       isSearchMatch && "ring-2 ring-primary ring-offset-1"
                     )}
                   >
-                    {past && slot?.patient && (
+                    {isSelected && selectedSlot?.name && (
+                      <span className="text-[8px] font-bold text-primary truncate px-0.5 leading-none">
+                        {selectedSlot.name}
+                      </span>
+                    )}
+                    {!isSelected && past && slot?.patient && (
                       <div className="flex items-center gap-0.5">
                         {slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
                         {slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
@@ -429,11 +448,13 @@ function DayGrid({
   onSlotClick,
   onPatientClick,
   searchQuery = "",
+  selectedSlot,
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { name: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
+  selectedSlot?: { dateStr: string; hour: number; name?: string };
 }) {
   const slots = useMemo(() => getMockSlots(dateToStr(date)), [date]);
 
@@ -447,6 +468,7 @@ function DayGrid({
     <div className="space-y-1">
       {slots.map((slot, i) => {
         const isSearchMatch = searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const isSelected = !slot.patient && !!selectedSlot && dateToStr(date) === selectedSlot.dateStr && slot.hour === selectedSlot.hour;
         return (
           <div key={slot.hour} className="relative">
             <button
@@ -460,9 +482,11 @@ function DayGrid({
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
                 "active:scale-[0.98] animate-reveal-up",
-                slot.patient
-                  ? cn("border-l-2", statusColor[slot.patient.status])
-                  : "hover:bg-accent/60 border border-transparent hover:border-border",
+                isSelected
+                  ? "bg-primary/15 border border-primary/50"
+                  : slot.patient
+                    ? cn("border-l-2", statusColor[slot.patient.status])
+                    : "hover:bg-accent/60 border border-transparent hover:border-border",
                 isSearchMatch && "ring-2 ring-primary ring-offset-1"
               )}
               style={{ animationDelay: `${i * 40}ms` }}
@@ -474,12 +498,14 @@ function DayGrid({
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
                   <span className="text-[15px] font-semibold text-foreground truncate">
-                    {slot.patient.name}
+                    {slot.patient.name}{slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}
                   </span>
                   <span className="text-sm text-muted-foreground truncate ml-auto">
                     {slot.patient.procedure}
                   </span>
                 </div>
+              ) : isSelected && selectedSlot?.name ? (
+                <span className="text-sm font-bold text-primary truncate">{selectedSlot.name}</span>
               ) : (
                 <span className="text-xs text-muted-foreground/50">— вільно —</span>
               )}

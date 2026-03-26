@@ -19,19 +19,19 @@ const nextWeek = new Date();
 nextWeek.setDate(nextWeek.getDate() + 5);
 
 const MOCK_PATIENTS: Patient[] = [
-  { id: "1", name: "Коваленко Олена", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
-  { id: "2", name: "Мельник Ігор", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Очищення розпочато, чекаємо підтвердження" },
-  { id: "3", name: "Шевченко Тарас", time: "11:00", procedure: "Консультація", status: "risk", aiSummary: "Не відповідає 12+ годин, препарат не прийнятий" },
-  { id: "4", name: "Бондаренко Вікторія", time: "14:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Всі етапи підготовки пройдені успішно" },
-  { id: "5", name: "Ткаченко Наталія", time: "16:00", procedure: "Аноскопія", status: "progress", aiSummary: "Дієта дотримується, очікуємо прийом препарату" },
-  { id: "6", name: "Лисенко Андрій", time: "17:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Алергія не підтверджена, потрібна консультація" },
+  { id: "1", name: "Коваленко Олена", patronymic: "Василівна", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
+  { id: "2", name: "Мельник Ігор", patronymic: "Петрович", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Очищення розпочато, чекаємо підтвердження" },
+  { id: "3", name: "Шевченко Тарас", patronymic: "Олексійович", time: "11:00", procedure: "Консультація", status: "risk", aiSummary: "Не відповідає 12+ годин, препарат не прийнятий" },
+  { id: "4", name: "Бондаренко Вікторія", patronymic: "Іванівна", time: "14:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Всі етапи підготовки пройдені успішно" },
+  { id: "5", name: "Ткаченко Наталія", patronymic: "Миколаївна", time: "16:00", procedure: "Аноскопія", status: "progress", aiSummary: "Дієта дотримується, очікуємо прийом препарату" },
+  { id: "6", name: "Лисенко Андрій", patronymic: "Сергійович", time: "17:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Алергія не підтверджена, потрібна консультація" },
 ];
 
 const MOCK_TOMORROW: Patient[] = [
-  { id: "t1", name: "Гриценко Марія", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Не підтверджено прийом препарату (Фортранс)" },
-  { id: "t2", name: "Петренко Олег", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Розпочато підготовку" },
-  { id: "t3", name: "Сидоренко Ірина", time: "10:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Готова до процедури" },
-  { id: "t4", name: "Кравченко Дмитро", time: "14:00", procedure: "Аноскопія", status: "risk", aiSummary: "Аналізи не завантажені" },
+  { id: "t1", name: "Гриценко Марія", patronymic: "Олексіївна", time: "08:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Не підтверджено прийом препарату (Фортранс)" },
+  { id: "t2", name: "Петренко Олег", patronymic: "Андрійович", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Розпочато підготовку" },
+  { id: "t3", name: "Сидоренко Ірина", patronymic: "Василівна", time: "10:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Готова до процедури" },
+  { id: "t4", name: "Кравченко Дмитро", patronymic: "Юрійович", time: "14:00", procedure: "Аноскопія", status: "risk", aiSummary: "Аналізи не завантажені" },
 ];
 
 const MOCK_AI_ALERTS: AIAlertDetail[] = [
@@ -122,6 +122,7 @@ export default function Index() {
       date: date || undefined,
       time: hour !== undefined ? `${String(hour).padStart(2, "0")}:00` : undefined,
     });
+    setSelectedPatient(null);
     setShowForm(true);
   }, []);
 
@@ -130,11 +131,15 @@ export default function Index() {
     const newPatient: Patient = {
       id: newId,
       name: entry.name,
+      patronymic: entry.patronymic,
       time: entry.time,
       procedure: entry.procedures?.length > 0 ? entry.procedures.join(", ") : entry.procedure,
       status: "progress",
       aiSummary: entry.aiPrep ? "Асистент надсилає інструкції..." : "Очікує підготовки",
       birthDate: entry.birthDate,
+      phone: entry.phone,
+      primaryNotes: entry.notes,
+      fromForm: true,
     };
     setSkeletonPatient(newPatient);
     setShowForm(false);
@@ -401,6 +406,7 @@ export default function Index() {
               setSelectedPatient({
                 id: `cal-${p.name}-${p.time}`,
                 name: p.name,
+                patronymic: p.patronymic,
                 time: p.time,
                 procedure: p.procedure,
                 status: p.status,

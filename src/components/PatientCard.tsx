@@ -7,11 +7,15 @@ export type PatientStatus = "ready" | "progress" | "risk";
 export interface Patient {
   id: string;
   name: string;
+  patronymic?: string;
   time: string;
   procedure: string;
   status: PatientStatus;
   aiSummary: string;
   birthDate?: string;
+  phone?: string;
+  primaryNotes?: string;
+  fromForm?: boolean;
   paid?: boolean;
   noShow?: boolean;
   completed?: boolean;
@@ -41,7 +45,7 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
       {/* Confirmation modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmAction(null)}>
-          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 w-[calc(100%-2rem)] max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-foreground mb-1">
               Підтвердити дію: {confirmAction === "complete" ? "Прийом завершено" : "Не з'явився"}?
             </h3>
@@ -117,7 +121,7 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                 )}
               </div>
               <h4 className={cn("text-[13px] sm:text-sm font-semibold truncate leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
-                {patient.name}
+                {patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}
               </h4>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[11px] text-muted-foreground">{patient.procedure}</span>

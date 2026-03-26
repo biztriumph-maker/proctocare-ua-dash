@@ -58,14 +58,29 @@ function calcAge(birthDate: string): { age: number | null; ageStr: string } {
 function getMockProfile(patient: Patient) {
   const birthDateStr = patient.birthDate || "";
   const { ageStr } = calcAge(birthDateStr);
+  // New patients created from form — use only real entered data
+  if (patient.fromForm) {
+    return {
+      birthDate: birthDateStr,
+      age: ageStr,
+      phone: patient.phone || "",
+      allergies: "",
+      diagnosis: "",
+      lastVisit: "",
+      notes: "",
+      primaryNotes: patient.primaryNotes || "",
+    };
+  }
+  // Existing mock patients
   return {
     birthDate: birthDateStr,
     age: ageStr,
-    phone: "+380 67 123 45 67",
+    phone: patient.phone || "+380 67 123 45 67",
     allergies: "Пеніцилін",
     diagnosis: "Поліп сигмовидної кишки (K63.5)",
     lastVisit: "12.01.2026",
     notes: "Хронічний гастрит. Приймає омепразол 20мг.",
+    primaryNotes: patient.primaryNotes || "",
   };
 }
 
@@ -148,7 +163,7 @@ export function PatientDetailView({ patient, onClose }: PatientDetailViewProps) 
             <div className="flex items-center gap-2.5 mb-1">
               <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[patient.status])} />
               <h2 className="text-base sm:text-lg font-bold text-foreground leading-tight truncate">
-                {patient.name}
+                {patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}
               </h2>
             </div>
             <div className="flex items-center gap-2.5 mb-1">
@@ -399,13 +414,13 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
     notes: profile.notes,
   };
 
-   const rows = [
+  const rows = [
     { label: "birthDateAge", value: "", isBirthDateAge: true },
     { label: "Телефон", value: editValues.phone, editable: true, field: "phone" },
-    { label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" },
-    { label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" },
-    { label: "Останній візит", value: profile.lastVisit },
-    { label: "Нотатки", value: editValues.notes, editable: true, field: "notes" },
+    ...(profile.allergies ? [{ label: "Алергії", value: editValues.allergies, highlight: true, editable: true, field: "allergies" }] : []),
+    ...(profile.diagnosis ? [{ label: "Діагноз", value: editValues.diagnosis, editable: true, field: "diagnosis" }] : []),
+    ...(profile.lastVisit ? [{ label: "Останній візит", value: profile.lastVisit }] : []),
+    ...(profile.notes ? [{ label: "Нотатки", value: editValues.notes, editable: true, field: "notes" }] : []),
   ];
 
   const [editingBirthDate, setEditingBirthDate] = useState(false);
@@ -494,6 +509,18 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
           </div>
         );
       })}
+
+      {/* Первинні нотатки — лише для нових пацієнтів з форми */}
+      {profile.primaryNotes && (
+        <div className="pt-1">
+          <p className="text-[11px] font-bold text-primary uppercase tracking-wide mb-1">
+            Первинні нотатки
+          </p>
+          <p className="text-sm font-bold text-foreground leading-snug bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
+            {profile.primaryNotes}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
