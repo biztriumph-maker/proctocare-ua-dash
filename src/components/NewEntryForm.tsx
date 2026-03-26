@@ -283,6 +283,12 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
           </div>
 
           {/* AI Prep toggle removed — moved to patient card */}
+
+          {/* === ТЕСТ: простой input для диагностики === */}
+          <div style={{padding:'12px',background:'#ffe0e0',borderRadius:'8px'}}>
+            <p style={{fontSize:'11px',fontWeight:'bold',marginBottom:'6px',color:'#c00'}}>ТЕСТ (удалить потом):</p>
+            <input type="text" placeholder="Введіть що-небудь тут..." style={{width:'100%',padding:'8px',border:'2px solid red',borderRadius:'6px',fontSize:'14px'}} />
+          </div>
         </div>
 
         {/* Save button */}
