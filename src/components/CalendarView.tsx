@@ -354,7 +354,7 @@ function WeekGrid({
               className={cn(
                 "text-center py-2 transition-all active:scale-[0.96] relative",
                 i < 6 && "border-r border-border",
-                isToday && "bg-[hsl(204,100%,93%)] border-l-2 border-l-primary/50",
+                isToday && "bg-[hsl(204,100%,93%)]",
                 past && !isToday && "bg-slate-50"
               )}
             >
@@ -418,7 +418,6 @@ function WeekGrid({
                     isSearchMatch
                       ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
                       : isSelected ? "bg-primary/10" : "bg-white",
-                    isToday && "border-l-2 border-l-primary/40",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -439,9 +438,10 @@ function WeekGrid({
                         : isSelected
                           ? "bg-primary/30 border border-primary/60"
                           : statusBg
-                          ? cn(statusBg, past && "opacity-60 saturate-50", "hover:opacity-85")
+                          ? cn(statusBg, "hover:opacity-85")
                           : "bg-transparent",
                     )}
+                    style={past && slot?.patient ? { backgroundImage: "repeating-linear-gradient(60deg, transparent, transparent 4px, rgba(255,255,255,0.55) 4px, rgba(255,255,255,0.55) 5.5px)" } : undefined}
                   >
                     {isSelected && selectedSlot?.name && (
                       <span className="text-[8px] font-bold text-primary truncate px-0.5 leading-none">
