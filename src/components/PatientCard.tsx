@@ -2,7 +2,13 @@ import { cn } from "@/lib/utils";
 import { Clock, Check, X } from "lucide-react";
 import { useState } from "react";
 
-export type PatientStatus = "ready" | "progress" | "risk";
+export type PatientStatus = "planning" | "progress" | "risk" | "ready";
+
+export interface HistoryEntry {
+  value: string;
+  timestamp: string;
+  date: string;
+}
 
 export interface Patient {
   id: string;
@@ -18,6 +24,13 @@ export interface Patient {
   notes?: string;
   protocol?: string;
   files?: Array<{ id: string, name: string, type: "doctor" | "patient", date: string, url?: string }>;
+  allergiesHistory?: HistoryEntry[];
+  diagnosisHistory?: HistoryEntry[];
+  notesHistory?: HistoryEntry[];
+  phoneHistory?: HistoryEntry[];
+  birthDateHistory?: HistoryEntry[];
+  protocolHistory?: HistoryEntry[];
+  procedureHistory?: HistoryEntry[];
   date?: string;
   fromForm?: boolean;
   paid?: boolean;
@@ -34,11 +47,40 @@ interface PatientCardProps {
   onComplete?: (patientId: string) => void;
 }
 
-const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string }> = {
-  ready: { border: "border-l-status-ready", dot: "bg-status-ready", label: "Допущено до процедури", bg: "bg-status-ready-bg" },
-  progress: { border: "border-l-status-progress", dot: "bg-status-progress", label: "Підготовка триває", bg: "bg-status-progress-bg" },
-  risk: { border: "border-l-status-risk", dot: "bg-status-risk", label: "Потребує уваги", bg: "bg-status-risk-bg" },
+const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string; bgHex: string; textHex: string }> = {
+  planning: { border: "border-l-slate-400", dot: "bg-slate-400", label: "Планування", bg: "bg-slate-100", bgHex: "#E2E8F0", textHex: "#64748B" },
+  progress: { border: "border-l-yellow-500", dot: "bg-yellow-500", label: "Підготовка", bg: "bg-yellow-100", bgHex: "#FEF3C7", textHex: "#D97706" },
+  risk: { border: "border-l-red-500", dot: "bg-red-500", label: "Ризик", bg: "bg-red-100", bgHex: "#FEE2E2", textHex: "#DC2626" },
+  ready: { border: "border-l-green-500", dot: "bg-green-500", label: "Допущено", bg: "bg-green-100", bgHex: "#DCFCE7", textHex: "#16A34A" },
 };
+
+/**
+ * Computes the display status based on date proximity and preparation state.
+ * Priority order: Alert (4) > Ready (3) > Planning (1) > Progress (2)
+ */
+export function computePatientStatus(patient: Patient): PatientStatus {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Rule 4 (highest priority): Alert — missing in action or reported issue
+  if (patient.noShow || patient.status === "risk") return "risk";
+
+  // Rule 3: Ready — patient confirmed all steps
+  if (patient.completed || patient.status === "ready") return "ready";
+
+  // Date-based rules
+  if (patient.date) {
+    const appointmentDate = new Date(patient.date + "T00:00:00");
+    const threeDaysBefore = new Date(appointmentDate);
+    threeDaysBefore.setDate(threeDaysBefore.getDate() - 3);
+
+    // Rule 1: Planning — more than 3 days before appointment
+    if (today < threeDaysBefore) return "planning";
+  }
+
+  // Rule 2: Progress — within 3 days and preparation not finished
+  return "progress";
+}
 
 export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComplete }: PatientCardProps) {
   const config = statusConfig[patient.status];
@@ -123,8 +165,9 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                   <Check size={14} className="text-status-ready" strokeWidth={3} />
                 )}
               </div>
-              <h4 className={cn("text-[13px] sm:text-sm font-semibold truncate leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
-                {patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}
+              <h4 className={cn("flex items-center gap-1.5 text-[13px] sm:text-sm font-semibold leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
+                <span className={cn("shrink-0 w-2 h-2 rounded-full", statusConfig[computePatientStatus(patient)].dot)} />
+                <span className="truncate">{patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}</span>
               </h4>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[11px] text-muted-foreground">{patient.procedure}</span>

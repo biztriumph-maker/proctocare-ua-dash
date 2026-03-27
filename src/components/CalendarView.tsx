@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
+import { computePatientStatus } from "./PatientCard";
 
 interface CalendarSlot {
   hour: number;
@@ -18,9 +19,10 @@ interface CalendarViewProps {
 }
 
 const statusDot: Record<PatientStatus, string> = {
-  ready: "bg-status-ready",
-  progress: "bg-status-progress",
-  risk: "bg-status-risk",
+  planning: "bg-slate-400",
+  progress: "bg-yellow-500",
+  risk: "bg-red-500",
+  ready: "bg-green-500",
 };
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
@@ -319,7 +321,7 @@ function WeekGrid({
       return mock.map(slot => {
         const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
         const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: real.status, procedure: real.procedure } };
+        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
         return slot;
       });
     });
@@ -491,15 +493,23 @@ function DayGrid({
     return mock.map(slot => {
       const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
       const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-      if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: real.status, procedure: real.procedure } };
+      if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
       return slot;
     });
   }, [date, realPatients]);
 
   const statusColor: Record<PatientStatus, string> = {
-    ready: "bg-status-ready-bg border-status-ready/30",
-    progress: "bg-status-progress-bg border-status-progress/30",
-    risk: "bg-status-risk-bg border-status-risk/30",
+    planning: "bg-slate-100 border-slate-300",
+    progress: "bg-yellow-100 border-yellow-300",
+    risk: "bg-red-100 border-red-300",
+    ready: "bg-green-100 border-green-300",
+  };
+
+  const statusLabel: Record<PatientStatus, string> = {
+    planning: "Планування",
+    progress: "Підготовка",
+    risk: "Ризик",
+    ready: "Допущено",
   };
 
   return (
@@ -517,6 +527,7 @@ function DayGrid({
                   onSlotClick(date, slot.hour);
                 }
               }}
+              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}\nПідготовка: ${Math.floor(Math.random() * 100)}% виконано${slot.patient.allergies ? `\n⚠️ АЛЕРГІЯ: ${slot.patient.allergies}` : ""}\nОстанній контакт: ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}` : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
                 "active:scale-[0.98] animate-reveal-up",

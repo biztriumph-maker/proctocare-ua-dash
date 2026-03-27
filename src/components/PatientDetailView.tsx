@@ -3,6 +3,7 @@ import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, Fi
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus } from "./PatientCard";
+import { computePatientStatus } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
@@ -22,21 +23,24 @@ interface PatientDetailViewProps {
 }
 
 const statusLabel: Record<PatientStatus, string> = {
-  ready: "Допущено до процедури",
+  planning: "Планування",
   progress: "Підготовка триває",
   risk: "Потребує уваги",
+  ready: "Допущено до процедури",
 };
 
 const statusDot: Record<PatientStatus, string> = {
-  ready: "bg-status-ready",
-  progress: "bg-status-progress",
-  risk: "bg-status-risk",
+  planning: "bg-slate-400",
+  progress: "bg-yellow-500",
+  risk: "bg-red-500",
+  ready: "bg-green-500",
 };
 
 const statusBadgeBg: Record<PatientStatus, string> = {
-  ready: "bg-status-ready-bg text-status-ready",
-  progress: "bg-status-progress-bg text-status-progress",
-  risk: "bg-status-risk-bg text-status-risk",
+  planning: "bg-slate-100 text-slate-700",
+  progress: "bg-yellow-100 text-yellow-800",
+  risk: "bg-red-100 text-red-700",
+  ready: "bg-green-100 text-green-700",
 };
 
 function calcAge(birthDate: string): { age: number | null; ageStr: string } {
@@ -58,30 +62,67 @@ function calcAge(birthDate: string): { age: number | null; ageStr: string } {
   return { age: null, ageStr: "—" };
 }
 
+function formatHistory(history?: Array<{ value: string; timestamp: string; date: string }>, value?: string): string {
+  const entries = history || [];
+  if (entries.length > 0) {
+    return entries
+      .filter((item) => item.value.trim())
+      .map((item) => `${item.value} (${item.timestamp})`)
+      .join(", ");
+  }
+  return value || "";
+}
+
+function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
+  if (!history || history.length === 0) return null;
+  return (
+    <div className="mt-1 text-[10px] text-muted-foreground space-y-0.5">
+      {history.slice().reverse().map((item, idx) => (
+        <div key={`${item.timestamp}-${idx}`}>
+          <span className="font-bold">{item.date} {item.timestamp}</span>: {item.value}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getServiceCategory(services: string[]): { label: string; color: string; bgColor: string } {
+  const priorityMap = {
+    "ОПЕРАЦІЯ": { priority: 1, keywords: ["Поліпектомія", "Розширена біопсія"], color: "#F39C12", bgColor: "#FFF3CD" },
+    "ДІАГНОСТИКА": { priority: 2, keywords: ["Колоноскопія", "Гастроскопія", "Ректоскопія", "Ректо-сигмоскопія", "Біопсія"], color: "#3498DB", bgColor: "#D1ECF1" },
+    "КОНСУЛЬТАЦІЯ": { priority: 3, keywords: ["Консультація"], color: "#95A5A6", bgColor: "#F8F9FA" },
+  };
+
+  let highestPriority = Infinity;
+  let selectedCategory = "КОНСУЛЬТАЦІЯ"; // default
+
+  for (const service of services) {
+    const cleanService = service.replace(/ з медичний сон/g, "").trim();
+    for (const [category, { priority, keywords }] of Object.entries(priorityMap)) {
+      if (keywords.some(keyword => cleanService.includes(keyword))) {
+        if (priority < highestPriority) {
+          highestPriority = priority;
+          selectedCategory = category;
+        }
+      }
+    }
+  }
+
+  const config = priorityMap[selectedCategory as keyof typeof priorityMap];
+  return { label: selectedCategory, color: config.color, bgColor: config.bgColor };
+}
+
 function getMockProfile(patient: Patient) {
   const birthDateStr = patient.birthDate || "";
   const { ageStr } = calcAge(birthDateStr);
-  // New patients created from form — use only real entered data
-  if (patient.fromForm) {
-    return {
-      birthDate: birthDateStr,
-      age: ageStr,
-      phone: patient.phone || "",
-      allergies: "",
-      diagnosis: "",
-      lastVisit: "",
-      notes: patient.primaryNotes || "",
-    };
-  }
-  // Existing mock patients
   return {
     birthDate: birthDateStr,
     age: ageStr,
-    phone: patient.phone || "+380 67 123 45 67",
-    allergies: "Пеніцилін",
-    diagnosis: "Поліп сигмовидної кишки (K63.5)",
-    lastVisit: "12.01.2026",
-    notes: ["Хронічний гастрит. Приймає омепразол 20мг.", patient.primaryNotes].filter(Boolean).join("\n\n"),
+    phone: patient.phone || (patient.fromForm ? "" : "+380 67 123 45 67"),
+    allergies: patient.allergies || (patient.fromForm ? "" : "Пеніцилін"),
+    diagnosis: patient.diagnosis || (patient.fromForm ? "" : "Поліп сигмовидної кишки (K63.5)"),
+    lastVisit: patient.lastVisit || (patient.fromForm ? "" : "12.01.2026"),
+    notes: patient.notes || patient.primaryNotes || (patient.fromForm ? "" : "Хронічний гастрит. Приймає омепразол 20мг."),
   };
 }
 
@@ -159,6 +200,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     diagnosis: profile.diagnosis,
     notes: initialNotes,
     protocol: initialProtocol,
+    birthDate: profile.birthDate,
   });
   const mergedProfile = { ...profile, ...fields };
   
@@ -168,14 +210,36 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient);
 
+  const serviceCategory = getServiceCategory(localServices);
+
   const [localFiles, setLocalFiles] = useState<FileItem[]>(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
     fields.protocol !== initialProtocol || 
     fields.phone !== initialPhone ||
+    fields.allergies !== profile.allergies ||
+    fields.diagnosis !== profile.diagnosis ||
+    fields.birthDate !== profile.birthDate ||
     localServices.join(", ") !== (patient.procedure || "") ||
     JSON.stringify(localFiles) !== JSON.stringify(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
+
+  const addHistoryEntry = (
+    history: Array<{ value: string; timestamp: string; date: string }> | undefined,
+    newValue: string
+  ) => {
+    const trimmed = newValue.trim();
+    if (!trimmed) return history || [];
+
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const timestamp = `${now.toLocaleDateString("uk-UA")} ${now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
+
+    const currentHistory = history ? [...history] : [];
+
+    // Добавляем запись каждой операцией, включая несколько записей в один день
+    return [...currentHistory, { value: trimmed, timestamp, date }];
+  };
 
   const handleFocusOpen = (field: string, value: string) => {
     setFocusField({ field, value });
@@ -187,7 +251,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     const corrected = correctNameSpelling(raw);
     setLocalFullName(corrected);
     setEditingName(false);
-    if (corrected !== raw || true) {
+    if (corrected !== raw) {
       const parts = corrected.trim().split(/\s+/);
       const newName = parts.slice(0, 2).join(" ");
       const newPatronymic = parts.slice(2).join(" ");
@@ -197,7 +261,20 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
 
   const handleFocusSave = (value: string) => {
     if (focusField) {
-      setFields((prev) => ({ ...prev, [focusField.field]: value }));
+      const trimmedValue = value.trim();
+      setFields((prev) => {
+        if (focusField.field === "allergies" || focusField.field === "diagnosis") {
+          // сохраняем как последний вариант, не накапливаем старые значения
+          return { ...prev, [focusField.field]: trimmedValue };
+        }
+
+        if (focusField.field === "notes") {
+          // Нужен только последний вариант заметки — предыдущие записи удаляются
+          return { ...prev, notes: trimmedValue };
+        }
+
+        return { ...prev, [focusField.field]: trimmedValue };
+      });
     }
     setFocusField(null);
   };
@@ -207,20 +284,51 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   };
 
   const handleCloseRequest = () => {
-    if (hasUnsavedChanges) {
-      handleSaveChanges();
-    }
+    handleSaveChanges();
     onClose();
   };
 
   const handleSaveChanges = () => {
     if (onUpdatePatient) {
+      const allergiesHistory = fields.allergies.trim() && fields.allergies !== patient.allergies
+        ? addHistoryEntry(patient.allergiesHistory, fields.allergies)
+        : patient.allergiesHistory;
+      const diagnosisHistory = fields.diagnosis.trim() && fields.diagnosis !== patient.diagnosis
+        ? addHistoryEntry(patient.diagnosisHistory, fields.diagnosis)
+        : patient.diagnosisHistory;
+      const notesHistory = fields.notes.trim() && fields.notes !== patient.notes
+        ? addHistoryEntry(patient.notesHistory, fields.notes)
+        : patient.notesHistory;
+      const phoneHistory = fields.phone.trim() && fields.phone !== (patient.phone || "")
+        ? addHistoryEntry(patient.phoneHistory, fields.phone)
+        : patient.phoneHistory;
+      const birthDateHistory = fields.birthDate.trim() && fields.birthDate !== (patient.birthDate || "")
+        ? addHistoryEntry(patient.birthDateHistory, fields.birthDate)
+        : patient.birthDateHistory;
+      const protocolHistory = fields.protocol.trim() && fields.protocol !== (patient.protocol || "")
+        ? addHistoryEntry(patient.protocolHistory, fields.protocol)
+        : patient.protocolHistory;
+      const procedureValue = localServices.join(", ");
+      const procedureHistory = procedureValue.trim() && procedureValue !== (patient.procedure || "")
+        ? addHistoryEntry(patient.procedureHistory, procedureValue)
+        : patient.procedureHistory;
+
       onUpdatePatient({
         notes: fields.notes,
         protocol: fields.protocol,
         phone: fields.phone,
-        procedure: localServices.join(", "),
-        files: localFiles
+        allergies: fields.allergies,
+        diagnosis: fields.diagnosis,
+        birthDate: fields.birthDate,
+        procedure: procedureValue,
+        files: localFiles,
+        allergiesHistory,
+        diagnosisHistory,
+        notesHistory,
+        phoneHistory,
+        birthDateHistory,
+        protocolHistory,
+        procedureHistory,
       });
       toast.success("Дані пацієнта успішно збережено");
     }
@@ -229,41 +337,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={handleCloseRequest} />
-
-      {/* Unsaved changes confirmation dialog */}
-      {showExitConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setShowExitConfirm(false)}>
-          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-foreground mb-1">Зберегти зміни?</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Ви внесли зміни в картку пацієнта. Що з ними зробити?
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  handleSaveChanges();
-                  onClose();
-                }}
-                className="w-full py-2.5 text-sm font-bold bg-primary text-primary-foreground rounded-lg transition-colors active:scale-[0.97]"
-              >
-                Зберегти та вийти
-              </button>
-              <button
-                onClick={onClose}
-                className="w-full py-2.5 text-sm font-bold text-destructive hover:bg-destructive/10 border border-destructive/20 rounded-lg transition-colors active:scale-[0.97]"
-              >
-                Вийти без збереження
-              </button>
-              <button
-                onClick={() => setShowExitConfirm(false)}
-                className="w-full py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted/40 rounded-lg transition-colors active:scale-[0.97]"
-              >
-                Скасувати та продовжити редагування
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className={cn(
         "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
@@ -277,28 +350,41 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
         {/* Sticky Header */}
         <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60 bg-card rounded-t-2xl">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5 mb-1">
-              <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[patient.status])} />
-              {editingName ? (
-                <input
-                  ref={nameInputRef}
-                  autoFocus
-                  type="text"
-                  defaultValue={localFullName}
-                  onBlur={handleNameBlur}
-                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setEditingName(false); } }}
-                  className="text-base sm:text-lg font-bold text-foreground leading-tight bg-transparent border-b border-primary outline-none w-full min-w-0"
-                />
-              ) : (
-                <h2
-                  className="text-base sm:text-lg font-bold text-foreground leading-tight truncate flex items-center gap-1.5 cursor-pointer group"
-                  onClick={() => setEditingName(true)}
-                  title="Натисніть для редагування"
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[computePatientStatus(patient)])} />
+                {editingName ? (
+                  <input
+                    ref={nameInputRef}
+                    autoFocus
+                    type="text"
+                    defaultValue={localFullName}
+                    onBlur={handleNameBlur}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setEditingName(false); } }}
+                    className="text-base sm:text-lg font-bold text-foreground leading-tight bg-transparent border-b border-primary outline-none w-full min-w-0"
+                  />
+                ) : (
+                  <h2
+                    className="text-base sm:text-lg font-bold text-foreground leading-tight truncate flex items-center gap-1.5 cursor-pointer group"
+                    onClick={() => setEditingName(true)}
+                    title="Натисніть для редагування"
+                  >
+                    {localFullName}
+                    <Pencil size={13} className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+                  </h2>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                  {patient.fromForm ? "Новий" : "Повторний"}
+                </span>
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: serviceCategory.bgColor, color: serviceCategory.color }}
                 >
-                  {localFullName}
-                  <Pencil size={13} className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
-                </h2>
-              )}
+                  {serviceCategory.label}
+                </span>
+              </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs flex-wrap">
               <span className="text-muted-foreground font-normal">Дата:</span>
@@ -362,7 +448,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               {activeTab === "card" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                    <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
+                    <ProfilePane
+                      profile={mergedProfile}
+                      onFocusEdit={handleFocusOpen}
+                      histories={{
+                        phoneHistory: patient.phoneHistory,
+                        birthDateHistory: patient.birthDateHistory,
+                        allergiesHistory: patient.allergiesHistory,
+                        diagnosisHistory: patient.diagnosisHistory,
+                        notesHistory: patient.notesHistory,
+                      }}
+                    />
                   </ContentBlock>
                   <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                     <ServicesPane services={localServices} onServicesChange={setLocalServices} />
@@ -374,11 +470,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
+                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={patient.protocolHistory} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
+                  <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
+                    <PreparationTracker preparation={preparation} />
+                  </ContentBlock>
                   <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
                   <ChatInput />
@@ -391,7 +490,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
             {/* Left column: 40% */}
             <div className="w-[40%] overflow-y-auto shrink-0 p-4 space-y-3">
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
-                <ProfilePane profile={mergedProfile} onFocusEdit={handleFocusOpen} />
+                <ProfilePane
+                  profile={mergedProfile}
+                  onFocusEdit={handleFocusOpen}
+                  histories={{
+                    phoneHistory: patient.phoneHistory,
+                    birthDateHistory: patient.birthDateHistory,
+                    allergiesHistory: patient.allergiesHistory,
+                    diagnosisHistory: patient.diagnosisHistory,
+                    notesHistory: patient.notesHistory,
+                  }}
+                />
               </ContentBlock>
               <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} />
@@ -400,7 +509,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 <TrackerPaneCompact preparation={preparation} status={patient.status} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} />
+                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={patient.protocolHistory} />
               </ContentBlock>
             </div>
 
@@ -423,23 +532,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
         )}
 
         {/* ── Sticky Save Footer ── */}
-        <div className={cn(
-          "shrink-0 bg-white border-t p-3 sm:p-4 px-4 sm:px-6 transition-all duration-300 transform",
-          hasUnsavedChanges ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 hidden"
-        )}>
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-status-risk flex items-center gap-2">
-              <AlertTriangle size={16} /> Є незбережені зміни
-            </p>
-            <button
-              onClick={handleSaveChanges}
-              className="py-2.5 px-6 rounded-lg bg-primary text-primary-foreground font-bold text-sm shadow-md hover:shadow-lg hover:bg-primary/95 transition-all active:scale-[0.97]"
-            >
-              Зберегти зміни
-            </button>
-          </div>
-        </div>
-
         {/* ── Focus Mode Overlay ── */}
         {focusField && (
           <FocusOverlay
@@ -558,7 +650,17 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getMockProfile>; onFocusEdit: (field: string, value: string) => void }) {
+function ProfilePane({ profile, onFocusEdit, histories }: { 
+  profile: ReturnType<typeof getMockProfile>; 
+  onFocusEdit: (field: string, value: string) => void; 
+  histories: {
+    phoneHistory?: Array<{ value: string; timestamp: string; date: string }>;
+    birthDateHistory?: Array<{ value: string; timestamp: string; date: string }>;
+    allergiesHistory?: Array<{ value: string; timestamp: string; date: string }>;
+    diagnosisHistory?: Array<{ value: string; timestamp: string; date: string }>;
+    notesHistory?: Array<{ value: string; timestamp: string; date: string }>;
+  };
+}) {
   const [editingBirthDate, setEditingBirthDate] = useState(false);
   const [localBirthDate, setLocalBirthDate] = useState(profile.birthDate || "");
   const { ageStr } = calcAge(localBirthDate);
@@ -582,7 +684,11 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
                 setLocalBirthDate(f);
               }}
               placeholder="ДД.ММ.РРРР" maxLength={10} autoFocus
-              onBlur={() => setEditingBirthDate(false)}
+              onBlur={() => {
+                setEditingBirthDate(false);
+                setFields((prev) => ({ ...prev, birthDate: localBirthDate }));
+                onFocusEdit("birthDate", localBirthDate);
+              }}
               className="w-full bg-transparent text-sm font-bold tabular-nums outline-none border-b border-primary"
             />
           ) : (
@@ -594,6 +700,7 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
             </div>
           )}
         </div>
+        {renderHistory(histories.birthDateHistory)}
         <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Вік</p>
           <span className="text-sm font-bold text-foreground tabular-nums">{ageStr === "—" ? "—" : ageStr}</span>
@@ -613,18 +720,20 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
         <button onClick={() => onFocusEdit("phone", profile.phone)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.phone ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
           {profile.phone || "Натисніть для введення"}
         </button>
+        {renderHistory(histories.phoneHistory)}
       </div>
 
-      {/* Row 3: Алергії — highlighted red if filled */}
+      {/* Row 3: Алергії */}
       {profile.allergies ? (
-        <div className="bg-status-risk-bg rounded-xl border border-status-risk/30 px-3 py-2.5">
+        <div className="bg-red-50 rounded-xl border border-red-200 px-3 py-2.5">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] font-bold text-status-risk uppercase tracking-wide">⚠ Алергії</p>
-            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-status-risk/10 transition-all">
-              <Pencil size={11} className="text-status-risk" />
+            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide">⚠ Алергії</p>
+            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-100 transition-all">
+              <Pencil size={11} className="text-red-600" />
             </button>
           </div>
-          <span className="text-sm font-bold text-status-risk">{profile.allergies}</span>
+          <span className="text-sm font-bold text-red-600">{profile.allergies}</span>
+          {renderHistory(histories.allergiesHistory)}
         </div>
       ) : (
         <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
@@ -635,6 +744,7 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
             </button>
           </div>
           <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="text-sm italic text-muted-foreground/40 text-left w-full hover:text-muted-foreground transition-colors">Не зазначено</button>
+          {renderHistory(histories.allergiesHistory)}
         </div>
       )}
 
@@ -649,6 +759,7 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
         <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.diagnosis ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
           {profile.diagnosis || "Не встановлено"}
         </button>
+        {renderHistory(histories.diagnosisHistory)}
       </div>
 
       {/* Row 5: Останній візит */}
@@ -670,6 +781,7 @@ function ProfilePane({ profile, onFocusEdit }: { profile: ReturnType<typeof getM
         <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors whitespace-pre-wrap", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
           {profile.notes || "Додайте нотатки про пацієнта"}
         </button>
+        {renderHistory(histories.notesHistory)}
       </div>
     </div>
   );
@@ -745,6 +857,29 @@ function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<t
   );
 }
 
+// ── Preparation Tracker — 4 steps with green checkmarks ──
+function PreparationTracker({ preparation }: { preparation: ReturnType<typeof getPreparationProgress> }) {
+  return (
+    <div className="px-4 pb-4 space-y-3">
+      <div className="space-y-2.5">
+        {preparation.steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+              step.done ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"
+            )}>
+              {step.done ? "✓" : i + 1}
+            </div>
+            <span className={cn("text-sm", step.done ? "font-bold text-foreground" : "text-muted-foreground")}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Files Pane — upload and manage documents ──
 type FileItem = { id: string, name: string, type: "doctor" | "patient", date: string, url?: string };
 
@@ -754,7 +889,7 @@ const MOCK_FILES: FileItem[] = [
   { id: "mock3", name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
 ];
 
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText }: { files: FileItem[], onFilesChange: (files: FileItem[]) => void, onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string }) {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: { files: FileItem[], onFilesChange: (files: FileItem[]) => void, onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string, protocolHistory?: Array<{ value: string; timestamp: string; date: string }> }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
 
@@ -831,9 +966,15 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText }
           </button>
         </div>
         {protocolText ? (
-          <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+          <>
+            <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+            {renderHistory(protocolHistory)}
+          </>
         ) : (
-          <p className="text-sm leading-relaxed text-muted-foreground/40 italic">Протокол ще не заповнено</p>
+          <>
+            <p className="text-sm leading-relaxed text-muted-foreground/40 italic">Протокол ще не заповнено</p>
+            {renderHistory(protocolHistory)}
+          </>
         )}
       </div>
 

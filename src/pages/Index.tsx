@@ -82,7 +82,17 @@ export default function Index() {
   const [showForm, setShowForm] = useState(false);
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
   const [showTomorrow, setShowTomorrow] = useState(false);
-  
+  const [trainingLog, setTrainingLog] = useState<string[]>([]);
+  const trainingMode = true; // Удалить при подключении внешней базы данных
+
+  const logTraining = useCallback((message: string) => {
+    const now = new Date();
+    setTrainingLog((prev) => [
+      `${now.toLocaleString()} · ${message}`,
+      ...prev,
+    ].slice(0, 30));
+  }, []);
+
   const [patients, setPatients] = useState<Patient[]>(() => {
     const saved = localStorage.getItem("proctocare_all_patients");
     if (saved) {
@@ -158,7 +168,7 @@ export default function Index() {
       patronymic: entry.patronymic,
       time: entry.time,
       procedure: entry.procedures?.length > 0 ? entry.procedures.join(", ") : entry.procedure,
-      status: "progress",
+      status: "planning",
       aiSummary: entry.aiPrep ? "Асистент надсилає інструкції..." : "Очікує підготовки",
       birthDate: entry.birthDate,
       phone: entry.phone,
@@ -176,9 +186,10 @@ export default function Index() {
       toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
         description: entry.aiPrep ? "Асистент розпочав підготовку" : undefined,
       });
+      logTraining(`Нова навчальна запис: ${entry.name} ${entry.date} ${entry.time}`);
     }, 1500);
     setTimeout(() => setNewlyCreatedId(null), 4500);
-  }, []);
+  }, [logTraining]);
 
   const handleAIReply = useCallback((alertId: string) => {
     const alert = MOCK_AI_ALERTS.find((a) => a.id === alertId);
@@ -266,6 +277,56 @@ export default function Index() {
           <ViewToggle activeView={view} onViewChange={setView} />
           {view === "operational" && (
             <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
+          )}
+          {trainingMode && (
+            <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 text-xs text-foreground flex flex-wrap gap-2">
+              <strong>Учебный режим</strong>
+              <button
+                onClick={() => {
+                  const id = `training-${Date.now()}`;
+                  const patient: Patient = {
+                    id,
+                    name: "Тестовий Пацієнт",
+                    patronymic: "Тренувальний",
+                    time: "12:00",
+                    procedure: "Тестова процедура",
+                    status: "progress",
+                    aiSummary: "Тренувальна запис",
+                    birthDate: "01.01.1980",
+                    phone: "+380501234567",
+                    primaryNotes: "Пробна запис",
+                    date: todayDateStr,
+                    fromForm: true,
+                  };
+                  setPatients((prev) => [...prev, patient]);
+                  logTraining(`Додано тест-пацієнта (${id})`);
+                }}
+                className="px-2 py-1 border border-primary rounded-md bg-white hover:bg-primary/10"
+              >
+                + Тестова запис
+              </button>
+              <button
+                onClick={() => {
+                  setPatients((prev) => {
+                    const resetArr = [
+                      ...MOCK_PATIENTS.map((p) => ({ ...p, date: p.date || todayDateStr })),
+                      ...MOCK_TOMORROW.map((p) => ({ ...p, date: p.date || tomorrowDateStr })),
+                    ];
+                    return resetArr;
+                  });
+                  logTraining("Скинуто на мок-дані");
+                }}
+                className="px-2 py-1 border border-primary rounded-md bg-white hover:bg-primary/10"
+              >
+                Скинути тестову базу
+              </button>
+              <button
+                onClick={() => setTrainingLog([])}
+                className="px-2 py-1 border border-primary rounded-md bg-white hover:bg-primary/10"
+              >
+                Очистити лог
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -459,6 +520,23 @@ export default function Index() {
         )}
       </main>
 
+      {trainingMode && (
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 pb-4">
+          <div className="bg-surface-raised border border-border rounded-xl p-3 text-xs text-muted-foreground">
+            <div className="font-bold text-sm text-primary mb-2">Лог навчального режиму</div>
+            {trainingLog.length === 0 ? (
+              <p className="italic">Немає подій, почніть роботу через кнопки навчального режиму.</p>
+            ) : (
+              <ul className="list-disc list-inside space-y-1 h-24 overflow-y-auto">
+                {trainingLog.map((line, idx) => (
+                  <li key={`${line}-${idx}`} className="break-all">{line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
       {showForm && (
         <NewEntryForm
           prefillDate={formPrefill.date}
@@ -479,7 +557,14 @@ export default function Index() {
           patient={selectedPatient}
           onClose={() => setSelectedPatient(null)}
           onUpdatePatient={(updates) => {
-            setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, ...updates } : p));
+            setPatients((prev) => {
+              const updated = prev.map((p) => p.id === selectedPatient.id ? { ...p, ...updates } : p);
+              const updatedPatient = updated.find((p) => p.id === selectedPatient.id);
+              if (updatedPatient) {
+                logTraining(`Збережено зміни пацієнта: ${updatedPatient.name}`);
+              }
+              return updated;
+            });
             setSelectedPatient((prev) => prev ? { ...prev, ...updates } : prev);
           }}
         />
