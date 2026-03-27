@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, Headphones } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, Headphones, Check, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus } from "./PatientCard";
-import { computePatientStatus } from "./PatientCard";
+import { computePatientStatus, AllergyShield } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
@@ -20,6 +20,7 @@ interface PatientDetailViewProps {
   patient: Patient;
   onClose: () => void;
   onUpdatePatient?: (updates: Partial<Patient>) => void;
+  onDelete?: (patientId: string) => void;
 }
 
 const statusLabel: Record<PatientStatus, string> = {
@@ -153,8 +154,11 @@ function getMockChat(patient: Patient): ChatMessage[] {
   return base;
 }
 
-function getPreparationProgress(patient: Patient): { percent: number; steps: { label: string; done: boolean }[] } {
-  if (patient.fromForm) {
+function getPreparationProgress(patient: Patient, services?: string[]): { percent: number; steps: { label: string; done: boolean }[] } {
+  const status = patient.status;
+  const hasPolypectomy = services?.some(s => s.includes("Поліпектомія") || s.includes("поліпектомія"));
+
+  if (patient.fromForm && !services?.length) {
     return {
       percent: 0,
       steps: [
@@ -165,22 +169,24 @@ function getPreparationProgress(patient: Patient): { percent: number; steps: { l
       ],
     };
   }
-  const status = patient.status;
+
   const steps = [
     { label: "Дієта 3 дні", done: status === "ready" || status === "progress" || status === "risk" },
     { label: "Прийом препарату", done: status === "ready" || status === "progress" },
     { label: "Очищення завершено", done: status === "ready" },
     { label: "Аналізи в нормі", done: status === "ready" },
+    ...(hasPolypectomy ? [{ label: "Консультація анестезіолога", done: status === "ready" }] : []),
   ];
+
   const doneCount = steps.filter(s => s.done).length;
-  const percent = Math.round((doneCount / 4) * 100);
+  const percent = Math.round((doneCount / steps.length) * 100);
   return { percent, steps };
 }
 
-export function PatientDetailView({ patient, onClose, onUpdatePatient }: PatientDetailViewProps) {
+export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
-  const [focusField, setFocusField] = useState<{ field: string; value: string } | null>(null);
+  const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [localFullName, setLocalFullName] = useState(() => {
     const raw = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`;
@@ -208,7 +214,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
   
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
-  const preparation = getPreparationProgress(patient);
+  const preparation = getPreparationProgress(patient, localServices);
 
   const serviceCategory = getServiceCategory(localServices);
 
@@ -232,17 +238,22 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     if (!trimmed) return history || [];
 
     const now = new Date();
-    const date = now.toISOString().slice(0, 10);
-    const timestamp = `${now.toLocaleDateString("uk-UA")} ${now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}`;
+    const todayIso = now.toISOString().slice(0, 10); // "2026-03-27" — for comparison
+    const displayDate = now.toLocaleDateString("uk-UA"); // "27.03.2026" — for display
 
-    const currentHistory = history ? [...history] : [];
+    const current = history ? [...history] : [];
+    const lastEntry = current[current.length - 1];
 
-    // Добавляем запись каждой операцией, включая несколько записей в один день
-    return [...currentHistory, { value: trimmed, timestamp, date }];
+    // Same calendar day → replace last entry instead of appending
+    if (lastEntry?.date === todayIso) {
+      return [...current.slice(0, -1), { value: trimmed, timestamp: displayDate, date: todayIso }];
+    }
+
+    return [...current, { value: trimmed, timestamp: displayDate, date: todayIso }];
   };
 
-  const handleFocusOpen = (field: string, value: string) => {
-    setFocusField({ field, value });
+  const handleFocusOpen = (field: string, value: string, history?: HistoryEntry[]) => {
+    setFocusField({ field, value, history });
   };
 
   const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -338,6 +349,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={handleCloseRequest} />
 
+
       <div className={cn(
         "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
         "max-w-[90vw]"
@@ -386,7 +398,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 text-xs flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs flex-wrap mt-2 sm:mt-2.5">
               <span className="text-muted-foreground font-normal">Дата:</span>
               <span className="font-bold text-foreground">
                 {patient.date
@@ -401,12 +413,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={`tel:${profile.phone}`}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-status-ready text-white shadow-sm active:scale-[0.93] transition-all"
-            >
-              <Phone size={16} />
-            </a>
             <button
               onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
@@ -475,8 +481,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                 </div>
               ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
-                    <PreparationTracker preparation={preparation} />
+                  <ContentBlock title="Підготовка та зв'язок" icon={<Activity size={13} />}>
+                    <SidebarTracker preparation={preparation} status={patient.status} phone={mergedProfile.phone} />
                   </ContentBlock>
                   <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
@@ -505,9 +511,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
               <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} />
               </ContentBlock>
-              <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
-                <TrackerPaneCompact preparation={preparation} status={patient.status} />
-              </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                 <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={patient.protocolHistory} />
               </ContentBlock>
@@ -523,6 +526,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
                   </span>
                 ) : undefined}
               >
+                <SidebarTracker preparation={preparation} status={patient.status} phone={mergedProfile.phone} />
                 <AssistantToggle />
                 <ChatPane chat={chat} unanswered={unanswered} />
                 <ChatInput />
@@ -537,6 +541,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
           <FocusOverlay
             field={focusField.field}
             value={focusField.value}
+            history={focusField.history}
             patientName={patient.name}
             allergies={fields.allergies}
             onSave={handleFocusSave}
@@ -549,9 +554,10 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient }: Patient
 }
 
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, patientName, allergies, onSave, onCancel }: {
   field: string;
   value: string;
+  history?: HistoryEntry[];
   patientName: string;
   allergies: string;
   onSave: (value: string) => void;
@@ -581,8 +587,9 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
             <div>
               <p className="text-sm font-bold text-foreground">{patientName}</p>
               {allergies && (
-                <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-block mt-0.5">
-                  ⚠ Алергія: {allergies}
+                <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-flex items-center gap-1 mt-0.5">
+                  <AllergyShield size={11} />
+                  Алергія: {allergies}
                 </p>
               )}
             </div>
@@ -606,6 +613,19 @@ function FocusOverlay({ field, value, patientName, allergies, onSave, onCancel }
                 autoFocus
               />
             </div>
+            {history && history.length > 0 && (
+              <div className="px-5 pb-3 border-t border-border/40 pt-3">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">Історія змін</p>
+                <div className="space-y-1 max-h-28 overflow-y-auto">
+                  {history.slice().reverse().map((entry, i) => (
+                    <div key={i} className="flex items-baseline gap-2 text-xs text-muted-foreground">
+                      <span className="font-semibold shrink-0">{entry.timestamp}</span>
+                      <span className="truncate">{entry.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="px-5 py-3 border-t border-border/40 flex items-center justify-end gap-3">
               <button
                 onClick={onCancel}
@@ -650,9 +670,9 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile, onFocusEdit, histories }: { 
-  profile: ReturnType<typeof getMockProfile>; 
-  onFocusEdit: (field: string, value: string) => void; 
+function ProfilePane({ profile, onFocusEdit, histories }: {
+  profile: ReturnType<typeof getMockProfile>;
+  onFocusEdit: (field: string, value: string, history?: HistoryEntry[]) => void;
   histories: {
     phoneHistory?: Array<{ value: string; timestamp: string; date: string }>;
     birthDateHistory?: Array<{ value: string; timestamp: string; date: string }>;
@@ -727,24 +747,25 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
       {profile.allergies ? (
         <div className="bg-red-50 rounded-xl border border-red-200 px-3 py-2.5">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide">⚠ Алергії</p>
-            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-100 transition-all">
+            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide flex items-center gap-1">
+              <AllergyShield size={12} />
+              Алергії
+            </p>
+            <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-100 transition-all">
               <Pencil size={11} className="text-red-600" />
             </button>
           </div>
           <span className="text-sm font-bold text-red-600">{profile.allergies}</span>
-          {renderHistory(histories.allergiesHistory)}
         </div>
       ) : (
         <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
           <div className="flex items-center justify-between mb-1">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Алергії</p>
-            <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+            <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
               <Pencil size={11} className="text-muted-foreground" />
             </button>
           </div>
-          <button onClick={() => onFocusEdit("allergies", profile.allergies)} className="text-sm italic text-muted-foreground/40 text-left w-full hover:text-muted-foreground transition-colors">Не зазначено</button>
-          {renderHistory(histories.allergiesHistory)}
+          <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="text-sm italic text-muted-foreground/40 text-left w-full hover:text-muted-foreground transition-colors">Не зазначено</button>
         </div>
       )}
 
@@ -752,14 +773,13 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
       <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
         <div className="flex items-center justify-between mb-1">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Діагноз</p>
-          <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+          <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis, histories.diagnosisHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
-        <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.diagnosis ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
+        <button onClick={() => onFocusEdit("diagnosis", profile.diagnosis, histories.diagnosisHistory)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.diagnosis ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
           {profile.diagnosis || "Не встановлено"}
         </button>
-        {renderHistory(histories.diagnosisHistory)}
       </div>
 
       {/* Row 5: Останній візит */}
@@ -782,6 +802,79 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
           {profile.notes || "Додайте нотатки про пацієнта"}
         </button>
         {renderHistory(histories.notesHistory)}
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
+function SidebarTracker({ preparation, status, phone }: {
+  preparation: ReturnType<typeof getPreparationProgress>;
+  status: PatientStatus;
+  phone: string;
+}) {
+  const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
+  const isRisk = status === "risk";
+
+  type StepState = "done" | "inprogress" | "issue" | "pending";
+  const getState = (step: { done: boolean }, i: number): StepState => {
+    if (step.done) return "done";
+    if (i === firstPendingIdx) return isRisk ? "issue" : "inprogress";
+    return "pending";
+  };
+
+  return (
+    <div className="px-4 pb-3 space-y-3">
+      {/* Call button */}
+      {phone && (
+        <a
+          href={`tel:${phone}`}
+          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-status-ready text-white text-sm font-bold shadow-sm active:scale-[0.97] transition-all hover:bg-status-ready/90"
+        >
+          <Phone size={15} strokeWidth={2.5} />
+          Зателефонувати
+        </a>
+      )}
+
+      {/* Steps */}
+      <div className="space-y-1">
+        {preparation.steps.map((step, i) => {
+          const state = getState(step, i);
+          return (
+            <div
+              key={i}
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-colors",
+                state === "issue" && "bg-red-50 border border-red-200"
+              )}
+            >
+              {/* Icon */}
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center shrink-0",
+                state === "done"       && "bg-status-ready text-white",
+                state === "inprogress" && "bg-yellow-400 text-white",
+                state === "issue"      && "bg-red-500 text-white",
+                state === "pending"    && "bg-muted text-muted-foreground"
+              )}>
+                {state === "done"       && <Check size={11} strokeWidth={3} />}
+                {state === "inprogress" && <Clock size={10} strokeWidth={2.5} />}
+                {state === "issue"      && <AlertTriangle size={10} strokeWidth={2.5} />}
+                {state === "pending"    && <span className="text-[9px] font-bold">{i + 1}</span>}
+              </div>
+
+              {/* Label */}
+              <span className={cn(
+                "text-xs leading-tight",
+                state === "done"       && "text-foreground font-semibold",
+                state === "inprogress" && "text-yellow-700 font-semibold",
+                state === "issue"      && "text-red-600 font-bold",
+                state === "pending"    && "text-muted-foreground"
+              )}>
+                {step.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

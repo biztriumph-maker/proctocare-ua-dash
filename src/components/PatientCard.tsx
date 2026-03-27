@@ -2,6 +2,17 @@ import { cn } from "@/lib/utils";
 import { Clock, Check, X } from "lucide-react";
 import { useState } from "react";
 
+/** Red Shield allergy icon — white "!" on red shield background */
+export function AllergyShield({ size = 14, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} style={style}>
+      <path d="M10 1L1 5V11C1 16.5 4.8 21.7 10 23C15.2 21.7 19 16.5 19 11V5L10 1Z" fill="#EF4444" />
+      <rect x="8.5" y="6.5" width="3" height="8" rx="1.5" fill="white" />
+      <rect x="8.5" y="16.5" width="3" height="3" rx="1.5" fill="white" />
+    </svg>
+  );
+}
+
 export type PatientStatus = "planning" | "progress" | "risk" | "ready";
 
 export interface HistoryEntry {
@@ -20,6 +31,9 @@ export interface Patient {
   aiSummary: string;
   birthDate?: string;
   phone?: string;
+  allergies?: string;
+  diagnosis?: string;
+  lastVisit?: string;
   primaryNotes?: string;
   notes?: string;
   protocol?: string;

@@ -236,6 +236,12 @@ export default function Index() {
     toast.success("Процедуру позначено як виконану");
   }, []);
 
+  const handleDeletePatient = useCallback((patientId: string) => {
+    setPatients((prev) => prev.filter((p) => p.id !== patientId));
+    setSelectedPatient(null);
+    toast("Запис видалено");
+  }, []);
+
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
@@ -556,6 +562,7 @@ export default function Index() {
         <PatientDetailView
           patient={selectedPatient}
           onClose={() => setSelectedPatient(null)}
+          onDelete={handleDeletePatient}
           onUpdatePatient={(updates) => {
             setPatients((prev) => {
               const updated = prev.map((p) => p.id === selectedPatient.id ? { ...p, ...updates } : p);

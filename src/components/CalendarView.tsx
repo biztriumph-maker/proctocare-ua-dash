@@ -2,16 +2,16 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
-import { computePatientStatus } from "./PatientCard";
+import { computePatientStatus, AllergyShield } from "./PatientCard";
 
 interface CalendarSlot {
   hour: number;
-  patient?: { name: string; patronymic?: string; status: PatientStatus; procedure: string };
+  patient?: { name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
 }
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -240,10 +240,10 @@ function SlotPopover({
   openDirection,
   openHorizontal,
 }: {
-  slot: { name: string; patronymic?: string; status: PatientStatus; procedure: string };
+  slot: { name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
   hour: number;
   onClose: () => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
   openDirection: "up" | "down";
   openHorizontal: "left" | "right" | "center";
 }) {
@@ -267,6 +267,9 @@ function SlotPopover({
           className="flex items-center gap-1.5 min-w-0 hover:underline"
         >
           <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
+          {slot.allergies && (
+            <AllergyShield size={13} style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.65))" }} className="shrink-0" />
+          )}
           <span className="text-xs font-semibold text-foreground truncate">{(() => {
             const parts = slot.name.split(" ");
             const surname = parts[0] || "";
@@ -321,7 +324,7 @@ function WeekGrid({
       return mock.map(slot => {
         const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
         const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
+        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
         return slot;
       });
     });
@@ -546,6 +549,9 @@ function DayGrid({
               {slot.patient ? (
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                  {slot.patient.allergies && (
+                    <AllergyShield size={15} style={{ filter: "drop-shadow(0 0 5px rgba(239,68,68,0.7))" }} className="shrink-0" />
+                  )}
                   <span className="text-[15px] font-semibold text-foreground truncate">
                     {slot.patient.name}{slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}
                   </span>
