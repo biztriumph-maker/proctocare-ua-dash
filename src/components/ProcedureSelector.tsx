@@ -67,21 +67,15 @@ interface ProcedureSelectorProps {
 }
 
 function renderProcedureLabel(item: string): ReactNode {
-  // Emphasize quoted phrase in UI, while keeping original item value unchanged.
-  if (item.includes("(без мед сну)")) {
-    const normalized = item.replace("(без мед сну)", "");
+  // Keep parentheses and emphasize only the phrase itself.
+  if (item.includes("(без мед сну)") || item.includes("(без медичного сну)")) {
+    const marker = item.includes("(без медичного сну)") ? "(без медичного сну)" : "(без мед сну)";
+    const [before, after] = item.split(marker);
     return (
       <>
-        {normalized.trim()} <strong>"без медичного сну"</strong>
-      </>
-    );
-  }
-
-  if (item.includes("(без медичного сну)")) {
-    const normalized = item.replace("(без медичного сну)", "");
-    return (
-      <>
-        {normalized.trim()} <strong>"без медичного сну"</strong>
+        {before}
+        <strong>(без медичного сну)</strong>
+        {after}
       </>
     );
   }
