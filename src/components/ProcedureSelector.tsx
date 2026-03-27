@@ -72,9 +72,7 @@ function renderProcedureLabel(item: string): ReactNode {
     const normalized = item.replace("(без мед сну)", "");
     return (
       <>
-        {normalized.trim()} (
-        <strong>"без медичного сну"</strong>
-        )
+        {normalized.trim()} <strong>"без медичного сну"</strong>
       </>
     );
   }
@@ -83,9 +81,7 @@ function renderProcedureLabel(item: string): ReactNode {
     const normalized = item.replace("(без медичного сну)", "");
     return (
       <>
-        {normalized.trim()} (
-        <strong>"без медичного сну"</strong>
-        )
+        {normalized.trim()} <strong>"без медичного сну"</strong>
       </>
     );
   }
