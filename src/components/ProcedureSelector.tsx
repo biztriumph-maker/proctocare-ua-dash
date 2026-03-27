@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { X, Check, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +64,33 @@ interface ProcedureSelectorProps {
   selected: string[];
   onConfirm: (selected: string[]) => void;
   onClose: () => void;
+}
+
+function renderProcedureLabel(item: string): ReactNode {
+  // Emphasize quoted phrase in UI, while keeping original item value unchanged.
+  if (item.includes("(без мед сну)")) {
+    const normalized = item.replace("(без мед сну)", "");
+    return (
+      <>
+        {normalized.trim()} (
+        <strong>"без медичного сну"</strong>
+        )
+      </>
+    );
+  }
+
+  if (item.includes("(без медичного сну)")) {
+    const normalized = item.replace("(без медичного сну)", "");
+    return (
+      <>
+        {normalized.trim()} (
+        <strong>"без медичного сну"</strong>
+        )
+      </>
+    );
+  }
+
+  return item;
 }
 
 export function ProcedureSelector({ selected, onConfirm, onClose }: ProcedureSelectorProps) {
@@ -147,7 +174,7 @@ export function ProcedureSelector({ selected, onConfirm, onClose }: ProcedureSel
                       {isChecked && <Check size={13} className="text-primary-foreground" strokeWidth={3} />}
                     </div>
                     <span className={cn("text-sm", isChecked ? "font-bold text-foreground" : "text-foreground")}>
-                      {item}
+                      {renderProcedureLabel(item)}
                     </span>
                   </button>
                 );
