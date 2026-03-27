@@ -263,8 +263,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     protocol: initialProtocol,
     birthDate: profile.birthDate,
   });
-  const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
-  
+
   const [localServices, setLocalServices] = useState<string[]>(initialServices);
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
@@ -304,6 +303,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     const [y, m, d] = allDates[0].split("-");
     return `${d}.${m}.${y}`;
   })();
+  const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
