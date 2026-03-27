@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, Headphones, Check, Clock } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Headphones, Check, Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
-import type { Patient, PatientStatus } from "./PatientCard";
+import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
 import { computePatientStatus, AllergyShield } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
+import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
 
 interface ChatMessage {
@@ -63,6 +64,27 @@ function calcAge(birthDate: string): { age: number | null; ageStr: string } {
   return { age: null, ageStr: "—" };
 }
 
+function normalizePhoneWithPlus(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "+380";
+
+  let localPart = digits;
+  if (localPart.startsWith("380")) localPart = localPart.slice(3);
+  else if (localPart.startsWith("0")) localPart = localPart.slice(1);
+
+  localPart = localPart.slice(0, 9);
+  return `+380${localPart}`;
+}
+
+function getStorablePhone(value: string): string {
+  const normalized = normalizePhoneWithPlus(value);
+  return normalized === "+380" ? "" : normalized;
+}
+
+function getTodayIsoKyiv(): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Kiev" }).format(new Date());
+}
+
 function formatHistory(history?: Array<{ value: string; timestamp: string; date: string }>, value?: string): string {
   const entries = history || [];
   if (entries.length > 0) {
@@ -74,13 +96,27 @@ function formatHistory(history?: Array<{ value: string; timestamp: string; date:
   return value || "";
 }
 
+function isoToDisplay(isoDate?: string, fallback?: string): string {
+  const parts = isoDate?.split("-");
+  if (parts?.length === 3) return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  return fallback || isoDate || "";
+}
+
+function formatDateUkrainian(ddmmyyyy: string): string {
+  const months = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
+  const [d, m, y] = ddmmyyyy.split(".");
+  if (!d || !m || !y) return ddmmyyyy;
+  return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1] ?? ""} ${y}`;
+}
+
 function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
   if (!history || history.length === 0) return null;
   return (
     <div className="mt-1 text-[10px] text-muted-foreground space-y-0.5">
       {history.slice().reverse().map((item, idx) => (
-        <div key={`${item.timestamp}-${idx}`}>
-          <span className="font-bold">{item.date} {item.timestamp}</span>: {item.value}
+        <div key={`${item.date}-${idx}`} className="flex items-baseline gap-1.5">
+          <span className="font-bold shrink-0">{isoToDisplay(item.date, item.timestamp)}</span>
+          <span>{item.value}</span>
         </div>
       ))}
     </div>
@@ -211,6 +247,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const mergedProfile = { ...profile, ...fields };
   
   const [localServices, setLocalServices] = useState<string[]>(initialServices);
+  const [showReschedulePicker, setShowReschedulePicker] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
+  const [rescheduleTime, setRescheduleTime] = useState(patient.time || "");
+
+  useEffect(() => {
+    setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
+    setRescheduleTime(patient.time || "");
+  }, [patient.id, patient.date, patient.time]);
   
   const chat = getMockChat(patient);
   const unanswered = chat.filter((m) => m.unanswered);
@@ -218,7 +262,12 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const serviceCategory = getServiceCategory(localServices);
 
-  const [localFiles, setLocalFiles] = useState<FileItem[]>(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
+  const _now = new Date();
+  const todayStr = `${String(_now.getDate()).padStart(2, "0")}.${String(_now.getMonth() + 1).padStart(2, "0")}.${_now.getFullYear()}`;
+  const mergedProtocolHistory = patient.fromForm
+    ? patient.protocolHistory
+    : [...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])];
+  const [localFiles, setLocalFiles] = useState<FileItem[]>(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)));
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
@@ -228,21 +277,25 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     fields.diagnosis !== profile.diagnosis ||
     fields.birthDate !== profile.birthDate ||
     localServices.join(", ") !== (patient.procedure || "") ||
-    JSON.stringify(localFiles) !== JSON.stringify(patient.files || (patient.fromForm ? [] : [...MOCK_FILES]));
+    JSON.stringify(localFiles) !== JSON.stringify(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)));
 
   const addHistoryEntry = (
     history: Array<{ value: string; timestamp: string; date: string }> | undefined,
     newValue: string
   ) => {
-    const trimmed = newValue.trim();
-    if (!trimmed) return history || [];
-
     const now = new Date();
-    const todayIso = now.toISOString().slice(0, 10); // "2026-03-27" — for comparison
-    const displayDate = now.toLocaleDateString("uk-UA"); // "27.03.2026" — for display
+    const todayIso = getTodayIsoKyiv(); // "2026-03-27" Kyiv time
+    const displayDate = new Intl.DateTimeFormat("uk-UA", { timeZone: "Europe/Kiev", day: "2-digit", month: "2-digit", year: "numeric" }).format(now); // "27.03.2026"
+    const trimmed = newValue.trim();
 
     const current = history ? [...history] : [];
     const lastEntry = current[current.length - 1];
+
+    // If value was cleared, drop today's entry so stale text does not linger.
+    if (!trimmed) {
+      if (lastEntry?.date === todayIso) return current.slice(0, -1);
+      return current;
+    }
 
     // Same calendar day → replace last entry instead of appending
     if (lastEntry?.date === todayIso) {
@@ -273,18 +326,19 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const handleFocusSave = (value: string) => {
     if (focusField) {
       const trimmedValue = value.trim();
+      const preparedValue = focusField.field === "phone" ? getStorablePhone(trimmedValue) : trimmedValue;
       setFields((prev) => {
         if (focusField.field === "allergies" || focusField.field === "diagnosis") {
           // сохраняем как последний вариант, не накапливаем старые значения
-          return { ...prev, [focusField.field]: trimmedValue };
+          return { ...prev, [focusField.field]: preparedValue };
         }
 
         if (focusField.field === "notes") {
           // Нужен только последний вариант заметки — предыдущие записи удаляются
-          return { ...prev, notes: trimmedValue };
+          return { ...prev, notes: preparedValue };
         }
 
-        return { ...prev, [focusField.field]: trimmedValue };
+        return { ...prev, [focusField.field]: preparedValue };
       });
     }
     setFocusField(null);
@@ -299,15 +353,33 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     onClose();
   };
 
+  const handleApplyReschedule = () => {
+    if (!onUpdatePatient || !rescheduleDate || !rescheduleTime) return;
+
+    // Save in-memory field edits before changing date/time.
+    handleSaveChanges();
+    onUpdatePatient({ date: rescheduleDate, time: rescheduleTime });
+    setShowReschedulePicker(false);
+
+    const d = new Date(rescheduleDate + "T00:00:00");
+    const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+    toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
+  };
+
   const handleSaveChanges = () => {
     if (onUpdatePatient) {
-      const allergiesHistory = fields.allergies.trim() && fields.allergies !== patient.allergies
+      const hasTodayHistoryEntry = (history?: Array<{ value: string; timestamp: string; date: string }>) => {
+        if (!history || history.length === 0) return false;
+        return history[history.length - 1]?.date === getTodayIsoKyiv();
+      };
+
+      const allergiesHistory = (fields.allergies !== (patient.allergies || "")) || (!fields.allergies.trim() && hasTodayHistoryEntry(patient.allergiesHistory))
         ? addHistoryEntry(patient.allergiesHistory, fields.allergies)
         : patient.allergiesHistory;
-      const diagnosisHistory = fields.diagnosis.trim() && fields.diagnosis !== patient.diagnosis
+      const diagnosisHistory = (fields.diagnosis !== (patient.diagnosis || "")) || (!fields.diagnosis.trim() && hasTodayHistoryEntry(patient.diagnosisHistory))
         ? addHistoryEntry(patient.diagnosisHistory, fields.diagnosis)
         : patient.diagnosisHistory;
-      const notesHistory = fields.notes.trim() && fields.notes !== patient.notes
+      const notesHistory = (fields.notes !== (patient.notes || "")) || (!fields.notes.trim() && hasTodayHistoryEntry(patient.notesHistory))
         ? addHistoryEntry(patient.notesHistory, fields.notes)
         : patient.notesHistory;
       const phoneHistory = fields.phone.trim() && fields.phone !== (patient.phone || "")
@@ -327,7 +399,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
       onUpdatePatient({
         notes: fields.notes,
         protocol: fields.protocol,
-        phone: fields.phone,
+        phone: getStorablePhone(fields.phone),
         allergies: fields.allergies,
         diagnosis: fields.diagnosis,
         birthDate: fields.birthDate,
@@ -405,6 +477,13 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
                   : "—"}
               </span>
+              <button
+                onClick={() => setShowReschedulePicker(true)}
+                title="Перенести прийом"
+                className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-accent transition-all"
+              >
+                <Pencil size={11} className="text-muted-foreground" />
+              </button>
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
               <span className="font-bold text-foreground">{patient.time}</span>
@@ -457,6 +536,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     <ProfilePane
                       profile={mergedProfile}
                       onFocusEdit={handleFocusOpen}
+                      onBirthDateChange={(value) => setFields((prev) => ({ ...prev, birthDate: value }))}
+                      onPhoneChange={(value) => setFields((prev) => ({ ...prev, phone: value }))}
                       histories={{
                         phoneHistory: patient.phoneHistory,
                         birthDateHistory: patient.birthDateHistory,
@@ -467,7 +548,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     />
                   </ContentBlock>
                   <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
-                    <ServicesPane services={localServices} onServicesChange={setLocalServices} />
+                    <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
                     <TrackerPane preparation={preparation} status={patient.status} />
@@ -476,13 +557,24 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={patient.protocolHistory} />
+                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  <ContentBlock title="Підготовка та зв'язок" icon={<Activity size={13} />}>
-                    <SidebarTracker preparation={preparation} status={patient.status} phone={mergedProfile.phone} />
+                  <ContentBlock title="Підготовка та зв'язок" icon={<Activity size={13} />}
+                    headerRight={mergedProfile.phone ? (
+                      <a
+                        href={`tel:${mergedProfile.phone}`}
+                        className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm active:scale-[0.93] transition-all shrink-0"
+                        title={mergedProfile.phone}
+                      >
+                        <Phone size={13} strokeWidth={2.5} className="text-white" />
+                      </a>
+                    ) : undefined}
+                  >
+                    <PrepStepper preparation={preparation} status={patient.status} />
+                    <SidebarTracker preparation={preparation} status={patient.status} />
                   </ContentBlock>
                   <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
@@ -499,6 +591,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ProfilePane
                   profile={mergedProfile}
                   onFocusEdit={handleFocusOpen}
+                  onBirthDateChange={(value) => setFields((prev) => ({ ...prev, birthDate: value }))}
+                  onPhoneChange={(value) => setFields((prev) => ({ ...prev, phone: value }))}
                   histories={{
                     phoneHistory: patient.phoneHistory,
                     birthDateHistory: patient.birthDateHistory,
@@ -509,24 +603,38 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 />
               </ContentBlock>
               <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
-                <ServicesPane services={localServices} onServicesChange={setLocalServices} />
+                <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={patient.protocolHistory} />
+                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} />
               </ContentBlock>
             </div>
 
             {/* Right column: 60% */}
             <div className="w-[60%] flex flex-col overflow-hidden p-4 pl-0">
               <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
-                headerRight={unanswered.length > 0 ? (
-                  <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
-                    <AlertTriangle size={12} />
-                    {unanswered.length} без відповіді
-                  </span>
-                ) : undefined}
+                headerRight={
+                  <div className="flex items-center gap-2">
+                    {unanswered.length > 0 && (
+                      <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
+                        <AlertTriangle size={12} />
+                        {unanswered.length} без відповіді
+                      </span>
+                    )}
+                    {mergedProfile.phone && (
+                      <a
+                        href={`tel:${mergedProfile.phone}`}
+                        className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm hover:bg-status-ready/90 active:scale-[0.93] transition-all shrink-0"
+                        title={mergedProfile.phone}
+                      >
+                        <Phone size={13} strokeWidth={2.5} className="text-white" />
+                      </a>
+                    )}
+                  </div>
+                }
               >
-                <SidebarTracker preparation={preparation} status={patient.status} phone={mergedProfile.phone} />
+                <PrepStepper preparation={preparation} status={patient.status} />
+                <SidebarTracker preparation={preparation} status={patient.status} />
                 <AssistantToggle />
                 <ChatPane chat={chat} unanswered={unanswered} />
                 <ChatInput />
@@ -548,6 +656,49 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             onCancel={handleFocusCancel}
           />
         )}
+
+        {showReschedulePicker && (
+          <div className="absolute inset-0 z-[65] flex flex-col bg-background animate-fade-in">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-card shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Перенести прийом</h3>
+                {rescheduleDate && rescheduleTime && (
+                  <p className="text-xs text-primary font-bold mt-0.5">
+                    {new Date(rescheduleDate + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long" })} · {rescheduleTime}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleApplyReschedule}
+                  disabled={!rescheduleDate || !rescheduleTime}
+                  className="px-4 py-2 bg-primary text-primary-foreground text-sm font-bold rounded-lg active:scale-[0.96] transition-all disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Зберегти
+                </button>
+                <button
+                  onClick={() => setShowReschedulePicker(false)}
+                  className="p-1.5 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <CalendarView
+                onSlotClick={(selectedDate, hour) => {
+                  setRescheduleDate(selectedDate.toISOString().slice(0, 10));
+                  setRescheduleTime(`${String(hour).padStart(2, "0")}:00`);
+                }}
+                selectedSlot={rescheduleDate && rescheduleTime ? {
+                  dateStr: rescheduleDate,
+                  hour: parseInt(rescheduleTime, 10),
+                  name: patient.name,
+                } : undefined}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -563,10 +714,19 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
   onSave: (value: string) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(value);
+  const [text, setText] = useState(field === "phone" ? normalizePhoneWithPlus(value) : value);
+  const baseValue = value.trim();
+  const isDailyField = field === "notes" || field === "allergies" || field === "diagnosis";
+  const todayIso = getTodayIsoKyiv();
+  const visibleHistory = (history || []).filter((entry) => {
+    if (!entry.value.trim()) return false;
+    if (entry.value.trim() === baseValue) return false;
+    if (isDailyField && !baseValue && entry.date === todayIso) return false;
+    return true;
+  });
 
   const fieldLabels: Record<string, string> = {
-    protocol: "Протокол огляду",
+    protocol: "Висновок лікаря",
     phone: "Телефон",
     allergies: "Алергії",
     diagnosis: "Діагноз",
@@ -605,21 +765,31 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
               </h3>
             </div>
             <div className="p-5">
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                style={{ minHeight: "200px", maxHeight: "50vh" }}
-                autoFocus
-              />
+              {field === "phone" ? (
+                <input
+                  type="tel"
+                  value={text}
+                  onChange={(e) => setText(normalizePhoneWithPlus(e.target.value))}
+                  className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30"
+                  autoFocus
+                />
+              ) : (
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                  style={{ minHeight: "200px", maxHeight: "50vh" }}
+                  autoFocus
+                />
+              )}
             </div>
-            {history && history.length > 0 && (
+            {visibleHistory.length > 0 && (
               <div className="px-5 pb-3 border-t border-border/40 pt-3">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">Історія змін</p>
                 <div className="space-y-1 max-h-28 overflow-y-auto">
-                  {history.slice().reverse().map((entry, i) => (
+                  {visibleHistory.slice().reverse().map((entry, i) => (
                     <div key={i} className="flex items-baseline gap-2 text-xs text-muted-foreground">
-                      <span className="font-semibold shrink-0">{entry.timestamp}</span>
+                      <span className="font-semibold shrink-0">{isoToDisplay(entry.date, entry.timestamp)}</span>
                       <span className="truncate">{entry.value}</span>
                     </div>
                   ))}
@@ -670,9 +840,11 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile, onFocusEdit, histories }: {
+function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, histories }: {
   profile: ReturnType<typeof getMockProfile>;
   onFocusEdit: (field: string, value: string, history?: HistoryEntry[]) => void;
+  onBirthDateChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
   histories: {
     phoneHistory?: Array<{ value: string; timestamp: string; date: string }>;
     birthDateHistory?: Array<{ value: string; timestamp: string; date: string }>;
@@ -681,8 +853,17 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
     notesHistory?: Array<{ value: string; timestamp: string; date: string }>;
   };
 }) {
-  const [editingBirthDate, setEditingBirthDate] = useState(false);
   const [localBirthDate, setLocalBirthDate] = useState(profile.birthDate || "");
+  const [localPhone, setLocalPhone] = useState(normalizePhoneWithPlus(profile.phone || ""));
+
+  useEffect(() => {
+    setLocalBirthDate(profile.birthDate || "");
+  }, [profile.birthDate]);
+
+  useEffect(() => {
+    setLocalPhone(normalizePhoneWithPlus(profile.phone || ""));
+  }, [profile.phone]);
+
   const { ageStr } = calcAge(localBirthDate);
 
   return (
@@ -691,36 +872,29 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
       {/* Row 1: Дата народження + Вік */}
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Дата народження</p>
-          {editingBirthDate ? (
-            <input
-              type="text" inputMode="numeric"
-              value={localBirthDate}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
-                let f = raw;
-                if (raw.length > 2) f = raw.slice(0, 2) + "." + raw.slice(2);
-                if (raw.length > 4) f = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
-                setLocalBirthDate(f);
-              }}
-              placeholder="ДД.ММ.РРРР" maxLength={10} autoFocus
-              onBlur={() => {
-                setEditingBirthDate(false);
-                setFields((prev) => ({ ...prev, birthDate: localBirthDate }));
-                onFocusEdit("birthDate", localBirthDate);
-              }}
-              className="w-full bg-transparent text-sm font-bold tabular-nums outline-none border-b border-primary"
-            />
-          ) : (
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-foreground tabular-nums">{localBirthDate || "—"}</span>
-              <button onClick={() => setEditingBirthDate(true)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all shrink-0">
-                <Pencil size={11} className="text-muted-foreground" />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Дата народження</p>
+            <button onClick={() => onFocusEdit("birthDate", localBirthDate, histories.birthDateHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all shrink-0">
+              <Pencil size={11} className="text-muted-foreground" />
+            </button>
+          </div>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={localBirthDate}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+              let f = raw;
+              if (raw.length > 2) f = raw.slice(0, 2) + "." + raw.slice(2);
+              if (raw.length > 4) f = raw.slice(0, 2) + "." + raw.slice(2, 4) + "." + raw.slice(4);
+              setLocalBirthDate(f);
+              onBirthDateChange(f);
+            }}
+            placeholder="ДД.ММ.РРРР"
+            maxLength={10}
+            className="w-full bg-transparent text-sm font-bold tabular-nums outline-none"
+          />
         </div>
-        {renderHistory(histories.birthDateHistory)}
         <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Вік</p>
           <span className="text-sm font-bold text-foreground tabular-nums">{ageStr === "—" ? "—" : ageStr}</span>
@@ -733,14 +907,21 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
             <Phone size={10} /> Телефон
           </p>
-          <button onClick={() => onFocusEdit("phone", profile.phone)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+          <button onClick={() => onFocusEdit("phone", profile.phone, histories.phoneHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
-        <button onClick={() => onFocusEdit("phone", profile.phone)} className={cn("text-sm font-bold text-left w-full transition-colors", profile.phone ? "text-foreground hover:text-primary" : "text-muted-foreground/40 italic")}>
-          {profile.phone || "Натисніть для введення"}
-        </button>
-        {renderHistory(histories.phoneHistory)}
+        <input
+          type="tel"
+          value={localPhone}
+          onChange={(e) => {
+            const normalized = normalizePhoneWithPlus(e.target.value);
+            setLocalPhone(normalized);
+            onPhoneChange(getStorablePhone(normalized));
+          }}
+          placeholder="+380671234567"
+          className="w-full bg-transparent text-sm font-bold outline-none"
+        />
       </div>
 
       {/* Row 3: Алергії */}
@@ -794,24 +975,22 @@ function ProfilePane({ profile, onFocusEdit, histories }: {
       <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
         <div className="flex items-center justify-between mb-1">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Нотатки</p>
-          <button onClick={() => onFocusEdit("notes", profile.notes)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
+          <button onClick={() => onFocusEdit("notes", profile.notes, histories.notesHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
-        <button onClick={() => onFocusEdit("notes", profile.notes)} className={cn("text-sm text-left w-full leading-relaxed transition-colors whitespace-pre-wrap", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
+        <button onClick={() => onFocusEdit("notes", profile.notes, histories.notesHistory)} className={cn("text-sm text-left w-full leading-relaxed transition-colors whitespace-pre-wrap", profile.notes ? "font-bold text-foreground hover:text-primary" : "italic text-muted-foreground/40")}>
           {profile.notes || "Додайте нотатки про пацієнта"}
         </button>
-        {renderHistory(histories.notesHistory)}
       </div>
     </div>
   );
 }
 
 // ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
-function SidebarTracker({ preparation, status, phone }: {
+function SidebarTracker({ preparation, status }: {
   preparation: ReturnType<typeof getPreparationProgress>;
   status: PatientStatus;
-  phone: string;
 }) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
@@ -825,17 +1004,6 @@ function SidebarTracker({ preparation, status, phone }: {
 
   return (
     <div className="px-4 pb-3 space-y-3">
-      {/* Call button */}
-      {phone && (
-        <a
-          href={`tel:${phone}`}
-          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-status-ready text-white text-sm font-bold shadow-sm active:scale-[0.97] transition-all hover:bg-status-ready/90"
-        >
-          <Phone size={15} strokeWidth={2.5} />
-          Зателефонувати
-        </a>
-      )}
-
       {/* Steps */}
       <div className="space-y-1">
         {preparation.steps.map((step, i) => {
@@ -973,49 +1141,172 @@ function PreparationTracker({ preparation }: { preparation: ReturnType<typeof ge
   );
 }
 
+// ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
+function PrepStepper({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
+  const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
+  const isRisk = status === "risk";
+
+  return (
+    <div className="px-4 pt-3 pb-2">
+      <div className="flex items-end gap-1">
+        {preparation.steps.map((step, i) => {
+          const isDone = step.done;
+          const isActive = !step.done && i === firstPendingIdx;
+          const isIssue = isActive && isRisk;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={step.label}>
+              <div className={cn(
+                "w-full h-1 rounded-full transition-colors",
+                isDone ? "bg-status-ready" : isIssue ? "bg-red-500" : isActive ? "bg-yellow-400" : "bg-muted"
+              )} />
+              <span className={cn(
+                "text-[9px] font-bold leading-none",
+                isDone ? "text-status-ready" : isIssue ? "text-red-500" : isActive ? "text-yellow-600" : "text-muted-foreground/40"
+              )}>
+                {i + 1}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Files Pane — upload and manage documents ──
 type FileItem = { id: string, name: string, type: "doctor" | "patient", date: string, url?: string };
 
-const MOCK_FILES: FileItem[] = [
-  { id: "mock1", name: "Аналіз крові 20.03.pdf", type: "patient", date: "20.03.2026" },
-  { id: "mock2", name: "МРТ черевної порожнини.jpg", type: "patient", date: "18.03.2026" },
-  { id: "mock3", name: "Протокол колоноскопії.pdf", type: "doctor", date: "24.03.2026" },
+function getMockFiles(todayStr: string): FileItem[] {
+  return [
+    { id: "mock_today_img", name: "test_today.jpg", type: "patient", date: todayStr },
+    { id: "mock_archive_pdf", name: "archive_report_2025.pdf", type: "doctor", date: "20.05.2025" },
+  ];
+}
+
+const MOCK_PROTOCOL_HISTORY: Array<{ value: string; timestamp: string; date: string }> = [
+  { value: "Гастроскопія: патологій не виявлено. Слизова шлунка та дванадцятипалої кишки в нормі.", timestamp: "20.05.2025", date: "2025-05-20" },
 ];
 
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: { files: FileItem[], onFilesChange: (files: FileItem[]) => void, onFocusEdit: (field: string, value: string) => void; fromForm?: boolean; protocolText: string, protocolHistory?: Array<{ value: string; timestamp: string; date: string }> }) {
+// ── Shared file row ──
+function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelete: () => void; onView: () => void; readOnly?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
+      <FileText size={15} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
+        <p className="text-[10px] text-muted-foreground">{file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}</p>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        {file.url ? (
+          <a href={file.url} target="_blank" rel="noopener noreferrer"
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
+            <Eye size={12} className="text-muted-foreground" />
+          </a>
+        ) : (
+          <button onClick={onView}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
+            <Eye size={12} className="text-muted-foreground" />
+          </button>
+        )}
+        {!readOnly && (
+          <button onClick={onDelete}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-destructive/70 hover:text-destructive active:scale-[0.9] transition-all" title="Видалити">
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Clinical Timeline: groups documents & files by appointment date ──
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: {
+  files: FileItem[];
+  onFilesChange: (files: FileItem[]) => void;
+  onFocusEdit: (field: string, value: string) => void;
+  fromForm?: boolean;
+  protocolText: string;
+  protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files).map(file => {
-        const today = new Date();
-        const dateStr = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
-        return {
-          id: Math.random().toString(36).substring(7),
-          name: file.name,
-          type: "doctor" as const,
-          date: dateStr,
-          url: URL.createObjectURL(file)
-        };
-      });
-      onFilesChange([...files, ...newFiles]);
+  // Today in DD.MM.YYYY local time
+  const now = new Date();
+  const todayStr = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+
+  // Group files by their date field
+  const filesByDate = useMemo(() => {
+    const map = new Map<string, FileItem[]>();
+    for (const f of files) {
+      const d = f.date || todayStr;
+      if (!map.has(d)) map.set(d, []);
+      map.get(d)!.push(f);
     }
+    return map;
+  }, [files, todayStr]);
+
+  // Map protocolHistory ISO dates → { displayDate: DD.MM.YYYY, value }
+  const protocolByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const h of (protocolHistory || [])) {
+      const parts = h.date?.split("-");
+      if (parts?.length === 3) {
+        const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
+        map.set(dd, h.value);
+      }
+    }
+    return map;
+  }, [protocolHistory]);
+
+  // Collect all historical dates (not today), sorted descending
+  const historicalDates = useMemo(() => {
+    const dates = new Set<string>();
+    for (const d of filesByDate.keys()) if (d !== todayStr) dates.add(d);
+    for (const d of protocolByDate.keys()) if (d !== todayStr) dates.add(d);
+    return Array.from(dates).sort((a, b) => {
+      const parse = (s: string) => {
+        const [d, m, y] = s.split(".");
+        return new Date(+y, +m - 1, +d).getTime();
+      };
+      return parse(b) - parse(a);
+    });
+  }, [filesByDate, protocolByDate, todayStr]);
+
+  // All historical dates start collapsed
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
+
+  const toggleDate = (date: string) => {
+    setCollapsedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
+  const todayFiles = filesByDate.get(todayStr) || [];
+  const hasTimeline = historicalDates.length > 0;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const newFiles = Array.from(e.target.files).map(file => ({
+      id: Math.random().toString(36).substring(7),
+      name: file.name,
+      type: "doctor" as const,
+      date: todayStr,
+      url: URL.createObjectURL(file),
+    }));
+    onFilesChange([...files, ...newFiles]);
   };
 
   const handleViewFile = (file: FileItem) => {
-    if (!file.url) {
-      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
-    }
+    if (!file.url) alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
   };
 
   return (
-    <div className="px-4 pb-4 space-y-4 relative">
-      {/* Delete file confirmation dialog */}
+    <div className="pb-4 relative">
+      {/* Delete confirmation dialog */}
       {confirmDeleteFile && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDeleteFile(null)}>
           <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
@@ -1024,115 +1315,117 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               Ви впевнені, що хочете видалити файл «{files.find(f => f.id === confirmDeleteFile)?.name}»?
             </p>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setConfirmDeleteFile(null)}
-                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
-              >
-                Скасувати
-              </button>
-              <button
-                onClick={() => {
-                  onFilesChange(files.filter((x) => x.id !== confirmDeleteFile));
-                  setConfirmDeleteFile(null);
-                }}
-                className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]"
-              >
-                Видалити
-              </button>
+              <button onClick={() => setConfirmDeleteFile(null)} className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]">Скасувати</button>
+              <button onClick={() => { onFilesChange(files.filter(x => x.id !== confirmDeleteFile)); setConfirmDeleteFile(null); }}
+                className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]">Видалити</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Protocol block — always shown, empty for new patients */}
-      <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-            <FileText size={12} className="text-primary" />
-            Протокол огляду
-          </h4>
-          <button
-            onClick={() => onFocusEdit("protocol", protocolText)}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all"
-          >
-            <Pencil size={12} className="text-muted-foreground" />
-          </button>
-        </div>
-        {protocolText ? (
-          <>
-            <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
-            {renderHistory(protocolHistory)}
-          </>
-        ) : (
-          <>
-            <p className="text-sm leading-relaxed text-muted-foreground/40 italic">Протокол ще не заповнено</p>
-            {renderHistory(protocolHistory)}
-          </>
+      {/* Timeline */}
+      <div className="relative px-4">
+        {/* Vertical thread connecting dots */}
+        {hasTimeline && (
+          <div className="absolute left-[27px] top-5 bottom-3 w-px bg-border/50" />
         )}
-      </div>
 
-      {/* Files block — always shown */}
-      <div className="space-y-2">
-        <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
-          Файли та аналізи
-        </h4>
-        {files.map((file) => (
-          <div key={file.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
-            <FileText size={16} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}
-              </p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {file.url ? (
-                <a 
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
-                  title="Переглянути"
-                >
-                  <Eye size={12} className="text-muted-foreground" />
-                </a>
-              ) : (
-                <button 
-                  onClick={() => handleViewFile(file)}
-                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" 
-                  title="Переглянути"
-                >
-                  <Eye size={12} className="text-muted-foreground" />
-                </button>
-              )}
-              <button 
-                onClick={() => setConfirmDeleteFile(file.id)}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-destructive/70 hover:text-destructive active:scale-[0.9] transition-all" 
-                title="Видалити"
-              >
-                <Trash2 size={12} />
+        {/* ── Current Visit (always expanded, always on top) ── */}
+        <div className="relative pl-8 mb-4">
+          <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-primary border-2 border-white shadow-sm" />
+
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(todayStr)}</span>
+            <span className="ml-auto text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Поточний</span>
+          </div>
+
+          {/* ВИСНОВОК ЛІКАРЯ — soft highlighted border, editable */}
+          <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2 mb-2.5">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <FileText size={12} className="text-primary" />
+                Висновок лікаря
+              </h4>
+              <button onClick={() => onFocusEdit("protocol", protocolText)}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all">
+                <Pencil size={11} className="text-muted-foreground" />
               </button>
             </div>
+            {protocolText ? (
+              <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+            ) : (
+              <button onClick={() => onFocusEdit("protocol", "")}
+                className="text-sm leading-relaxed text-muted-foreground/40 italic text-left w-full hover:text-muted-foreground/60 transition-colors">
+                Натисніть, щоб заповнити висновок...
+              </button>
+            )}
           </div>
-        ))}
 
-        {/* Hidden file input */}
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileChange} 
-          multiple
-          className="hidden" 
-          accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .txt" 
-        />
+          {/* Files for today */}
+          {todayFiles.length > 0 && (
+            <div className="space-y-1.5 mb-2.5">
+              {todayFiles.map(file => (
+                <FileRow key={file.id} file={file}
+                  onDelete={() => setConfirmDeleteFile(file.id)}
+                  onView={() => handleViewFile(file)} />
+              ))}
+            </div>
+          )}
 
-        <button 
-          onClick={handleUploadClick}
-          className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2.5 transition-colors active:scale-[0.97]"
-        >
-          <Upload size={14} />
-          Завантажити файл
-        </button>
+          {/* Upload — current visit only */}
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden"
+            accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .txt" />
+          <button onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2 transition-colors active:scale-[0.97]">
+            <Upload size={13} />
+            Завантажити файл
+          </button>
+        </div>
+
+        {/* ── Historical Visits (collapsible) ── */}
+        {historicalDates.map((date) => {
+          const isCollapsed = collapsedDates.has(date);
+          const dateFiles = filesByDate.get(date) || [];
+          const dateProtocol = protocolByDate.get(date);
+
+          return (
+            <div key={date} className="relative pl-8 mb-3">
+              {/* Muted dot for past visit */}
+              <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-muted-foreground/25 border-2 border-white" />
+
+              {/* Collapsible header */}
+              <button onClick={() => toggleDate(date)}
+                className="w-full flex items-center gap-1.5 text-left mb-1 group">
+                <span className="text-[11px] font-semibold text-muted-foreground">{formatDateUkrainian(date)}</span>
+                <ChevronDown size={11} className={cn(
+                  "ml-auto text-muted-foreground/50 transition-transform duration-200 shrink-0",
+                  !isCollapsed && "rotate-180"
+                )} />
+              </button>
+
+              {/* Expanded content — read-only archive */}
+              {!isCollapsed && (
+                <div className="space-y-1.5 pt-0.5">
+                  {dateProtocol && (
+                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Висновок лікаря</p>
+                      <p className="text-xs leading-relaxed text-foreground/80">{dateProtocol}</p>
+                    </div>
+                  )}
+                  {dateFiles.map(file => (
+                    <FileRow key={file.id} file={file} readOnly
+                      onDelete={() => setConfirmDeleteFile(file.id)}
+                      onView={() => handleViewFile(file)} />
+                  ))}
+                  {!dateProtocol && dateFiles.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground/40 italic">Немає записів</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1140,18 +1433,20 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
 // ── Services Pane — uses full ProcedureSelector overlay ──
 
-function ServicesPane({ services, onServicesChange }: { services: string[]; onServicesChange: (s: string[]) => void }) {
+function ServicesPane({ services, onServicesChange, showFloatingEdit = true }: { services: string[]; onServicesChange: (s: string[]) => void; showFloatingEdit?: boolean }) {
   const [showSelector, setShowSelector] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
     <div className="px-4 pb-4 space-y-2 relative">
-      <button
-        onClick={() => setShowSelector(true)}
-        className="absolute -top-10 right-4 w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all z-10"
-      >
-        <Pencil size={11} className="text-muted-foreground" />
-      </button>
+      {showFloatingEdit && (
+        <button
+          onClick={() => setShowSelector(true)}
+          className="absolute -top-10 right-4 w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all z-10"
+        >
+          <Pencil size={11} className="text-muted-foreground" />
+        </button>
+      )}
 
       {/* Delete confirmation dialog */}
       {confirmDelete && (

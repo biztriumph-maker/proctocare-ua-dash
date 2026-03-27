@@ -38,10 +38,34 @@ const PATIENT_SUGGESTIONS = [
   "Сидоренко Ірина Василівна",
 ];
 
+function normalizeUaPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "+380";
+
+  let localPart = digits;
+  if (localPart.startsWith("380")) localPart = localPart.slice(3);
+  else if (localPart.startsWith("0")) localPart = localPart.slice(1);
+
+  localPart = localPart.slice(0, 9);
+  return `+380${localPart}`;
+}
+
+function formatUaPhoneMasked(value: string): string {
+  const normalized = normalizeUaPhone(value);
+  const localPart = normalized.slice(4);
+  const p1 = localPart.slice(0, 2);
+  const p2 = localPart.slice(2, 5);
+  const p3 = localPart.slice(5, 7);
+  const p4 = localPart.slice(7, 9);
+
+  const chunks = [p1, p2, p3, p4].filter(Boolean);
+  return chunks.length ? `+380 ${chunks.join(" ")}` : "+380";
+}
+
 export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [phone, setPhone] = useState("+380");
+  const [phone, setPhone] = useState("+380 ");
   const [procedures, setProcedures] = useState<string[]>([]);
   const [showProcedureSelector, setShowProcedureSelector] = useState(false);
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
@@ -61,7 +85,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
     const words = name.trim().split(/\s+/);
     const parsedName = words.slice(0, 2).join(" ");
     const patronymic = words.slice(2).join(" ");
-    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    onSave({ name: parsedName, patronymic, birthDate, phone: normalizeUaPhone(phone), procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -208,7 +232,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             </label>
             <input
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(formatUaPhoneMasked(e.target.value))}
               placeholder="+380 __ ___ __ __"
               type="tel"
               className={cn(

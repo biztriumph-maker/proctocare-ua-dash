@@ -17,8 +17,19 @@ const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
 const nextWeek = new Date();
 nextWeek.setDate(nextWeek.getDate() + 5);
-const todayDateStr = today.toISOString().slice(0, 10);
-const tomorrowDateStr = tomorrow.toISOString().slice(0, 10);
+
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const todayDateStr = localDateStr(today);
+const tomorrowDateStr = localDateStr(tomorrow);
+
+// Nearest upcoming Sunday (for calendar mock patient)
+const _sunday = new Date();
+const _daysToSunday = (7 - _sunday.getDay()) % 7 || 7;
+_sunday.setDate(_sunday.getDate() + _daysToSunday);
+const sundayDateStr = localDateStr(_sunday);
 
 const MOCK_PATIENTS: Patient[] = [
   { id: "1", name: "Коваленко Олена", patronymic: "Василівна", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
@@ -27,6 +38,7 @@ const MOCK_PATIENTS: Patient[] = [
   { id: "4", name: "Бондаренко Вікторія", patronymic: "Іванівна", time: "14:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Всі етапи підготовки пройдені успішно" },
   { id: "5", name: "Ткаченко Наталія", patronymic: "Миколаївна", time: "16:00", procedure: "Аноскопія", status: "progress", aiSummary: "Дієта дотримується, очікуємо прийом препарату" },
   { id: "6", name: "Лисенко Андрій", patronymic: "Сергійович", time: "17:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Алергія не підтверджена, потрібна консультація" },
+  { id: "mock-petushkov", name: "Петушков Сергій", patronymic: "Юрійович", time: "09:00", procedure: "Поліпектомія при колоноскопії", status: "planning", aiSummary: "Записаний на процедуру, очікує підготовки", date: sundayDateStr, fromForm: true },
 ];
 
 const MOCK_TOMORROW: Patient[] = [];
@@ -71,10 +83,111 @@ const MOCK_AI_ALERTS: AIAlertDetail[] = [
 ];
 
 const statusToFilter: Record<PatientStatus, FilterType> = {
+  planning: "attention",
   ready: "ready",
   progress: "attention",
   risk: "risk",
 };
+
+function personKey(patient: Pick<Patient, "name" | "patronymic">): string {
+  return `${patient.name.trim().toLowerCase()}|${(patient.patronymic || "").trim().toLowerCase()}`;
+}
+
+function profileCompleteness(patient: Patient): number {
+  let score = 0;
+  if (patient.birthDate?.trim()) score += 2;
+  if (patient.phone?.trim()) score += 2;
+  if (patient.allergies?.trim()) score += 1;
+  if (patient.diagnosis?.trim()) score += 1;
+  if (patient.notes?.trim() || patient.primaryNotes?.trim()) score += 1;
+  if (patient.protocol?.trim()) score += 1;
+  if ((patient.files?.length || 0) > 0) score += 1;
+  if ((patient.phoneHistory?.length || 0) > 0) score += 1;
+  if ((patient.notesHistory?.length || 0) > 0) score += 1;
+  if ((patient.diagnosisHistory?.length || 0) > 0) score += 1;
+  if ((patient.allergiesHistory?.length || 0) > 0) score += 1;
+  if ((patient.birthDateHistory?.length || 0) > 0) score += 1;
+  if ((patient.protocolHistory?.length || 0) > 0) score += 1;
+  return score;
+}
+
+function hydrateMissingProfile(target: Patient, source?: Patient): Patient {
+  if (!source) return target;
+
+  const out = { ...target };
+  const scalarFields: Array<keyof Patient> = [
+    "birthDate",
+    "phone",
+    "allergies",
+    "diagnosis",
+    "lastVisit",
+    "notes",
+    "primaryNotes",
+    "protocol",
+  ];
+
+  for (const field of scalarFields) {
+    const current = out[field];
+    const fallback = source[field];
+    if ((typeof current !== "string" || !current.trim()) && typeof fallback === "string" && fallback.trim()) {
+      out[field] = fallback;
+    }
+  }
+
+  const listFields: Array<keyof Patient> = [
+    "files",
+    "allergiesHistory",
+    "diagnosisHistory",
+    "notesHistory",
+    "phoneHistory",
+    "birthDateHistory",
+    "protocolHistory",
+    "procedureHistory",
+  ];
+
+  for (const field of listFields) {
+    const current = out[field] as unknown;
+    const fallback = source[field] as unknown;
+    const currentEmpty = !Array.isArray(current) || current.length === 0;
+    if (currentEmpty && Array.isArray(fallback) && fallback.length > 0) {
+      out[field] = fallback as never;
+    }
+  }
+
+  return out;
+}
+
+function scheduleSortValue(patient: Patient): number {
+  const datePart = patient.date || "0000-00-00";
+  const timePart = patient.time || "00:00";
+  return Number(`${datePart.replace(/-/g, "")}${timePart.replace(":", "")}`);
+}
+
+function normalizePersonName(patient: Patient): Patient {
+  const compact = patient.name.replace(/\s+/g, " ").trim();
+  const hasInitials = compact.includes(".");
+  if (!hasInitials) return patient;
+
+  const parts = compact.split(" ");
+  const surname = parts[0] || compact;
+  return {
+    ...patient,
+    name: surname,
+    patronymic: patient.patronymic || undefined,
+  };
+}
+
+function rebuildPetushkovRecord(patients: Patient[]): Patient[] {
+  const petushkov = patients.filter((p) => p.name.toLowerCase().includes("петушков"));
+  if (petushkov.length <= 1) return patients;
+
+  const others = patients.filter((p) => !p.name.toLowerCase().includes("петушков"));
+  const richest = petushkov.slice().sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+  const latest = petushkov.slice().sort((a, b) => scheduleSortValue(b) - scheduleSortValue(a))[0];
+
+  const merged = hydrateMissingProfile(normalizePersonName({ ...latest }), richest);
+  return [...others, merged];
+}
 
 export default function Index() {
   const [view, setView] = useState<"operational" | "calendar">("operational");
@@ -99,7 +212,8 @@ export default function Index() {
       try {
         const parsed = JSON.parse(saved);
         // Clean up legacy tomorrow mock patients just in case they were cached
-        return parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
+        const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
+        return rebuildPetushkovRecord(cleaned);
       } catch (e) {
         console.error("Failed to parse saved patients", e);
       }
@@ -215,8 +329,12 @@ export default function Index() {
   }, [handleAIReply]);
 
   const handlePatientClick = useCallback((patient: Patient) => {
-    setSelectedPatient(patient);
-  }, []);
+    const donor = patients
+      .filter((p) => p.id !== patient.id && personKey(p) === personKey(patient))
+      .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+    setSelectedPatient(hydrateMissingProfile(patient, donor));
+  }, [patients]);
 
   const handleNoShow = useCallback((patientId: string) => {
     setPatients((prev) =>
@@ -313,7 +431,7 @@ export default function Index() {
               </button>
               <button
                 onClick={() => {
-                  setPatients((prev) => {
+                  setPatients((_prev) => {
                     const resetArr = [
                       ...MOCK_PATIENTS.map((p) => ({ ...p, date: p.date || todayDateStr })),
                       ...MOCK_TOMORROW.map((p) => ({ ...p, date: p.date || tomorrowDateStr })),
@@ -500,10 +618,17 @@ export default function Index() {
           </div>
         ) : (
           <CalendarView
-            onSlotClick={(date, hour) => openNewEntry(date.toISOString().slice(0, 10), hour)}
+            onSlotClick={(date, hour) => {
+              const y = date.getFullYear();
+              const m = String(date.getMonth() + 1).padStart(2, "0");
+              const d = String(date.getDate()).padStart(2, "0");
+              openNewEntry(`${y}-${m}-${d}`, hour);
+            }}
             onPatientClick={(p) => {
-              // Preserve full patient data (fromForm, date, etc.) when clicking from calendar
-              const real = allCalendarPatients.find(rp => rp.name === p.name && rp.time === p.time);
+              // Prefer stable ID lookup from calendar to avoid losing patient context.
+              const real = (p.id
+                ? allCalendarPatients.find((rp) => rp.id === p.id)
+                : allCalendarPatients.find((rp) => rp.name === p.name && rp.time === p.time));
               setSelectedPatient(real || {
                 id: `cal-${p.name}-${p.time}`,
                 name: p.name,
@@ -565,14 +690,22 @@ export default function Index() {
           onDelete={handleDeletePatient}
           onUpdatePatient={(updates) => {
             setPatients((prev) => {
-              const updated = prev.map((p) => p.id === selectedPatient.id ? { ...p, ...updates } : p);
+              const current = prev.find((p) => p.id === selectedPatient.id);
+              const samePerson = prev.filter((p) => p.id !== selectedPatient.id && personKey(p) === personKey(selectedPatient));
+              const donor = samePerson.sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+              const merged = hydrateMissingProfile({ ...(current || selectedPatient), ...updates }, donor);
+              const updated = prev.map((p) => (p.id === selectedPatient.id ? merged : p));
               const updatedPatient = updated.find((p) => p.id === selectedPatient.id);
               if (updatedPatient) {
                 logTraining(`Збережено зміни пацієнта: ${updatedPatient.name}`);
               }
               return updated;
             });
-            setSelectedPatient((prev) => prev ? { ...prev, ...updates } : prev);
+            setSelectedPatient((prev) => {
+              if (!prev) return prev;
+              return { ...prev, ...updates };
+            });
           }}
         />
       )}

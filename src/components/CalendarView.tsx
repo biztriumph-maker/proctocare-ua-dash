@@ -1,17 +1,17 @@
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { computePatientStatus, AllergyShield } from "./PatientCard";
 
 interface CalendarSlot {
   hour: number;
-  patient?: { name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
+  patient?: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
 }
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -57,7 +57,10 @@ function getMonthDates(year: number, month: number): (Date | null)[] {
 }
 
 function dateToStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 const isSameDay = (a: Date, b: Date) =>
@@ -68,11 +71,18 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
 
-  // Auto-navigate to the week/day of the matching patient
+  // Auto-navigate and switch to Day view when search finds a match
   useEffect(() => {
-    if (!focusDate) return;
-    const d = new Date(focusDate + "T00:00:00");
-    if (!isNaN(d.getTime())) setCurrentDate(d);
+    if (!focusDate) {
+      setViewMode("week");
+      return;
+    }
+    // Parse "YYYY-MM-DD" directly as LOCAL date to avoid UTC midnight shift
+    const [y, mo, d] = focusDate.split("-").map(Number);
+    if (y && mo && d) {
+      setCurrentDate(new Date(y, mo - 1, d));
+      setViewMode("day");
+    }
   }, [focusDate]);
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
@@ -240,10 +250,10 @@ function SlotPopover({
   openDirection,
   openHorizontal,
 }: {
-  slot: { name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
+  slot: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
   hour: number;
   onClose: () => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
   openDirection: "up" | "down";
   openHorizontal: "left" | "right" | "center";
 }) {
@@ -308,7 +318,7 @@ function WeekGrid({
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -324,7 +334,7 @@ function WeekGrid({
       return mock.map(slot => {
         const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
         const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-        if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
+        if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
         return slot;
       });
     });
@@ -414,7 +424,7 @@ function WeekGrid({
                     "relative p-[5px]",
                     isSearchMatch
                       ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
-                      : isSelected ? "bg-primary/10" : "bg-white",
+                      : isSelected ? "bg-sky-100/80" : "bg-white",
                     hi < HOURS.length - 1 && "border-b border-border",
                     di < 6 && "border-r border-border"
                   )}
@@ -433,7 +443,7 @@ function WeekGrid({
                       isSearchMatch
                         ? "bg-primary/40 border-2 border-primary"
                         : isSelected
-                          ? "bg-primary/30 border border-primary/60"
+                          ? "bg-sky-200 border border-sky-500/60"
                           : statusBg
                           ? cn(statusBg, "hover:opacity-85")
                           : "bg-transparent",
@@ -484,7 +494,7 @@ function DayGrid({
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -496,7 +506,7 @@ function DayGrid({
     return mock.map(slot => {
       const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
       const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-      if (real) return { hour: slot.hour, patient: { name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
+      if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
       return slot;
     });
   }, [date, realPatients]);
@@ -515,13 +525,20 @@ function DayGrid({
     ready: "Допущено",
   };
 
+  const matchRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (searchQuery.trim() && matchRef.current) {
+      matchRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [searchQuery, date]);
+
   return (
     <div className="space-y-1">
       {slots.map((slot, i) => {
-        const isSearchMatch = searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const isSearchMatch = !!(searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
         const isSelected = !slot.patient && !!selectedSlot && dateToStr(date) === selectedSlot.dateStr && slot.hour === selectedSlot.hour;
         return (
-          <div key={slot.hour} className="relative">
+          <div key={slot.hour} className="relative" ref={isSearchMatch ? matchRef : undefined}>
             <button
               onClick={() => {
                 if (slot.patient) {
