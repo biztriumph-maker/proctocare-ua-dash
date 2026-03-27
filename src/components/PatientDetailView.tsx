@@ -149,6 +149,94 @@ function getInitialActiveProtocol(patient: Patient, activeVisitIso: string): str
   return patient.protocol || "";
 }
 
+type DoctorProfile = {
+  surname: string;
+  firstName: string;
+  middleName: string;
+};
+
+function formatUkrainianDayMonth(isoDate: string): string {
+  const months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  return `${d} ${months[m - 1] || ""}`;
+}
+
+function minusDaysIso(isoDate: string, days: number): string {
+  const date = new Date(isoDate + "T00:00:00");
+  date.setDate(date.getDate() - days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function parseFullName(raw: string): DoctorProfile {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  return {
+    surname: parts[0] || "",
+    firstName: parts[1] || "",
+    middleName: parts[2] || "",
+  };
+}
+
+function getDoctorProfile(): DoctorProfile {
+  const fallback = parseFullName("Коваленко Іван Петрович");
+
+  try {
+    const raw = localStorage.getItem("proctocare_doctor_profile");
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as {
+      surname?: string;
+      firstName?: string;
+      middleName?: string;
+      name?: string;
+      patronymic?: string;
+      fullName?: string;
+    };
+
+    if (parsed.fullName?.trim()) {
+      const fromFullName = parseFullName(parsed.fullName);
+      if (fromFullName.surname && fromFullName.firstName) return fromFullName;
+    }
+
+    const profile: DoctorProfile = {
+      surname: (parsed.surname || "").trim(),
+      firstName: (parsed.firstName || parsed.name || "").trim(),
+      middleName: (parsed.middleName || parsed.patronymic || "").trim(),
+    };
+
+    if (profile.surname && profile.firstName) return profile;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getPatientContactName(patient: Patient): string {
+  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
+  const parts = full.split(/\s+/).filter(Boolean);
+  const firstName = parts[1] || parts[0] || "Пацієнте";
+  const middleName = patient.patronymic || parts[2] || "";
+
+  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
+  const salutation = isFemale ? "Пані" : "Пане";
+  return `${salutation} ${firstName}${middleName ? ` ${middleName}` : ""}`;
+}
+
+function buildEmulationGreetingMessage(params: {
+  patient: Patient;
+  doctor: DoctorProfile;
+  serviceName: string;
+  appointmentIsoDate: string;
+  appointmentTime: string;
+}): string {
+  const patientName = getPatientContactName(params.patient);
+  const doctorFullName = `${params.doctor.surname} ${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
+  const doctorShortName = `${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
+  const apptDate = `${isoToDisplay(params.appointmentIsoDate)} о ${params.appointmentTime || "--:--"}`;
+  const dietStartDate = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 3));
+
+  return `Вітаю, ${patientName}! Це цифровий асистент лікаря ${doctorFullName}.\n\nВи записані на процедуру ${params.serviceName}, яка відбудеться ${apptDate}.\n\n${doctorShortName} доручив мені супроводжувати вашу підготовку. Ми разом подбаємо про те, щоб майбутня процедура пройшла максимально легко, комфортно та принесла найкращий результат для вашого здоров'я.\n\nНаш перший етап — бережна дієта, яку ми розпочнемо ${dietStartDate}.\n\nЧи готові ви отримати перелік того, що допоможе вам правильно підготуватися?`;
+}
+
 function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
   if (!history || history.length === 0) return null;
   return (
@@ -296,8 +384,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
     setRescheduleTime(patient.time || "");
   }, [patient.id, patient.date, patient.time]);
-  
-  const chat = getMockChat(patient);
+
+  const [emulatedMessages, setEmulatedMessages] = useState<ChatMessage[]>([]);
+  const [waitingForDietAck, setWaitingForDietAck] = useState(false);
+
+  useEffect(() => {
+    setEmulatedMessages([]);
+    setWaitingForDietAck(false);
+  }, [patient.id, activeVisitIso]);
+
+  const baseChat = getMockChat(patient);
+  const chat = [...baseChat, ...emulatedMessages];
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient, localServices);
 
@@ -349,6 +446,23 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
     return isoToDisplay(nearestArchivedIso);
   }, [mergedProtocolHistory, mergedProcedureHistory, localFiles, activeVisitIso]);
+
+  const handleEmulateGreeting = () => {
+    const doctor = getDoctorProfile();
+    const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "процедуру");
+    const messageText = buildEmulationGreetingMessage({
+      patient,
+      doctor,
+      serviceName,
+      appointmentIsoDate: activeVisitIso,
+      appointmentTime: patient.time || "",
+    });
+    const messageTime = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+
+    setEmulatedMessages((prev) => [...prev, { sender: "doctor", text: messageText, time: messageTime }]);
+    setWaitingForDietAck(true);
+    toast.success("Емуляцію вітання додано в чат");
+  };
 
   // Derive lastVisit only from explicit historical visit records (seeded/completed visits),
   // NOT from procedureHistory (which is an operational change log written by auto-save).
@@ -731,8 +845,15 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                         </div>
                       </div>
                     )}
-                    <PrepStepper preparation={preparation} status={patient.status} />
-                    <SidebarTracker preparation={preparation} status={patient.status} />
+                    <button
+                      onClick={handleEmulateGreeting}
+                      className="mx-4 mt-2 inline-flex items-center gap-1.5 self-start text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-lg px-2.5 py-1.5 transition-colors"
+                    >
+                      <ClipboardList size={13} />
+                      Тест: Емуляція вітання
+                    </button>
+                    <PrepStepper preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
+                    <SidebarTracker preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
                   </ContentBlock>
                   <AssistantToggle />
                   <ChatPane chat={chat} unanswered={unanswered} />
@@ -809,8 +930,15 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     </div>
                   </div>
                 )}
-                <PrepStepper preparation={preparation} status={patient.status} />
-                <SidebarTracker preparation={preparation} status={patient.status} />
+                <button
+                  onClick={handleEmulateGreeting}
+                  className="mx-4 mt-2 inline-flex items-center gap-1.5 self-start text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-lg px-2.5 py-1.5 transition-colors"
+                >
+                  <ClipboardList size={13} />
+                  Тест: Емуляція вітання
+                </button>
+                <PrepStepper preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
+                <SidebarTracker preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
                 <AssistantToggle />
                 <ChatPane chat={chat} unanswered={unanswered} />
                 <ChatInput />
@@ -1165,15 +1293,17 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
 }
 
 // ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
-function SidebarTracker({ preparation, status }: {
+function SidebarTracker({ preparation, status, waitingForDietAck = false }: {
   preparation: ReturnType<typeof getPreparationProgress>;
   status: PatientStatus;
+  waitingForDietAck?: boolean;
 }) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
 
-  type StepState = "done" | "inprogress" | "issue" | "pending";
+  type StepState = "done" | "inprogress" | "issue" | "pending" | "waiting";
   const getState = (step: { done: boolean }, i: number): StepState => {
+    if (waitingForDietAck && i === 0) return "waiting";
     if (step.done) return "done";
     if (i === firstPendingIdx) return isRisk ? "issue" : "inprogress";
     return "pending";
@@ -1198,11 +1328,13 @@ function SidebarTracker({ preparation, status }: {
                 "w-5 h-5 rounded-full flex items-center justify-center shrink-0",
                 state === "done"       && "bg-status-ready text-white",
                 state === "inprogress" && "bg-yellow-400 text-white",
+                state === "waiting"    && "bg-orange-400 text-white animate-pulse",
                 state === "issue"      && "bg-red-500 text-white",
                 state === "pending"    && "bg-muted text-muted-foreground"
               )}>
                 {state === "done"       && <Check size={11} strokeWidth={3} />}
                 {state === "inprogress" && <Clock size={10} strokeWidth={2.5} />}
+                {state === "waiting"    && <span className="w-2 h-2 rounded-full bg-white/95" />}
                 {state === "issue"      && <AlertTriangle size={10} strokeWidth={2.5} />}
                 {state === "pending"    && <span className="text-[9px] font-bold">{i + 1}</span>}
               </div>
@@ -1212,6 +1344,7 @@ function SidebarTracker({ preparation, status }: {
                 "text-xs leading-tight",
                 state === "done"       && "text-foreground font-semibold",
                 state === "inprogress" && "text-yellow-700 font-semibold",
+                state === "waiting"    && "text-orange-700 font-semibold",
                 state === "issue"      && "text-red-600 font-bold",
                 state === "pending"    && "text-muted-foreground"
               )}>
@@ -1319,7 +1452,7 @@ function PreparationTracker({ preparation }: { preparation: ReturnType<typeof ge
 }
 
 // ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
-function PrepStepper({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
+function PrepStepper({ preparation, status, waitingForDietAck = false }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus; waitingForDietAck?: boolean }) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
 
@@ -1328,17 +1461,18 @@ function PrepStepper({ preparation, status }: { preparation: ReturnType<typeof g
       <div className="flex items-end gap-1">
         {preparation.steps.map((step, i) => {
           const isDone = step.done;
+          const isWaiting = waitingForDietAck && i === 0;
           const isActive = !step.done && i === firstPendingIdx;
           const isIssue = isActive && isRisk;
           return (
             <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={step.label}>
               <div className={cn(
                 "w-full h-1 rounded-full transition-colors",
-                isDone ? "bg-status-ready" : isIssue ? "bg-red-500" : isActive ? "bg-yellow-400" : "bg-muted"
+                isDone ? "bg-status-ready" : isWaiting ? "bg-orange-400 animate-pulse" : isIssue ? "bg-red-500" : isActive ? "bg-yellow-400" : "bg-muted"
               )} />
               <span className={cn(
                 "text-[9px] font-bold leading-none",
-                isDone ? "text-status-ready" : isIssue ? "text-red-500" : isActive ? "text-yellow-600" : "text-muted-foreground/40"
+                isDone ? "text-status-ready" : isWaiting ? "text-orange-700" : isIssue ? "text-red-500" : isActive ? "text-yellow-600" : "text-muted-foreground/40"
               )}>
                 {i + 1}
               </span>
@@ -2296,25 +2430,29 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
       {chat.filter((m) => !m.unanswered).map((msg, i) => {
         const isPatient = msg.sender === "patient";
         const isDoctor = msg.sender === "doctor";
+        const isOutgoing = isDoctor;
         return (
           <div
             key={i}
-            className={cn("flex", isPatient ? "justify-end" : "justify-start")}
+            className={cn("flex", isPatient || isOutgoing ? "justify-end" : "justify-start")}
           >
             <div
               className={cn(
-                "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%] shadow-[0_2px_6px_rgba(0,0,0,0.06)]",
+                "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%] shadow-[0_2px_6px_rgba(0,0,0,0.06)] whitespace-pre-wrap",
                 isPatient
                   ? "bg-white border border-border/50 rounded-br-sm"
                   : isDoctor
-                    ? "bg-primary/15 rounded-bl-sm"
+                    ? "bg-sky-600 text-white rounded-br-sm"
                     : "bg-[hsl(204,100%,94%)] rounded-bl-sm"
               )}
             >
-              <p className="text-[11px] font-bold text-muted-foreground mb-0.5">
-                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "Асистент"} · 24.03 | {msg.time}
+              <p className={cn(
+                "text-[11px] font-bold mb-0.5",
+                isDoctor ? "text-white/90" : "text-muted-foreground"
+              )}>
+                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
               </p>
-              <p className="text-foreground">{msg.text}</p>
+              <p className={cn(isDoctor ? "text-white" : "text-foreground")}>{msg.text}</p>
             </div>
           </div>
         );
