@@ -1197,17 +1197,10 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
         <p className="text-[10px] text-muted-foreground">{file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        {file.url ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer"
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
-            <Eye size={12} className="text-muted-foreground" />
-          </a>
-        ) : (
-          <button onClick={onView}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
-            <Eye size={12} className="text-muted-foreground" />
-          </button>
-        )}
+        <button onClick={onView}
+          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
+          <Eye size={12} className="text-muted-foreground" />
+        </button>
         {!readOnly && (
           <button onClick={onDelete}
             className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-destructive/70 hover:text-destructive active:scale-[0.9] transition-all" title="Видалити">
@@ -1230,6 +1223,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
+  const [previewPdf, setPreviewPdf] = useState<{ name: string; url: string } | null>(null);
 
   // Today in DD.MM.YYYY local time
   const now = new Date();
@@ -1301,11 +1295,51 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   };
 
   const handleViewFile = (file: FileItem) => {
-    if (!file.url) alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
+    if (!file.url) {
+      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
+      return;
+    }
+
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      setPreviewPdf({ name: file.name, url: file.url });
+      return;
+    }
+
+    const opened = window.open(file.url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      const fallback = document.createElement("a");
+      fallback.href = file.url;
+      fallback.target = "_blank";
+      fallback.rel = "noopener noreferrer";
+      fallback.click();
+    }
   };
 
   return (
     <div className="pb-4 relative">
+      {previewPdf && (
+        <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-card w-full max-w-5xl h-[88vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+            <div className="h-12 px-4 border-b border-border/60 flex items-center justify-between shrink-0">
+              <p className="text-sm font-bold text-foreground truncate pr-3">{previewPdf.name}</p>
+              <button
+                onClick={() => setPreviewPdf(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
+                title="Закрити перегляд"
+              >
+                <X size={16} className="text-muted-foreground" />
+              </button>
+            </div>
+            <iframe
+              src={previewPdf.url}
+              title={previewPdf.name}
+              className="w-full flex-1 bg-white"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Delete confirmation dialog */}
       {confirmDeleteFile && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmDeleteFile(null)}>
