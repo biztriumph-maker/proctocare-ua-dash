@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Headphones, Check, Clock, Calendar } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Headphones, Check, Clock, Calendar, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -306,6 +306,16 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     ? mergeUniqueHistoryEntries(patient.protocolHistory, seededProtocolHistory)
     : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
+  const rescheduleNoticeOriginalDate = useMemo(() => {
+    const marker = mergedProtocolHistory
+      .filter((h) => h.value.startsWith(RESCHEDULED_MARKER))
+      .filter((h) => h.value.replace(RESCHEDULED_MARKER, "") === activeVisitIso)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+
+    if (!marker) return null;
+    return isoToDisplay(marker.date);
+  }, [mergedProtocolHistory, activeVisitIso]);
+
   const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
@@ -682,6 +692,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                       </a>
                     ) : undefined}
                   >
+                    {rescheduleNoticeOriginalDate && (
+                      <div className="px-4 pt-2">
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
+                          <RotateCcw size={12} className="shrink-0" />
+                          <span>Підготовку перезапущено (перенос із {rescheduleNoticeOriginalDate})</span>
+                        </div>
+                      </div>
+                    )}
                     <PrepStepper preparation={preparation} status={patient.status} />
                     <SidebarTracker preparation={preparation} status={patient.status} />
                   </ContentBlock>
@@ -752,6 +770,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   </div>
                 }
               >
+                {rescheduleNoticeOriginalDate && (
+                  <div className="px-4 pt-2">
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
+                      <RotateCcw size={12} className="shrink-0" />
+                      <span>Підготовку перезапущено (перенос із {rescheduleNoticeOriginalDate})</span>
+                    </div>
+                  </div>
+                )}
                 <PrepStepper preparation={preparation} status={patient.status} />
                 <SidebarTracker preparation={preparation} status={patient.status} />
                 <AssistantToggle />
