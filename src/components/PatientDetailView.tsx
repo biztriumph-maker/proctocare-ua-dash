@@ -312,6 +312,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     ? mergeUniqueHistoryEntries(patient.protocolHistory, seededProtocolHistory)
     : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
+  const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
+  const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
+
   const rescheduleNoticeOriginalDate = useMemo(() => {
     const markerForActive = mergedProtocolHistory
       .filter((h) => h.value.startsWith(RESCHEDULED_MARKER))
@@ -346,9 +349,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
     return isoToDisplay(nearestArchivedIso);
   }, [mergedProtocolHistory, mergedProcedureHistory, localFiles, activeVisitIso]);
-
-  const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
-  const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
   // Derive lastVisit only from explicit historical visit records (seeded/completed visits),
   // NOT from procedureHistory (which is an operational change log written by auto-save).
