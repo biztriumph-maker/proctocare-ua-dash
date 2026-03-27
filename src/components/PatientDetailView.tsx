@@ -10,10 +10,9 @@ import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
-import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
 
-GlobalWorkerOptions.workerSrc = pdfWorker;
+GlobalWorkerOptions.workerSrc = "";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -1295,6 +1294,7 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
   useEffect(() => {
     let cancelled = false;
     let loadingTask: ReturnType<typeof getDocument> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
     setError(null);
     setPdfDoc(null);
@@ -1304,13 +1304,28 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
     (async () => {
       try {
         const bytes = new Uint8Array(await file.blob.arrayBuffer());
-        loadingTask = getDocument({ data: bytes });
+        timeoutId = setTimeout(() => {
+          if (!cancelled) {
+            setError("PDF не відповідає під час завантаження. Спробую інший режим відкриття в наступному кроці.");
+            setLoading(false);
+          }
+        }, 12000);
+
+        loadingTask = getDocument({
+          data: bytes,
+          disableWorker: true,
+          useSystemFonts: true,
+          isEvalSupported: false,
+          enableXfa: false,
+        });
         const doc = await loadingTask.promise;
         if (cancelled) return;
+        if (timeoutId) clearTimeout(timeoutId);
         setPdfDoc(doc);
         setPages(doc.numPages || 0);
       } catch (e) {
         if (cancelled) return;
+        if (timeoutId) clearTimeout(timeoutId);
         console.error("PDF preview failed", e);
         setError("Не вдалося відкрити PDF для перегляду");
         setLoading(false);
@@ -1319,6 +1334,7 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
 
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
       if (loadingTask) loadingTask.destroy();
     };
   }, [file.blob]);
