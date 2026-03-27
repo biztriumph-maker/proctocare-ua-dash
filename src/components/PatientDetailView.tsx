@@ -11,6 +11,7 @@ import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import mammoth from "mammoth";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -1188,6 +1189,12 @@ type FileItem = {
   mimeType?: string;
 };
 
+type PreviewState =
+  | { kind: "pdf"; name: string; blob: Blob }
+  | { kind: "docx"; name: string; blob: Blob }
+  | { kind: "image"; name: string; blob: Blob }
+  | { kind: "unsupported"; name: string; message: string };
+
 const FILE_DB_NAME = "proctocare_files";
 const FILE_STORE_NAME = "files";
 
@@ -1283,6 +1290,7 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(0);
   const [scale, setScale] = useState(1.2);
+  const renderTaskRef = useRef<any>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1322,6 +1330,13 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
     let cancelled = false;
     (async () => {
       try {
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch {
+          }
+        }
+
         const pdfPage = await pdfDoc.getPage(page);
         if (cancelled) return;
 
@@ -1331,12 +1346,15 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
 
-        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+        const renderTask = pdfPage.render({ canvasContext: ctx, viewport });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && !(e instanceof Error && e.name === "RenderingCancelledException")) {
           console.error("PDF render failed", e);
           setError("Не вдалося відмалювати сторінку PDF");
         }
@@ -1345,6 +1363,12 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
 
     return () => {
       cancelled = true;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+        }
+      }
     };
   }, [pdfDoc, page, scale]);
 
@@ -1411,6 +1435,98 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
   );
 }
 
+function ImagePreviewModal({ file, onClose }: { file: { name: string; blob: Blob }; onClose: () => void }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file.blob);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file.blob]);
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-card w-full max-w-6xl h-[90vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
+          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors" title="Закрити перегляд">
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto bg-muted/30 p-4 flex items-center justify-center">
+          {url ? <img src={url} alt={file.name} className="max-w-full max-h-full object-contain rounded shadow-md bg-white" /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocxPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [html, setHtml] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const arrayBuffer = await file.blob.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        if (cancelled) return;
+        setHtml(result.value);
+        setLoading(false);
+      } catch (e) {
+        if (cancelled) return;
+        console.error("DOCX preview failed", e);
+        setError("Не вдалося відкрити Word-документ для перегляду");
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [file.blob]);
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-card w-full max-w-5xl h-[90vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
+          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors" title="Закрити перегляд">
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto bg-muted/20 p-6">
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Завантаження документа...</div>
+          ) : error ? (
+            <div className="h-full flex items-center justify-center text-sm text-destructive font-semibold">{error}</div>
+          ) : (
+            <article className="mx-auto max-w-3xl bg-white rounded-lg shadow-sm p-8 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnsupportedPreviewModal({ name, message, onClose }: { name: string; message: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-card w-full max-w-xl rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
+          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{name}</p>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors" title="Закрити перегляд">
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-6 text-sm text-foreground leading-relaxed">{message}</div>
+      </div>
+    </div>
+  );
+}
+
 // ── Clinical Timeline: groups documents & files by appointment date ──
 function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: {
   files: FileItem[];
@@ -1422,7 +1538,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
-  const [previewPdf, setPreviewPdf] = useState<{ name: string; blob: Blob } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
 
   // Today in DD.MM.YYYY local time
   const now = new Date();
@@ -1481,6 +1597,11 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   const todayFiles = filesByDate.get(todayStr) || [];
   const hasTimeline = historicalDates.length > 0;
 
+  const getFileExtension = (name: string): string => {
+    const parts = name.toLowerCase().split(".");
+    return parts.length > 1 ? parts.at(-1) || "" : "";
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
 
@@ -1528,9 +1649,33 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       return;
     }
 
-    const isPdf = (file.mimeType || blob.type || "").includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
+    const ext = getFileExtension(file.name);
+    const mime = (file.mimeType || blob.type || "").toLowerCase();
+    const isPdf = mime.includes("pdf") || ext === "pdf";
     if (isPdf) {
-      setPreviewPdf({ name: file.name, blob });
+      setPreview({ kind: "pdf", name: file.name, blob });
+      return;
+    }
+
+    const isImage = mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext);
+    if (isImage) {
+      setPreview({ kind: "image", name: file.name, blob });
+      return;
+    }
+
+    const isDocx = mime.includes("officedocument.wordprocessingml.document") || ext === "docx";
+    if (isDocx) {
+      setPreview({ kind: "docx", name: file.name, blob });
+      return;
+    }
+
+    const isLegacyWord = mime.includes("msword") || ext === "doc";
+    if (isLegacyWord) {
+      setPreview({
+        kind: "unsupported",
+        name: file.name,
+        message: "Формат .doc є застарілим бінарним форматом Word. У поточному веб-інтерфейсі його неможливо стабільно відкрити всередині продукту без серверної конвертації. Якщо це .docx, він відкриється прямо тут. Якщо це саме .doc, його потрібно зберегти як .docx для внутрішнього перегляду.",
+      });
       return;
     }
 
@@ -1549,9 +1694,10 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
   return (
     <div className="pb-4 relative">
-      {previewPdf && (
-        <PdfPreviewModal file={previewPdf} onClose={() => setPreviewPdf(null)} />
-      )}
+      {preview?.kind === "pdf" && <PdfPreviewModal file={preview} onClose={() => setPreview(null)} />}
+      {preview?.kind === "image" && <ImagePreviewModal file={preview} onClose={() => setPreview(null)} />}
+      {preview?.kind === "docx" && <DocxPreviewModal file={preview} onClose={() => setPreview(null)} />}
+      {preview?.kind === "unsupported" && <UnsupportedPreviewModal name={preview.name} message={preview.message} onClose={() => setPreview(null)} />}
 
       {/* Delete confirmation dialog */}
       {confirmDeleteFile && (
