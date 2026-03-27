@@ -1785,6 +1785,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
+  const [confirmCopyProtocol, setConfirmCopyProtocol] = useState<{ value: string; date: string } | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
@@ -2024,6 +2025,34 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
         </div>
       )}
 
+      {confirmCopyProtocol && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmCopyProtocol(null)}>
+          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-1">Підтвердження копіювання</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Ви впевнені, що хочете скопіювати дані з візиту за {confirmCopyProtocol.date}? Поточний текст у полі буде видалено.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmCopyProtocol(null)}
+                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+              >
+                Скасувати
+              </button>
+              <button
+                onClick={() => {
+                  onProtocolPrefill(confirmCopyProtocol.value);
+                  setConfirmCopyProtocol(null);
+                }}
+                className="flex-1 py-2.5 text-sm font-bold bg-status-ready text-white rounded-lg transition-colors active:scale-[0.97]"
+              >
+                Копіювати
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Timeline */}
       <div className="relative px-4">
         {/* Vertical thread connecting dots */}
@@ -2038,11 +2067,11 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           {/* Header */}
           <div className="flex items-center gap-2 mb-2.5">
             <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(activeDate)}</span>
-            <span className="ml-auto text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Активний</span>
+            <span className="ml-auto text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Активний</span>
           </div>
 
           {/* ВИСНОВОК ЛІКАРЯ — soft highlighted border, editable */}
-          <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2 mb-2.5">
+          <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 pb-10 space-y-2 mb-2.5 relative">
             <div className="flex items-center justify-between">
               <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <FileText size={12} className="text-primary" />
@@ -2063,16 +2092,18 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                 >
                   Натисніть, щоб заповнити висновок...
                 </button>
-                {latestArchivedProtocol && (
-                  <button
-                    onClick={() => onProtocolPrefill(latestArchivedProtocol.value)}
-                    className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
-                    title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
-                  >
-                    Скопіювати з попереднього візиту ({latestArchivedProtocol.date})
-                  </button>
-                )}
               </div>
+            )}
+
+            {latestArchivedProtocol && (
+              <button
+                onClick={() => setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date })}
+                className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-2 py-1 transition-colors"
+                title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
+              >
+                <ClipboardList size={12} className="shrink-0" />
+                <span>Скопіювати ({latestArchivedProtocol.date})</span>
+              </button>
             )}
           </div>
 
