@@ -113,6 +113,21 @@ function formatDateUkrainian(ddmmyyyy: string): string {
   return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1] ?? ""} ${y}`;
 }
 
+function isPetushkovMockPatient(patient: Patient): boolean {
+  return patient.name.toLowerCase().includes("петушков");
+}
+
+function mergeUniqueHistoryEntries(
+  primary: Array<{ value: string; timestamp: string; date: string }> | undefined,
+  seeded: Array<{ value: string; timestamp: string; date: string }>
+): Array<{ value: string; timestamp: string; date: string }> {
+  const map = new Map<string, { value: string; timestamp: string; date: string }>();
+  for (const item of [...seeded, ...(primary || [])]) {
+    map.set(`${item.date}|${item.value}`, item);
+  }
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
   if (!history || history.length === 0) return null;
   return (
@@ -268,10 +283,15 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const _now = new Date();
   const todayStr = `${String(_now.getDate()).padStart(2, "0")}.${String(_now.getMonth() + 1).padStart(2, "0")}.${_now.getFullYear()}`;
+  const seededProtocolHistory = getSeededMockProtocolHistory(patient);
+  const seededProcedureHistory = getSeededMockProcedureHistory(patient);
+  const seededFiles = getSeededMockFiles(patient);
   const mergedProtocolHistory = patient.fromForm
-    ? patient.protocolHistory
-    : [...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])];
-  const [localFiles, setLocalFiles] = useState<FileItem[]>(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)));
+    ? mergeUniqueHistoryEntries(patient.protocolHistory, seededProtocolHistory)
+    : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
+  const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
+  const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
+  const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
@@ -281,7 +301,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     fields.diagnosis !== profile.diagnosis ||
     fields.birthDate !== profile.birthDate ||
     localServices.join(", ") !== (patient.procedure || "") ||
-    JSON.stringify(localFiles) !== JSON.stringify(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)));
+    JSON.stringify(localFiles) !== JSON.stringify(initialFiles);
 
   const addHistoryEntry = (
     history: Array<{ value: string; timestamp: string; date: string }> | undefined,
@@ -561,7 +581,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} />
+                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -610,7 +630,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} />
+                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} />
               </ContentBlock>
             </div>
 
@@ -1252,6 +1272,44 @@ function getMockFiles(todayStr: string): FileItem[] {
   ];
 }
 
+function getSeededMockFiles(patient: Patient): FileItem[] {
+  if (!isPetushkovMockPatient(patient)) return [];
+  return [
+    { id: "mock-old-report-15052025", name: "old_report.pdf", type: "doctor", date: "15.05.2025" },
+    { id: "mock-scan-15052025", name: "scan_2025.jpg", type: "patient", date: "15.05.2025" },
+  ];
+}
+
+function getSeededMockProtocolHistory(patient: Patient): Array<{ value: string; timestamp: string; date: string }> {
+  if (!isPetushkovMockPatient(patient)) return [];
+  return [
+    {
+      value: "Архівний діагностичний запис для емулятора. Проведено гастроскопію, рекомендовано планове спостереження.",
+      timestamp: "15.05.2025",
+      date: "2025-05-15",
+    },
+  ];
+}
+
+function getSeededMockProcedureHistory(patient: Patient): Array<{ value: string; timestamp: string; date: string }> {
+  if (!isPetushkovMockPatient(patient)) return [];
+  return [
+    {
+      value: "Гастроскопія",
+      timestamp: "15.05.2025",
+      date: "2025-05-15",
+    },
+  ];
+}
+
+function mergeUniqueFileItems(primary: FileItem[], seeded: FileItem[]): FileItem[] {
+  const map = new Map<string, FileItem>();
+  for (const file of [...seeded, ...primary]) {
+    map.set(file.id, file);
+  }
+  return Array.from(map.values());
+}
+
 const MOCK_PROTOCOL_HISTORY: Array<{ value: string; timestamp: string; date: string }> = [
   { value: "Гастроскопія: патологій не виявлено. Слизова шлунка та дванадцятипалої кишки в нормі.", timestamp: "20.05.2025", date: "2025-05-20" },
 ];
@@ -1561,13 +1619,14 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
   fromForm?: boolean;
   protocolText: string;
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
+  procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
@@ -1601,11 +1660,24 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     return map;
   }, [protocolHistory]);
 
+  const procedureByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const h of (procedureHistory || [])) {
+      const parts = h.date?.split("-");
+      if (parts?.length === 3) {
+        const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
+        map.set(dd, h.value);
+      }
+    }
+    return map;
+  }, [procedureHistory]);
+
   // Collect all historical dates (not today), sorted descending
   const historicalDates = useMemo(() => {
     const dates = new Set<string>();
     for (const d of filesByDate.keys()) if (d !== todayStr) dates.add(d);
     for (const d of protocolByDate.keys()) if (d !== todayStr) dates.add(d);
+    for (const d of procedureByDate.keys()) if (d !== todayStr) dates.add(d);
     return Array.from(dates).sort((a, b) => {
       const parse = (s: string) => {
         const [d, m, y] = s.split(".");
@@ -1613,10 +1685,14 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, todayStr]);
+  }, [filesByDate, protocolByDate, procedureByDate, todayStr]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
+
+  useEffect(() => {
+    setCollapsedDates(new Set(historicalDates));
+  }, [historicalDates]);
 
   const toggleDate = (date: string) => {
     setCollapsedDates(prev => {
@@ -1825,6 +1901,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           const isCollapsed = collapsedDates.has(date);
           const dateFiles = filesByDate.get(date) || [];
           const dateProtocol = protocolByDate.get(date);
+          const dateProcedure = procedureByDate.get(date);
 
           return (
             <div key={date} className="relative pl-8 mb-3">
@@ -1844,6 +1921,12 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               {/* Expanded content — read-only archive */}
               {!isCollapsed && (
                 <div className="space-y-1.5 pt-0.5">
+                  {dateProcedure && (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 p-2.5">
+                      <p className="text-[10px] font-bold text-sky-700 uppercase tracking-wide mb-1">Послуга</p>
+                      <p className="text-xs font-semibold text-sky-900">{dateProcedure}</p>
+                    </div>
+                  )}
                   {dateProtocol && (
                     <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Висновок лікаря</p>
