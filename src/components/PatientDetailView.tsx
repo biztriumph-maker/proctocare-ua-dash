@@ -106,6 +106,8 @@ function isoToDisplay(isoDate?: string, fallback?: string): string {
   return fallback || isoDate || "";
 }
 
+const RESCHEDULED_MARKER = "__RESCHEDULED_TO__:";
+
 function formatDateUkrainian(ddmmyyyy: string): string {
   const months = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
   const [d, m, y] = ddmmyyyy.split(".");
@@ -268,6 +270,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
   const [rescheduleTime, setRescheduleTime] = useState(patient.time || "");
+  const activeVisitIso = patient.date || getTodayIsoKyiv();
+  const activeVisitDisplayDate = isoToDisplay(activeVisitIso);
 
   useEffect(() => {
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
@@ -318,11 +322,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const addHistoryEntry = (
     history: Array<{ value: string; timestamp: string; date: string }> | undefined,
-    newValue: string
+    newValue: string,
+    entryDateIso?: string
   ) => {
-    const now = new Date();
-    const todayIso = getTodayIsoKyiv(); // "2026-03-27" Kyiv time
-    const displayDate = new Intl.DateTimeFormat("uk-UA", { timeZone: "Europe/Kiev", day: "2-digit", month: "2-digit", year: "numeric" }).format(now); // "27.03.2026"
+    const todayIso = entryDateIso || getTodayIsoKyiv();
+    const displayDate = isoToDisplay(todayIso);
     const trimmed = newValue.trim();
 
     const current = history ? [...history] : [];
@@ -393,9 +397,42 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const handleApplyReschedule = () => {
     if (!onUpdatePatient || !rescheduleDate || !rescheduleTime) return;
 
-    // Save in-memory field edits before changing date/time.
-    handleSaveChanges();
-    onUpdatePatient({ date: rescheduleDate, time: rescheduleTime });
+    const previousVisitIso = patient.date || getTodayIsoKyiv();
+    const previousVisitDisplay = isoToDisplay(previousVisitIso);
+    const hasProtocolInCurrentBlock = !!fields.protocol.trim();
+    const hasFilesInCurrentBlock = localFiles.some((file) => (file.date || activeVisitDisplayDate) === previousVisitDisplay);
+    const hasDataToFreeze = hasProtocolInCurrentBlock || hasFilesInCurrentBlock;
+
+    if (!hasDataToFreeze) {
+      // Silent reschedule: nothing was documented yet for the current block.
+      onUpdatePatient({ date: rescheduleDate, time: rescheduleTime });
+      setShowReschedulePicker(false);
+
+      const d = new Date(rescheduleDate + "T00:00:00");
+      const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+      toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
+      return;
+    }
+
+    // Freeze old active block into archive and create a fresh active block for the new date.
+    const frozenProtocolHistory = hasProtocolInCurrentBlock
+      ? [...(patient.protocolHistory || []), { value: fields.protocol.trim(), timestamp: previousVisitDisplay, date: previousVisitIso }]
+      : patient.protocolHistory;
+    const freezeReasonEntry = {
+      value: `${RESCHEDULED_MARKER}${rescheduleDate}`,
+      timestamp: previousVisitDisplay,
+      date: previousVisitIso,
+    };
+
+    onUpdatePatient({
+      date: rescheduleDate,
+      time: rescheduleTime,
+      protocol: "",
+      protocolHistory: [...(frozenProtocolHistory || []), freezeReasonEntry],
+      status: "planning",
+    });
+
+    setFields((prev) => ({ ...prev, protocol: "" }));
     setShowReschedulePicker(false);
 
     const d = new Date(rescheduleDate + "T00:00:00");
@@ -438,11 +475,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
         ? addHistoryEntry(patient.birthDateHistory, fields.birthDate)
         : patient.birthDateHistory;
       const protocolHistory = fields.protocol.trim() && fields.protocol !== (patient.protocol || "")
-        ? addHistoryEntry(patient.protocolHistory, fields.protocol)
+        ? addHistoryEntry(patient.protocolHistory, fields.protocol, activeVisitIso)
         : patient.protocolHistory;
       const procedureValue = localServices.join(", ");
       const procedureHistory = procedureValue.trim() && procedureValue !== (patient.procedure || "")
-        ? addHistoryEntry(patient.procedureHistory, procedureValue)
+        ? addHistoryEntry(patient.procedureHistory, procedureValue, activeVisitIso)
         : patient.procedureHistory;
 
       onUpdatePatient({
@@ -606,7 +643,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} />
+                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} activeVisitDate={activeVisitDisplayDate} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -655,7 +692,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} />
+                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} activeVisitDate={activeVisitDisplayDate} />
               </ContentBlock>
             </div>
 
@@ -1645,7 +1682,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -1653,34 +1690,48 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   protocolText: string;
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
+  activeVisitDate: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
-  // Today in DD.MM.YYYY local time
-  const now = new Date();
-  const todayStr = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+  const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
   // Group files by their date field
   const filesByDate = useMemo(() => {
     const map = new Map<string, FileItem[]>();
     for (const f of files) {
-      const d = f.date || todayStr;
+      const d = f.date || activeDate;
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(f);
     }
     return map;
-  }, [files, todayStr]);
+  }, [files, activeDate]);
 
   // Map protocolHistory ISO dates → { displayDate: DD.MM.YYYY, value }
   const protocolByDate = useMemo(() => {
     const map = new Map<string, string>();
     for (const h of (protocolHistory || [])) {
+      if (h.value.startsWith(RESCHEDULED_MARKER)) continue;
       const parts = h.date?.split("-");
       if (parts?.length === 3) {
         const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
         map.set(dd, h.value);
+      }
+    }
+    return map;
+  }, [protocolHistory]);
+
+  const rescheduledToByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const h of (protocolHistory || [])) {
+      if (!h.value.startsWith(RESCHEDULED_MARKER)) continue;
+      const parts = h.date?.split("-");
+      if (parts?.length === 3) {
+        const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
+        const targetIso = h.value.replace(RESCHEDULED_MARKER, "");
+        map.set(dd, isoToDisplay(targetIso));
       }
     }
     return map;
@@ -1698,12 +1749,13 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     return map;
   }, [procedureHistory]);
 
-  // Collect all historical dates (not today), sorted descending
+  // Collect all historical dates (not active), sorted descending
   const historicalDates = useMemo(() => {
     const dates = new Set<string>();
-    for (const d of filesByDate.keys()) if (d !== todayStr) dates.add(d);
-    for (const d of protocolByDate.keys()) if (d !== todayStr) dates.add(d);
-    for (const d of procedureByDate.keys()) if (d !== todayStr) dates.add(d);
+    for (const d of filesByDate.keys()) if (d !== activeDate) dates.add(d);
+    for (const d of protocolByDate.keys()) if (d !== activeDate) dates.add(d);
+    for (const d of procedureByDate.keys()) if (d !== activeDate) dates.add(d);
+    for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
     return Array.from(dates).sort((a, b) => {
       const parse = (s: string) => {
         const [d, m, y] = s.split(".");
@@ -1711,7 +1763,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, procedureByDate, todayStr]);
+  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, activeDate]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
@@ -1729,7 +1781,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     });
   };
 
-  const todayFiles = filesByDate.get(todayStr) || [];
+  const activeFiles = filesByDate.get(activeDate) || [];
   const hasTimeline = historicalDates.length > 0;
 
   const getFileExtension = (name: string): string => {
@@ -1748,7 +1800,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           id: Math.random().toString(36).substring(7),
           name: file.name,
           type: "doctor" as const,
-          date: todayStr,
+          date: activeDate,
           storageKey,
           mimeType: file.type,
         } as FileItem;
@@ -1875,8 +1927,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
           {/* Header */}
           <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(todayStr)}</span>
-            <span className="ml-auto text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Поточний</span>
+            <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(activeDate)}</span>
+            <span className="ml-auto text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Активний</span>
           </div>
 
           {/* ВИСНОВОК ЛІКАРЯ — soft highlighted border, editable */}
@@ -1902,9 +1954,9 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           </div>
 
           {/* Files for today */}
-          {todayFiles.length > 0 && (
+          {activeFiles.length > 0 && (
             <div className="space-y-1.5 mb-2.5">
-              {todayFiles.map(file => (
+              {activeFiles.map(file => (
                 <FileRow key={file.id} file={file}
                   onDelete={() => setConfirmDeleteFile(file.id)}
                   onView={() => handleViewFile(file)} />
@@ -1928,6 +1980,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           const dateFiles = filesByDate.get(date) || [];
           const dateProtocol = protocolByDate.get(date);
           const dateProcedure = procedureByDate.get(date);
+          const rescheduledTo = rescheduledToByDate.get(date);
+          const isFrozen = !!rescheduledTo;
 
           return (
             <div key={date} className="relative pl-8 mb-3">
@@ -1938,6 +1992,9 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               <button onClick={() => toggleDate(date)}
                 className="w-full flex items-center gap-1.5 text-left mb-1 group">
                 <span className="text-[11px] font-semibold text-muted-foreground">{formatDateUkrainian(date)}</span>
+                {isFrozen && (
+                  <span className="text-[9px] font-bold text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Перенесено</span>
+                )}
                 <ChevronDown size={11} className={cn(
                   "ml-auto text-muted-foreground/50 transition-transform duration-200 shrink-0",
                   !isCollapsed && "rotate-180"
@@ -1946,7 +2003,13 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
               {/* Expanded content — read-only archive */}
               {!isCollapsed && (
-                <div className="space-y-1.5 pt-0.5">
+                <div className={cn("space-y-1.5 pt-0.5 rounded-lg p-2", isFrozen && "bg-slate-100 border border-slate-200")}>
+                  {isFrozen && (
+                    <div className="rounded-lg border border-slate-300 bg-slate-50 p-2.5">
+                      <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wide mb-1">Статус</p>
+                      <p className="text-xs font-semibold text-slate-700">Перенесено: {rescheduledTo}</p>
+                    </div>
+                  )}
                   {dateProcedure && (
                     <div className="rounded-lg border border-sky-200 bg-sky-50 p-2.5">
                       <p className="text-[10px] font-bold text-sky-700 uppercase tracking-wide mb-1">Послуга</p>
@@ -1964,7 +2027,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                       onDelete={() => setConfirmDeleteFile(file.id)}
                       onView={() => handleViewFile(file)} />
                   ))}
-                  {!dateProtocol && dateFiles.length === 0 && (
+                  {!dateProtocol && dateFiles.length === 0 && !isFrozen && (
                     <p className="text-[11px] text-muted-foreground/40 italic">Немає записів</p>
                   )}
                 </div>
