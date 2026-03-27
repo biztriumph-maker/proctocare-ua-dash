@@ -130,6 +130,19 @@ function mergeUniqueHistoryEntries(
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function getInitialActiveProtocol(patient: Patient, activeVisitIso: string): string {
+  const sameVisitEntry = (patient.protocolHistory || [])
+    .filter((h) => h.date === activeVisitIso && !h.value.startsWith(RESCHEDULED_MARKER))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .at(-1);
+  if (sameVisitEntry?.value?.trim()) return sameVisitEntry.value;
+
+  const todayIso = getTodayIsoKyiv();
+  if (activeVisitIso > todayIso) return "";
+
+  return patient.protocol || "";
+}
+
 function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
   if (!history || history.length === 0) return null;
   return (
@@ -251,9 +264,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   });
   const nameInputRef = useRef<HTMLInputElement>(null);
   const profile = getMockProfile(patient);
+  const activeVisitIso = patient.date || getTodayIsoKyiv();
+  const activeVisitDisplayDate = isoToDisplay(activeVisitIso);
   
   const initialNotes = patient.notes !== undefined ? patient.notes : profile.notes;
-  const initialProtocol = patient.protocol || "";
+  const initialProtocol = getInitialActiveProtocol(patient, activeVisitIso);
   const initialPhone = patient.phone || profile.phone;
   const initialServices = patient.procedure ? patient.procedure.split(", ") : [];
 
@@ -270,8 +285,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
   const [rescheduleTime, setRescheduleTime] = useState(patient.time || "");
-  const activeVisitIso = patient.date || getTodayIsoKyiv();
-  const activeVisitDisplayDate = isoToDisplay(activeVisitIso);
 
   useEffect(() => {
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
@@ -643,7 +656,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ) : activeTab === "files" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                    <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} activeVisitDate={activeVisitDisplayDate} />
+                    <FilesPane
+                      files={localFiles}
+                      onFilesChange={setLocalFiles}
+                      onFocusEdit={handleFocusOpen}
+                      fromForm={patient.fromForm}
+                      protocolText={fields.protocol}
+                      protocolHistory={mergedProtocolHistory}
+                      procedureHistory={mergedProcedureHistory}
+                      activeVisitDate={activeVisitDisplayDate}
+                      onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                    />
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
@@ -692,7 +715,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
-                <FilesPane files={localFiles} onFilesChange={setLocalFiles} onFocusEdit={handleFocusOpen} fromForm={patient.fromForm} protocolText={fields.protocol} protocolHistory={mergedProtocolHistory} procedureHistory={mergedProcedureHistory} activeVisitDate={activeVisitDisplayDate} />
+                <FilesPane
+                  files={localFiles}
+                  onFilesChange={setLocalFiles}
+                  onFocusEdit={handleFocusOpen}
+                  fromForm={patient.fromForm}
+                  protocolText={fields.protocol}
+                  protocolHistory={mergedProtocolHistory}
+                  procedureHistory={mergedProcedureHistory}
+                  activeVisitDate={activeVisitDisplayDate}
+                  onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                />
               </ContentBlock>
             </div>
 
@@ -1682,7 +1715,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate, onProtocolPrefill }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -1691,6 +1724,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
   activeVisitDate: string;
+  onProtocolPrefill: (value: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
@@ -1736,6 +1770,25 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     }
     return map;
   }, [protocolHistory]);
+
+  const latestArchivedProtocol = useMemo(() => {
+    const entries = (protocolHistory || [])
+      .filter((h) => !h.value.startsWith(RESCHEDULED_MARKER))
+      .filter((h) => {
+        const parts = h.date?.split("-");
+        if (parts?.length !== 3) return false;
+        const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
+        return dd !== activeDate;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    const latest = entries[0];
+    if (!latest) return null;
+    return {
+      value: latest.value,
+      date: isoToDisplay(latest.date),
+    };
+  }, [protocolHistory, activeDate]);
 
   const procedureByDate = useMemo(() => {
     const map = new Map<string, string>();
@@ -1946,10 +1999,23 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
             {protocolText ? (
               <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
             ) : (
-              <button onClick={() => onFocusEdit("protocol", "")}
-                className="text-sm leading-relaxed text-muted-foreground/40 italic text-left w-full hover:text-muted-foreground/60 transition-colors">
-                Натисніть, щоб заповнити висновок...
-              </button>
+              <div className="space-y-2">
+                <button
+                  onClick={() => onFocusEdit("protocol", "")}
+                  className="text-sm leading-relaxed text-muted-foreground/40 italic text-left w-full hover:text-muted-foreground/60 transition-colors"
+                >
+                  Натисніть, щоб заповнити висновок...
+                </button>
+                {latestArchivedProtocol && (
+                  <button
+                    onClick={() => onProtocolPrefill(latestArchivedProtocol.value)}
+                    className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
+                    title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
+                  >
+                    Скопіювати з попереднього візиту ({latestArchivedProtocol.date})
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
