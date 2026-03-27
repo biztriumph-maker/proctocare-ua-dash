@@ -9,8 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
+import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -1309,7 +1309,6 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
         if (cancelled) return;
         setPdfDoc(doc);
         setPages(doc.numPages || 0);
-        setLoading(false);
       } catch (e) {
         if (cancelled) return;
         console.error("PDF preview failed", e);
@@ -1330,6 +1329,8 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
     let cancelled = false;
     (async () => {
       try {
+        setLoading(true);
+        setError(null);
         if (renderTaskRef.current) {
           try {
             renderTaskRef.current.cancel();
@@ -1346,17 +1347,22 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         const renderTask = pdfPage.render({ canvasContext: ctx, viewport });
         renderTaskRef.current = renderTask;
         await renderTask.promise;
+        if (cancelled) return;
+        setLoading(false);
       } catch (e) {
-        if (!cancelled && !(e instanceof Error && e.name === "RenderingCancelledException")) {
+        const errorName = typeof e === "object" && e !== null && "name" in e ? String((e as { name?: string }).name) : "";
+        if (!cancelled && errorName !== "RenderingCancelledException") {
           console.error("PDF render failed", e);
           setError("Не вдалося відмалювати сторінку PDF");
+          setLoading(false);
         }
       }
     })();
@@ -1371,6 +1377,17 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
       }
     };
   }, [pdfDoc, page, scale]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfDoc) {
+        try {
+          pdfDoc.destroy();
+        } catch {
+        }
+      }
+    };
+  }, [pdfDoc]);
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
