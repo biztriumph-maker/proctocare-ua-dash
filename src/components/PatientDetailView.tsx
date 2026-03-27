@@ -9,6 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -1212,6 +1216,139 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
   );
 }
 
+function PdfPreviewModal({ file, onClose }: { file: { name: string; url: string }; onClose: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(0);
+  const [scale, setScale] = useState(1.2);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setPdfDoc(null);
+    setPage(1);
+    setPages(0);
+
+    const task = getDocument(file.url);
+    task.promise
+      .then((doc) => {
+        if (cancelled) return;
+        setPdfDoc(doc);
+        setPages(doc.numPages || 0);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("PDF preview failed", e);
+        setError("Не вдалося відкрити PDF для перегляду");
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      task.destroy();
+    };
+  }, [file.url]);
+
+  useEffect(() => {
+    if (!pdfDoc) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfPage = await pdfDoc.getPage(page);
+        if (cancelled) return;
+
+        const viewport = pdfPage.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+      } catch (e) {
+        if (!cancelled) {
+          console.error("PDF render failed", e);
+          setError("Не вдалося відмалювати сторінку PDF");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc, page, scale]);
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-card w-full max-w-6xl h-[90vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
+          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
+
+          <button
+            onClick={() => setScale((s) => Math.max(0.7, +(s - 0.1).toFixed(2)))}
+            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
+            title="Зменшити"
+          >
+            -
+          </button>
+          <span className="text-xs font-semibold text-muted-foreground w-12 text-center">{Math.round(scale * 100)}%</span>
+          <button
+            onClick={() => setScale((s) => Math.min(2.5, +(s + 0.1).toFixed(2)))}
+            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
+            title="Збільшити"
+          >
+            +
+          </button>
+
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1 || loading || !!error}
+            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent disabled:opacity-40"
+          >
+            Назад
+          </button>
+          <span className="text-xs font-semibold text-muted-foreground min-w-16 text-center">{pages > 0 ? `${page}/${pages}` : "0/0"}</span>
+          <button
+            onClick={() => setPage((p) => Math.min(pages || 1, p + 1))}
+            disabled={loading || !!error || pages === 0 || page >= pages}
+            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent disabled:opacity-40"
+          >
+            Вперед
+          </button>
+
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
+            title="Закрити перегляд"
+          >
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-muted/30 p-4">
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Завантаження PDF...</div>
+          ) : error ? (
+            <div className="h-full flex items-center justify-center text-sm text-destructive font-semibold">{error}</div>
+          ) : (
+            <div className="flex justify-center">
+              <canvas ref={canvasRef} className="bg-white rounded shadow-md max-w-full h-auto" />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Clinical Timeline: groups documents & files by appointment date ──
 function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory }: {
   files: FileItem[];
@@ -1319,25 +1456,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   return (
     <div className="pb-4 relative">
       {previewPdf && (
-        <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-card w-full max-w-5xl h-[88vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
-            <div className="h-12 px-4 border-b border-border/60 flex items-center justify-between shrink-0">
-              <p className="text-sm font-bold text-foreground truncate pr-3">{previewPdf.name}</p>
-              <button
-                onClick={() => setPreviewPdf(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
-                title="Закрити перегляд"
-              >
-                <X size={16} className="text-muted-foreground" />
-              </button>
-            </div>
-            <iframe
-              src={previewPdf.url}
-              title={previewPdf.name}
-              className="w-full flex-1 bg-white"
-            />
-          </div>
-        </div>
+        <PdfPreviewModal file={previewPdf} onClose={() => setPreviewPdf(null)} />
       )}
 
       {/* Delete confirmation dialog */}
