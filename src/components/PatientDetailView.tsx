@@ -106,6 +106,12 @@ function isoToDisplay(isoDate?: string, fallback?: string): string {
   return fallback || isoDate || "";
 }
 
+function displayToIso(displayDate?: string): string {
+  const parts = displayDate?.split(".");
+  if (parts?.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return "";
+}
+
 const RESCHEDULED_MARKER = "__RESCHEDULED_TO__:";
 
 function formatDateUkrainian(ddmmyyyy: string): string {
@@ -307,14 +313,39 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
   const rescheduleNoticeOriginalDate = useMemo(() => {
-    const marker = mergedProtocolHistory
+    const markerForActive = mergedProtocolHistory
       .filter((h) => h.value.startsWith(RESCHEDULED_MARKER))
       .filter((h) => h.value.replace(RESCHEDULED_MARKER, "") === activeVisitIso)
       .sort((a, b) => b.date.localeCompare(a.date))[0];
 
-    if (!marker) return null;
-    return isoToDisplay(marker.date);
-  }, [mergedProtocolHistory, activeVisitIso]);
+    if (markerForActive) return isoToDisplay(markerForActive.date);
+
+    // Backward compatibility: infer from nearest archived record if older data has no explicit marker.
+    const archivedCandidates = new Set<string>();
+    for (const h of mergedProtocolHistory) {
+      if (!h.value.startsWith(RESCHEDULED_MARKER) && h.date && h.date !== activeVisitIso) archivedCandidates.add(h.date);
+    }
+    for (const h of mergedProcedureHistory) {
+      if (h.date && h.date !== activeVisitIso) archivedCandidates.add(h.date);
+    }
+    for (const f of localFiles) {
+      const iso = displayToIso(f.date);
+      if (iso && iso !== activeVisitIso) archivedCandidates.add(iso);
+    }
+
+    const nearestArchivedIso = Array.from(archivedCandidates)
+      .filter((d) => d < activeVisitIso)
+      .sort((a, b) => b.localeCompare(a))[0];
+
+    if (!nearestArchivedIso) return null;
+
+    const activeTs = new Date(activeVisitIso + "T00:00:00").getTime();
+    const archivedTs = new Date(nearestArchivedIso + "T00:00:00").getTime();
+    const daysDiff = Math.round((activeTs - archivedTs) / (1000 * 60 * 60 * 24));
+    if (daysDiff <= 0 || daysDiff > 31) return null;
+
+    return isoToDisplay(nearestArchivedIso);
+  }, [mergedProtocolHistory, mergedProcedureHistory, localFiles, activeVisitIso]);
 
   const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
