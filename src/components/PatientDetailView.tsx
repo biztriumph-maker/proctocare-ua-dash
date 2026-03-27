@@ -263,7 +263,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     protocol: initialProtocol,
     birthDate: profile.birthDate,
   });
-  const mergedProfile = { ...profile, ...fields };
+  const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
   
   const [localServices, setLocalServices] = useState<string[]>(initialServices);
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
@@ -292,6 +292,18 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
   const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
+
+  // Derive lastVisit from the most recent past history entry
+  const derivedLastVisit = (() => {
+    const currentDate = patient.date || "9999-99-99";
+    const allDates = [
+      ...mergedProcedureHistory.map(e => e.date),
+      ...mergedProtocolHistory.map(e => e.date),
+    ].filter(d => d < currentDate).sort().reverse();
+    if (!allDates.length) return "";
+    const [y, m, d] = allDates[0].split("-");
+    return `${d}.${m}.${y}`;
+  })();
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
@@ -390,7 +402,19 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
   };
 
-  const handleSaveChanges = () => {
+  const autoSaveMounted = useRef(false);
+  useEffect(() => {
+    if (!autoSaveMounted.current) {
+      autoSaveMounted.current = true;
+      return;
+    }
+    if (!onUpdatePatient) return;
+    const timer = setTimeout(() => handleSaveChanges(true), 1200);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, localFiles, localServices]);
+
+  const handleSaveChanges = (silent = false) => {
     if (onUpdatePatient) {
       const hasTodayHistoryEntry = (history?: Array<{ value: string; timestamp: string; date: string }>) => {
         if (!history || history.length === 0) return false;
@@ -437,7 +461,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
         protocolHistory,
         procedureHistory,
       });
-      toast.success("Дані пацієнта успішно збережено");
+      if (!silent) toast.success("Дані пацієнта успішно збережено");
     }
   };
 
@@ -484,7 +508,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               </div>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                  {patient.fromForm ? "Новий" : "Повторний"}
+                  {!patient.fromForm || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 ? "Повторний" : "Новий"}
                 </span>
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
@@ -993,6 +1017,7 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
         <span className={cn("text-sm font-bold", profile.lastVisit ? "text-foreground" : "text-muted-foreground/40 italic")}>
           {profile.lastVisit || "Перший прийом"}
         </span>
+        
       </div>
 
         {/* Row 6: Нотатки */}
