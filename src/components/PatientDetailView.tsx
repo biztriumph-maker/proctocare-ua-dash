@@ -292,16 +292,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
-  // Derive lastVisit from the most recent past history entry
+  // Derive lastVisit only from explicit historical visit records (seeded/completed visits),
+  // NOT from procedureHistory (which is an operational change log written by auto-save).
   const derivedLastVisit = (() => {
     const currentDate = patient.date || "9999-99-99";
     const allDates = [
-      ...mergedProcedureHistory.map(e => e.date),
-      ...mergedProtocolHistory.map(e => e.date),
+      ...seededProcedureHistory.map(e => e.date),
+      ...seededProtocolHistory.map(e => e.date),
     ].filter(d => d < currentDate).sort().reverse();
     if (!allDates.length) return "";
-    const [y, m, d] = allDates[0].split("-");
-    return `${d}.${m}.${y}`;
+    const [y, m, d2] = allDates[0].split("-");
+    return `${d2}.${m}.${y}`;
   })();
   const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
 
