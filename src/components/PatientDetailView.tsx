@@ -1178,7 +1178,66 @@ function PrepStepper({ preparation, status }: { preparation: ReturnType<typeof g
 }
 
 // ── Files Pane — upload and manage documents ──
-type FileItem = { id: string, name: string, type: "doctor" | "patient", date: string, url?: string };
+type FileItem = {
+  id: string;
+  name: string;
+  type: "doctor" | "patient";
+  date: string;
+  url?: string;
+  storageKey?: string;
+  mimeType?: string;
+};
+
+const FILE_DB_NAME = "proctocare_files";
+const FILE_STORE_NAME = "files";
+
+function openFileDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FILE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(FILE_STORE_NAME)) {
+        db.createObjectStore(FILE_STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function putBlobToStorage(key: string, blob: Blob): Promise<void> {
+  const db = await openFileDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE_NAME, "readwrite");
+    tx.objectStore(FILE_STORE_NAME).put(blob, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function getBlobFromStorage(key: string): Promise<Blob | null> {
+  const db = await openFileDb();
+  const result = await new Promise<Blob | null>((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE_NAME, "readonly");
+    const req = tx.objectStore(FILE_STORE_NAME).get(key);
+    req.onsuccess = () => resolve((req.result as Blob) || null);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return result;
+}
+
+async function deleteBlobFromStorage(key: string): Promise<void> {
+  const db = await openFileDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE_NAME, "readwrite");
+    tx.objectStore(FILE_STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
 
 function getMockFiles(todayStr: string): FileItem[] {
   return [
@@ -1216,7 +1275,7 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
   );
 }
 
-function PdfPreviewModal({ file, onClose }: { file: { name: string; url: string }; onClose: () => void }) {
+function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1227,32 +1286,35 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; url: string 
 
   useEffect(() => {
     let cancelled = false;
+    let loadingTask: ReturnType<typeof getDocument> | null = null;
     setLoading(true);
     setError(null);
     setPdfDoc(null);
     setPage(1);
     setPages(0);
 
-    const task = getDocument(file.url);
-    task.promise
-      .then((doc) => {
+    (async () => {
+      try {
+        const bytes = new Uint8Array(await file.blob.arrayBuffer());
+        loadingTask = getDocument({ data: bytes });
+        const doc = await loadingTask.promise;
         if (cancelled) return;
         setPdfDoc(doc);
         setPages(doc.numPages || 0);
         setLoading(false);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (cancelled) return;
         console.error("PDF preview failed", e);
         setError("Не вдалося відкрити PDF для перегляду");
         setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
-      task.destroy();
+      if (loadingTask) loadingTask.destroy();
     };
-  }, [file.url]);
+  }, [file.blob]);
 
   useEffect(() => {
     if (!pdfDoc) return;
@@ -1360,7 +1422,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
-  const [previewPdf, setPreviewPdf] = useState<{ name: string; url: string } | null>(null);
+  const [previewPdf, setPreviewPdf] = useState<{ name: string; blob: Blob } | null>(null);
 
   // Today in DD.MM.YYYY local time
   const now = new Date();
@@ -1419,38 +1481,70 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   const todayFiles = filesByDate.get(todayStr) || [];
   const hasTimeline = historicalDates.length > 0;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
-    const newFiles = Array.from(e.target.files).map(file => ({
-      id: Math.random().toString(36).substring(7),
-      name: file.name,
-      type: "doctor" as const,
-      date: todayStr,
-      url: URL.createObjectURL(file),
-    }));
-    onFilesChange([...files, ...newFiles]);
+
+    try {
+      const uploaded = await Promise.all(Array.from(e.target.files).map(async (file) => {
+        const storageKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+        await putBlobToStorage(storageKey, file);
+        return {
+          id: Math.random().toString(36).substring(7),
+          name: file.name,
+          type: "doctor" as const,
+          date: todayStr,
+          storageKey,
+          mimeType: file.type,
+        } as FileItem;
+      }));
+
+      onFilesChange([...files, ...uploaded]);
+    } catch (err) {
+      console.error("Failed to save uploaded files", err);
+      toast.error("Не вдалося зберегти файл. Спробуйте ще раз.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
-  const handleViewFile = (file: FileItem) => {
-    if (!file.url) {
+  const handleViewFile = async (file: FileItem) => {
+    let blob: Blob | null = null;
+
+    if (file.storageKey) {
+      blob = await getBlobFromStorage(file.storageKey);
+    }
+
+    if (!blob && file.url) {
+      try {
+        const res = await fetch(file.url);
+        blob = await res.blob();
+      } catch (err) {
+        console.error("Failed to load legacy file URL", err);
+      }
+    }
+
+    if (!blob) {
       alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
       return;
     }
 
-    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const isPdf = (file.mimeType || blob.type || "").includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
     if (isPdf) {
-      setPreviewPdf({ name: file.name, url: file.url });
+      setPreviewPdf({ name: file.name, blob });
       return;
     }
 
-    const opened = window.open(file.url, "_blank", "noopener,noreferrer");
+    const viewUrl = URL.createObjectURL(blob);
+    const opened = window.open(viewUrl, "_blank", "noopener,noreferrer");
     if (!opened) {
       const fallback = document.createElement("a");
-      fallback.href = file.url;
+      fallback.href = viewUrl;
       fallback.target = "_blank";
       fallback.rel = "noopener noreferrer";
       fallback.click();
     }
+
+    setTimeout(() => URL.revokeObjectURL(viewUrl), 30_000);
   };
 
   return (
@@ -1469,7 +1563,18 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
             </p>
             <div className="flex items-center gap-2">
               <button onClick={() => setConfirmDeleteFile(null)} className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]">Скасувати</button>
-              <button onClick={() => { onFilesChange(files.filter(x => x.id !== confirmDeleteFile)); setConfirmDeleteFile(null); }}
+              <button onClick={async () => {
+                const fileToDelete = files.find((x) => x.id === confirmDeleteFile);
+                if (fileToDelete?.storageKey) {
+                  try {
+                    await deleteBlobFromStorage(fileToDelete.storageKey);
+                  } catch (err) {
+                    console.error("Failed to delete file from storage", err);
+                  }
+                }
+                onFilesChange(files.filter(x => x.id !== confirmDeleteFile));
+                setConfirmDeleteFile(null);
+              }}
                 className="flex-1 py-2.5 text-sm font-bold bg-destructive text-destructive-foreground rounded-lg transition-colors active:scale-[0.97]">Видалити</button>
             </div>
           </div>
