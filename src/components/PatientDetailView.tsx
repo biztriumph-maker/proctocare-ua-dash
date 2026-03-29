@@ -1298,7 +1298,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
-                    <TrackerPane preparation={preparation} status={effectiveStatus} />
+                    <LinearProgressBar
+                      preparation={preparation}
+                      status={effectiveStatus}
+                      waitingForDietAck={waitingForDietAck}
+                      dietInstructionSent={dietInstructionSent}
+                      waitingForStep2Ack={waitingForStep2Ack}
+                      step2AckResult={step2AckResult}
+                    />
                   </ContentBlock>
                 </div>
               ) : activeTab === "files" ? (
