@@ -635,6 +635,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const restoredAssistantSession = getAssistantSession(patient.id, activeVisitIso);
 
   useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
     setRescheduleTime(patient.time || "");
   }, [patient.id, patient.date, patient.time]);

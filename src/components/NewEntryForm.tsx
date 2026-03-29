@@ -1,5 +1,5 @@
 import { X, Phone, CalendarDays, ChevronRight } from "lucide-react";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import { ProcedureSelector } from "./ProcedureSelector";
@@ -75,6 +75,14 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showPlanningPicker, setShowPlanningPicker] = useState(false);
   const nameRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   const filteredSuggestions = name.length > 0
     ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))

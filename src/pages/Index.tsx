@@ -19,6 +19,15 @@ function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getCurrentScheduleDates() {
+  const now = new Date();
+  const todayIso = localDateStr(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowIso = localDateStr(tomorrow);
+  return { todayIso, tomorrowIso };
+}
+
 const todayDateStr = localDateStr(today);
 const tomorrowDateStr = localDateStr(tomorrow);
 
@@ -326,6 +335,19 @@ function rebuildPetushkovRecord(patients: Patient[]): Patient[] {
   return [...others, merged];
 }
 
+function normalizeDemoScheduleDates(patients: Patient[]): Patient[] {
+  const { todayIso } = getCurrentScheduleDates();
+  const demoTodayIds = new Set(["1", "2", "3", "4", "5", "6"]);
+
+  return patients.map((patient) => {
+    if (demoTodayIds.has(patient.id)) {
+      if (patient.date === todayIso) return patient;
+      return { ...patient, date: todayIso };
+    }
+    return patient;
+  });
+}
+
 const ASSISTANT_NOTE_PATTERNS = [
   /пацієнт\s+потребує\s+консультац(і|и)ї\s+щодо\s+дієт(и|і)/i,
   /пацієнт\s+потребує\s+консультац(і|и)ї\s+по\s+дієт(і|е)/i,
@@ -385,6 +407,7 @@ function sanitizePatientsAssistantNotes(patients: Patient[]): Patient[] {
 }
 
 export default function Index() {
+  const { todayIso, tomorrowIso } = useMemo(() => getCurrentScheduleDates(), []);
   const [view, setView] = useState<"operational" | "calendar">("operational");
   const [filter, setFilter] = useState<FilterType>("all");
   const [showForm, setShowForm] = useState(false);
@@ -402,20 +425,21 @@ export default function Index() {
   }, []);
 
   const [patients, setPatients] = useState<Patient[]>(() => {
+    const { todayIso: currentTodayIso, tomorrowIso: currentTomorrowIso } = getCurrentScheduleDates();
     const saved = localStorage.getItem("proctocare_all_patients");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         // Clean up legacy tomorrow mock patients just in case they were cached
         const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
-        return rebuildPetushkovRecord(sanitizePatientsAssistantNotes(cleaned));
+        return normalizeDemoScheduleDates(rebuildPetushkovRecord(sanitizePatientsAssistantNotes(cleaned)));
       } catch (e) {
         console.error("Failed to parse saved patients", e);
       }
     }
     return [
-      ...MOCK_PATIENTS.map(p => ({ ...p, date: p.date || todayDateStr })),
-      ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || tomorrowDateStr })),
+      ...MOCK_PATIENTS.map(p => ({ ...p, date: p.date || currentTodayIso })),
+      ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || currentTomorrowIso })),
     ];
   });
 
@@ -475,8 +499,8 @@ export default function Index() {
     }
   }, [patients, selectedPatient]);
 
-  const todayPatients = useMemo(() => patients.filter(p => !p.date || p.date === todayDateStr), [patients]);
-  const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowDateStr), [patients]);
+  const todayPatients = useMemo(() => patients.filter(p => !p.date || p.date === todayIso), [patients, todayIso]);
+  const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowIso), [patients, tomorrowIso]);
 
   const counts = useMemo(() => ({
     total: todayPatients.length,
@@ -679,7 +703,7 @@ export default function Index() {
                     birthDate: "01.01.1980",
                     phone: "+380501234567",
                     primaryNotes: "Пробна запис",
-                    date: todayDateStr,
+                    date: todayIso,
                     fromForm: true,
                   };
                   setPatients((prev) => [...prev, patient]);
@@ -693,8 +717,8 @@ export default function Index() {
                 onClick={() => {
                   setPatients((_prev) => {
                     const resetArr = [
-                      ...MOCK_PATIENTS.map((p) => ({ ...p, date: p.date || todayDateStr })),
-                      ...MOCK_TOMORROW.map((p) => ({ ...p, date: p.date || tomorrowDateStr })),
+                      ...MOCK_PATIENTS.map((p) => ({ ...p, date: p.date || todayIso })),
+                      ...MOCK_TOMORROW.map((p) => ({ ...p, date: p.date || tomorrowIso })),
                     ];
                     return resetArr;
                   });
@@ -891,6 +915,8 @@ export default function Index() {
                 procedure: p.procedure,
                 status: p.status,
                 aiSummary: "Дані з календаря",
+                date: focusDate || todayIso,
+                fromForm: true,
               });
             }}
             searchQuery={searchQuery}
