@@ -631,6 +631,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
   const [rescheduleTime, setRescheduleTime] = useState(patient.time || "");
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const restoredAssistantSession = getAssistantSession(patient.id, activeVisitIso);
 
   useEffect(() => {
@@ -1187,6 +1188,13 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
+              onClick={() => setHistoryModalOpen(true)}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
+              title="Системний логс"
+            >
+              <Clock size={18} />
+            </button>
+            <button
               onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
             >
@@ -1318,7 +1326,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                         </div>
                       )}
                     </div>
-                    <HorizontalStepBar
+                    <LinearProgressBar
                       preparation={preparation}
                       status={effectiveStatus}
                       waitingForDietAck={waitingForDietAck}
@@ -1434,7 +1442,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     </div>
                   )}
                 </div>
-                <HorizontalStepBar
+                <LinearProgressBar
                   preparation={preparation}
                   status={effectiveStatus}
                   waitingForDietAck={waitingForDietAck}
@@ -1505,6 +1513,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             </div>
           </div>
         )}
+
+        {/* History Modal */}
+        <HistoryModal isOpen={historyModalOpen} onClose={() => setHistoryModalOpen(false)} chat={chat} />
       </div>
     </div>
   );
@@ -1819,8 +1830,8 @@ function PreparationTracker({ preparation }: { preparation: ReturnType<typeof ge
 }
 
 // ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
-// ── Horizontal Step Bar (Desktop + Mobile) ──
-function HorizontalStepBar({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
+// ── Linear Progress Timeline (Thin line, 5 segments) ──
+function LinearProgressBar({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
   preparation: ReturnType<typeof getPreparationProgress>;
   status: PatientStatus;
   waitingForDietAck?: boolean;
@@ -1828,90 +1839,41 @@ function HorizontalStepBar({ preparation, status, waitingForDietAck = false, die
   waitingForStep2Ack?: boolean;
   step2AckResult?: "none" | "confirmed" | "question";
 }) {
-  const isMobile = useIsMobile();
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
-  const isRisk = status === "risk";
-  const [expandedMobile, setExpandedMobile] = useState(false);
 
-  const getStepState = (i: number) => {
+  const getSegmentColor = (i: number): string => {
+    // Determine if step is done, current, failed, or future
     const isDone = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === 1) || preparation.steps[i]?.done;
-    const isStep2Issue = step2AckResult === "question" && i === 1;
-    const isStep2Prepared = waitingForStep2Ack && i === 1;
-    const isActive = !isDone && !isStep2Prepared && !isStep2Issue && i === firstPendingIdx;
-    return { isDone, isStep2Issue, isStep2Prepared, isActive };
+    const isFailed = step2AckResult === "question" && i === 1;
+    const isActive = !isDone && !isFailed && i === firstPendingIdx;
+    
+    if (isDone) return "bg-green-500"; // Completed: Solid Green
+    if (isFailed) return "bg-red-500"; // Failed/Alert: Solid Red
+    if (isActive) return "bg-yellow-500"; // Current: Solid Yellow (no pulsing)
+    return "bg-gray-200"; // Future: Light Grey
   };
 
-  if (isMobile) {
-    const currentStep = firstPendingIdx >= 0 ? firstPendingIdx : preparation.steps.length - 1;
-    const currentLabel = preparation.steps[currentStep]?.label || "Завершено";
-    const doneCount = preparation.steps.filter((_, i) => {
-      const { isDone } = getStepState(i);
-      return isDone;
-    }).length;
-    const progressPercent = Math.round((doneCount / preparation.steps.length) * 100);
-
-    return (
-      <div className="px-4 py-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex-1">
-            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-status-progress transition-all" style={{ width: `${progressPercent}%` }} />
-            </div>
-            <p className="text-[11px] font-bold text-foreground mt-1.5">Етап {currentStep + 1}: {currentLabel}</p>
-          </div>
-          <button
-            onClick={() => setExpandedMobile(!expandedMobile)}
-            className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:bg-muted transition-colors"
-          >
-            <ChevronDown size={16} className={cn("transition-transform", expandedMobile && "rotate-180")} />
-          </button>
-        </div>
-        {expandedMobile && (
-          <div className="flex gap-1 pt-2">
-            {preparation.steps.map((step, i) => {
-              const { isDone, isActive, isStep2Issue } = getStepState(i);
-              return (
-                <div key={i} className="flex flex-col items-center gap-1">
-                  <div className={cn(
-                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors",
-                    isDone ? "bg-status-ready text-white" : isStep2Issue ? "bg-status-risk text-white" : isActive ? "bg-yellow-400 text-yellow-900" : "bg-muted text-muted-foreground"
-                  )}>
-                    {isDone ? <Check size={12} /> : i + 1}
-                  </div>
-                  <span className="text-[9px] font-medium text-center line-clamp-2 w-12">{step.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Desktop: Horizontal line with circles and labels below
   return (
-    <div className="px-4 py-4">
-      <div className="flex items-end gap-2 mb-3">
-        {preparation.steps.map((step, i) => {
-          const { isDone, isActive, isStep2Issue } = getStepState(i);
-          const circleColor = isDone ? "bg-status-ready" : isStep2Issue ? "bg-status-risk" : isActive ? "bg-yellow-400" : "bg-muted";
-          const circleTextColor = isDone ? "text-white" : isStep2Issue ? "text-white" : isActive ? "text-yellow-900" : "text-muted-foreground";
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center">
-              <div className="flex items-end gap-0 mb-2 w-full">
-                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition-colors shadow-sm", circleColor, circleTextColor)}>
-                  {isDone ? <Check size={14} /> : i + 1}
-                </div>
-                {i < preparation.steps.length - 1 && (
-                  <div className="flex-1 h-0.5 bg-muted mx-1" />
-                )}
-              </div>
-              <p className="text-[9px] font-semibold text-center leading-tight text-foreground truncate w-full" title={step.label}>
-                {step.label}
-              </p>
-            </div>
-          );
-        })}
+    <div className="px-4 pb-3 pt-4">
+      {/* Labels above line */}
+      <div className="flex justify-between mb-2 gap-1">
+        {preparation.steps.map((step, i) => (
+          <div key={`label-${i}`} className="flex-1 flex flex-col items-center">
+            <p className="text-[8px] font-semibold text-center leading-tight text-foreground truncate w-full" title={step.label}>
+              {step.label}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Timeline line divided into 5 segments */}
+      <div className="flex gap-0.5 h-1">
+        {preparation.steps.map((step, i) => (
+          <div
+            key={`segment-${i}`}
+            className={cn("flex-1 rounded-sm transition-colors", getSegmentColor(i))}
+          />
+        ))}
       </div>
     </div>
   );
@@ -2853,38 +2815,58 @@ function renderBoldText(text: string) {
   );
 }
 
+// ── System History Modal (Desktop) ──
+function HistoryModal({ isOpen, onClose, chat }: {
+  isOpen: boolean;
+  onClose: () => void;
+  chat: ChatMessage[];
+}) {
+  if (!isOpen) return null;
+
+  const systemMessages = chat.filter((m) => !m.unanswered && m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")));
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card rounded-xl shadow-xl border border-border/60 w-full max-w-md max-h-[70vh] flex flex-col animate-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
+          <h3 className="text-sm font-bold text-foreground">Системний логс</h3>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+          >
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {systemMessages.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Немає системних повідомлень</p>
+          ) : (
+            systemMessages.map((msg, i) => (
+              <div key={i} className="text-xs text-foreground bg-muted/30 rounded px-3 py-2 border border-border/30">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-muted-foreground">Система</span>
+                  <span className="text-muted-foreground text-[10px]">{msg.time}</span>
+                </div>
+                <p className="leading-relaxed">{msg.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChatPane({ chat, unanswered, onQuickReply }: {
   chat: ChatMessage[];
   unanswered: ChatMessage[];
   onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet") => void;
 }) {
-  const [systemExpanded, setSystemExpanded] = useState(false);
-  
-  const systemMessages = chat.filter((m) => !m.unanswered && m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")));
-  const activeMessages = chat.filter((m) => !m.unanswered && (m.sender === "patient" || m.sender === "doctor" || (m.sender === "ai" && !systemMessages.includes(m))));
+  // Filter out all system messages from the main chat display (moved to History modal)
+  const activeMessages = chat.filter((m) => !m.unanswered && !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено"))));
   
   return (
-    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[linear-gradient(180deg,#f7fcff_0%,#ecf8ff_100%)]">
-      {/* System History (collapsible) */}
-      {systemMessages.length > 0 && (
-        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-          <button
-            onClick={() => setSystemExpanded(!systemExpanded)}
-            className="w-full flex items-center justify-between text-[11px] font-bold text-slate-700 hover:text-slate-900 transition-colors"
-          >
-            <span>Історія (Система)</span>
-            <ChevronDown size={14} className={cn("transition-transform", systemExpanded && "rotate-180")} />
-          </button>
-          {systemExpanded && (
-            <div className="mt-2 space-y-1 text-[10px] text-slate-600 border-t border-slate-200 pt-2">
-              {systemMessages.map((msg, i) => (
-                <p key={i} className="leading-tight">{msg.text} <span className="text-slate-500">({msg.time})</span></p>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      
+    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[#F0F8FF]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
@@ -2901,27 +2883,29 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
         </div>
       ))}
 
-      {/* Chat history — messenger bubbles */}
+      {/* Chat history — Telegram-style bubbles */}
       {activeMessages.map((msg, i) => {
         const isPatient = msg.sender === "patient";
         const isDoctor = msg.sender === "doctor";
+        const isAssistant = msg.sender === "ai";
+        
         return (
-          <div key={i} className={cn("flex flex-col", isPatient ? "items-end" : "items-start")}>
+          <div key={i} className={cn("flex flex-col", isPatient ? "items-start" : "items-end")}>
             <div
               className={cn(
                 "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
-                isPatient
-                  ? "bg-[hsl(257,85%,95%)] border border-violet-200 rounded-br-sm"
-                  : isDoctor
-                    ? "bg-green-50 border border-green-300 rounded-bl-sm"
-                    : "bg-white border border-sky-100 rounded-bl-sm"
+                isDoctor
+                  ? "bg-green-100 border border-green-300 rounded-br-sm text-green-900" // Doctor: Light Green, right
+                  : isPatient
+                    ? "bg-white border border-gray-300 rounded-bl-sm text-gray-900" // Patient: Pure White, left
+                    : "bg-yellow-50 border border-yellow-300 rounded-bl-sm text-yellow-900" // Assistant: Light Beige/Yellow, left
               )}
             >
               <p className={cn(
                 "text-[11px] font-bold mb-0.5",
-                isPatient ? "text-violet-700" : isDoctor ? "text-green-700" : "text-sky-700"
+                isDoctor ? "text-green-700" : isPatient ? "text-gray-600" : "text-yellow-700"
               )}>
-                {isPatient ? "Клієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
+                {isDoctor ? "Лікар" : isPatient ? "Клієнт" : "Асистент"} · {msg.time}
               </p>
               <p className="text-foreground">
                 {renderBoldText(msg.text)}
@@ -2960,7 +2944,7 @@ function ChatInput() {
     setValue(newValue);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      const newHeight = Math.min(Math.max(36, textareaRef.current.scrollHeight), 100);
+      const newHeight = Math.min(Math.max(36, textareaRef.current.scrollHeight), 120); // Max 5 lines (~120px)
       textareaRef.current.style.height = `${newHeight}px`;
     }
   };
@@ -2993,7 +2977,7 @@ function ChatInput() {
           onKeyDown={handleKeyDown}
           placeholder="Відповісти..."
           rows={1}
-          className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none leading-5 max-h-[100px]"
+          className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none leading-5 max-h-[120px]"
         />
         <button
           onClick={handleSend}
