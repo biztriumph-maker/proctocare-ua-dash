@@ -712,6 +712,42 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient, localServices);
 
+  const effectiveStatus = useMemo<PatientStatus>(() => {
+    if (patient.noShow) return "risk";
+    if (patient.completed) return "ready";
+    if (step2AckResult === "question") return "risk";
+
+    if (welcomeSent || waitingForDietAck || dietInstructionSent || waitingForStep2Ack || step2AckResult === "confirmed") {
+      return "progress";
+    }
+
+    return computePatientStatus(patient);
+  }, [
+    patient,
+    step2AckResult,
+    welcomeSent,
+    waitingForDietAck,
+    dietInstructionSent,
+    waitingForStep2Ack,
+  ]);
+
+  useEffect(() => {
+    if (!onUpdatePatient) return;
+    if (patient.status === effectiveStatus) return;
+
+    const aiSummaryByStatus: Record<PatientStatus, string> = {
+      planning: "Записаний на процедуру, очікує підготовки",
+      progress: "Підготовка триває, асистент веде пацієнта",
+      risk: "Пацієнт має запитання, потрібна відповідь лікаря",
+      ready: "Підготовка завершена, пацієнт допущений",
+    };
+
+    onUpdatePatient({
+      status: effectiveStatus,
+      aiSummary: aiSummaryByStatus[effectiveStatus],
+    });
+  }, [effectiveStatus, onUpdatePatient, patient.status]);
+
   const serviceCategory = getServiceCategory(localServices);
 
   const _now = new Date();
@@ -1094,7 +1130,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
           <div className="min-w-0 flex-1">
             <div>
               <div className="flex items-center gap-2.5 mb-1">
-                <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[computePatientStatus(patient)])} />
+                <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[effectiveStatus])} />
                 {editingName ? (
                   <input
                     ref={nameInputRef}
@@ -1209,7 +1245,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
                   </ContentBlock>
                   <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
-                    <TrackerPane preparation={preparation} status={patient.status} />
+                    <TrackerPane preparation={preparation} status={effectiveStatus} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "files" ? (
@@ -1284,7 +1320,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     </div>
                     <PrepStepper
                       preparation={preparation}
-                      status={patient.status}
+                      status={effectiveStatus}
                       waitingForDietAck={waitingForDietAck}
                       dietInstructionSent={dietInstructionSent}
                       waitingForStep2Ack={waitingForStep2Ack}
@@ -1292,7 +1328,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     />
                     <SidebarTracker
                       preparation={preparation}
-                      status={patient.status}
+                      status={effectiveStatus}
                       waitingForDietAck={waitingForDietAck}
                       dietInstructionSent={dietInstructionSent}
                       waitingForStep2Ack={waitingForStep2Ack}
@@ -1408,7 +1444,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 </div>
                 <PrepStepper
                   preparation={preparation}
-                  status={patient.status}
+                  status={effectiveStatus}
                   waitingForDietAck={waitingForDietAck}
                   dietInstructionSent={dietInstructionSent}
                   waitingForStep2Ack={waitingForStep2Ack}
@@ -1416,7 +1452,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 />
                 <SidebarTracker
                   preparation={preparation}
-                  status={patient.status}
+                  status={effectiveStatus}
                   waitingForDietAck={waitingForDietAck}
                   dietInstructionSent={dietInstructionSent}
                   waitingForStep2Ack={waitingForStep2Ack}
