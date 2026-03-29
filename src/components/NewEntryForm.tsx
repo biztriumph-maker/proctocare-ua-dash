@@ -98,8 +98,9 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface-raised w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-fade-in max-h-[92vh] overflow-y-auto safe-bottom">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
+      <div className="relative z-10 bg-surface-raised w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-elevated p-5 space-y-4 animate-fade-in max-h-[92dvh] overflow-y-auto safe-bottom">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

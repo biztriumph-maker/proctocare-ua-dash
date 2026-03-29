@@ -1150,13 +1150,13 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={handleCloseRequest} />
 
 
       <div className={cn(
-        "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
-        "max-w-[95vw]"
+        "relative z-10 w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92dvh] overflow-hidden flex flex-col min-h-0",
+        "sm:max-w-[95vw]"
       )}>
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -1268,7 +1268,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {activeTab === "card" ? (
                 <div className="p-4 space-y-3">
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
@@ -1349,9 +1349,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             </div>
           </>
         ) : (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* Left column: 40% */}
-            <div className="w-[40%] overflow-y-auto shrink-0 p-4 space-y-3">
+            <div className="w-[40%] min-h-0 overflow-y-auto shrink-0 p-4 space-y-3">
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane
                   profile={mergedProfile}
@@ -1386,7 +1386,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             </div>
 
             {/* Right column: 60% */}
-            <div className="w-[60%] flex flex-col overflow-hidden p-4 pl-0">
+            <div className="w-[60%] min-h-0 flex flex-col overflow-hidden p-4 pl-0">
               <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={
                   <div className="flex items-center gap-2">
