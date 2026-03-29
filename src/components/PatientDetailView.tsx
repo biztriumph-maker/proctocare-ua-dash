@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Clock, Calendar, RotateCcw } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Clock, Calendar, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -1118,7 +1118,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
       <div className={cn(
         "relative w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92vh] overflow-hidden flex flex-col",
-        "max-w-[90vw]"
+        "max-w-[95vw]"
       )}>
         {/* Handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -1318,15 +1318,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                         </div>
                       )}
                     </div>
-                    <PrepStepper
-                      preparation={preparation}
-                      status={effectiveStatus}
-                      waitingForDietAck={waitingForDietAck}
-                      dietInstructionSent={dietInstructionSent}
-                      waitingForStep2Ack={waitingForStep2Ack}
-                      step2AckResult={step2AckResult}
-                    />
-                    <SidebarTracker
+                    <HorizontalStepBar
                       preparation={preparation}
                       status={effectiveStatus}
                       waitingForDietAck={waitingForDietAck}
@@ -1442,15 +1434,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     </div>
                   )}
                 </div>
-                <PrepStepper
-                  preparation={preparation}
-                  status={effectiveStatus}
-                  waitingForDietAck={waitingForDietAck}
-                  dietInstructionSent={dietInstructionSent}
-                  waitingForStep2Ack={waitingForStep2Ack}
-                  step2AckResult={step2AckResult}
-                />
-                <SidebarTracker
+                <HorizontalStepBar
                   preparation={preparation}
                   status={effectiveStatus}
                   waitingForDietAck={waitingForDietAck}
@@ -1811,151 +1795,6 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
 }
 
 // ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
-function SidebarTracker({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
-  preparation: ReturnType<typeof getPreparationProgress>;
-  status: PatientStatus;
-  waitingForDietAck?: boolean;
-  dietInstructionSent?: boolean;
-  waitingForStep2Ack?: boolean;
-  step2AckResult?: "none" | "confirmed" | "question";
-}) {
-  const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
-  const isRisk = status === "risk";
-
-  type StepState = "done" | "inprogress" | "issue" | "pending" | "waiting";
-  const getState = (step: { done: boolean }, i: number): StepState => {
-    if (dietInstructionSent && i === 0) return "done";
-    if (step2AckResult === "confirmed" && i === 1) return "done";
-    if (step2AckResult === "question" && i === 1) return "issue";
-    if (waitingForStep2Ack && i === 1) return "inprogress";
-    if (waitingForDietAck && i === 0) return "waiting";
-    if (step.done) return "done";
-    if (i === firstPendingIdx) return isRisk ? "issue" : "inprogress";
-    return "pending";
-  };
-
-  return (
-    <div className="px-4 pb-3 space-y-3">
-      {/* Steps */}
-      <div className="space-y-1">
-        {preparation.steps.map((step, i) => {
-          const state = getState(step, i);
-          const displayLabel = waitingForStep2Ack && i === 1
-            ? "Прийом препарату (очікує старту)"
-            : step.label;
-          return (
-            <div
-              key={i}
-              className={cn(
-                "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-colors",
-                state === "issue" && "bg-red-50 border border-red-200"
-              )}
-            >
-              {/* Icon */}
-              <div className={cn(
-                "w-5 h-5 rounded-full flex items-center justify-center shrink-0",
-                state === "done"       && "bg-status-ready text-white",
-                state === "inprogress" && "bg-yellow-400 text-white",
-                state === "waiting"    && "bg-orange-400 text-white animate-pulse",
-                state === "issue"      && "bg-red-500 text-white",
-                state === "pending"    && "bg-muted text-muted-foreground"
-              )}>
-                {state === "done"       && <Check size={11} strokeWidth={3} />}
-                {state === "inprogress" && <Clock size={10} strokeWidth={2.5} />}
-                {state === "waiting"    && <span className="w-2 h-2 rounded-full bg-white/95" />}
-                {state === "issue"      && <AlertTriangle size={10} strokeWidth={2.5} />}
-                {state === "pending"    && <span className="text-[9px] font-bold">{i + 1}</span>}
-              </div>
-
-              {/* Label */}
-              <span className={cn(
-                "text-xs leading-tight",
-                state === "done"       && "text-foreground font-semibold",
-                state === "inprogress" && "text-yellow-700 font-semibold",
-                state === "waiting"    && "text-orange-700 font-semibold",
-                state === "issue"      && "text-red-600 font-bold",
-                state === "pending"    && "text-muted-foreground"
-              )}>
-                {displayLabel}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Tracker Pane (mobile full) ──
-function TrackerPane({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
-  return (
-    <div className="px-4 pb-4 space-y-4">
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-bold text-foreground">Прогрес підготовки</span>
-        </div>
-        <Progress
-          value={preparation.percent}
-          className={cn(
-            "h-2.5 rounded-full",
-            status === "ready" ? "[&>div]:bg-status-ready" : status === "progress" ? "[&>div]:bg-status-progress" : "[&>div]:bg-status-risk"
-          )}
-        />
-      </div>
-      <div className="space-y-2.5">
-        {preparation.steps.map((step, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <div className={cn(
-              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
-              step.done ? "bg-status-ready text-white" : "bg-muted text-muted-foreground"
-            )}>
-              {step.done ? "✓" : i + 1}
-            </div>
-            <span className={cn("text-sm", step.done ? "font-bold text-foreground" : "text-muted-foreground")}>
-              {step.label}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Tracker Compact (desktop inline) ──
-function TrackerPaneCompact({ preparation, status }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus }) {
-  return (
-    <div className="px-4 pb-4 space-y-3">
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs font-bold text-foreground">Прогрес</span>
-        </div>
-        <Progress
-          value={preparation.percent}
-          className={cn(
-            "h-2 rounded-full",
-            status === "ready" ? "[&>div]:bg-status-ready" : status === "progress" ? "[&>div]:bg-status-progress" : "[&>div]:bg-status-risk"
-          )}
-        />
-      </div>
-      <div className="space-y-1.5">
-        {preparation.steps.map((step, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <div className={cn(
-              "w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
-              step.done ? "bg-status-ready text-white" : "bg-muted text-muted-foreground"
-            )}>
-              {step.done ? "✓" : i + 1}
-            </div>
-            <span className={cn("text-xs", step.done ? "font-bold text-foreground" : "text-muted-foreground")}>
-              {step.label}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Preparation Tracker — 4 steps with green checkmarks ──
 function PreparationTracker({ preparation }: { preparation: ReturnType<typeof getPreparationProgress> }) {
   return (
@@ -1980,7 +1819,8 @@ function PreparationTracker({ preparation }: { preparation: ReturnType<typeof ge
 }
 
 // ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
-function PrepStepper({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
+// ── Horizontal Step Bar (Desktop + Mobile) ──
+function HorizontalStepBar({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
   preparation: ReturnType<typeof getPreparationProgress>;
   status: PatientStatus;
   waitingForDietAck?: boolean;
@@ -1988,34 +1828,87 @@ function PrepStepper({ preparation, status, waitingForDietAck = false, dietInstr
   waitingForStep2Ack?: boolean;
   step2AckResult?: "none" | "confirmed" | "question";
 }) {
+  const isMobile = useIsMobile();
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
+  const [expandedMobile, setExpandedMobile] = useState(false);
 
+  const getStepState = (i: number) => {
+    const isDone = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === 1) || preparation.steps[i]?.done;
+    const isStep2Issue = step2AckResult === "question" && i === 1;
+    const isStep2Prepared = waitingForStep2Ack && i === 1;
+    const isActive = !isDone && !isStep2Prepared && !isStep2Issue && i === firstPendingIdx;
+    return { isDone, isStep2Issue, isStep2Prepared, isActive };
+  };
+
+  if (isMobile) {
+    const currentStep = firstPendingIdx >= 0 ? firstPendingIdx : preparation.steps.length - 1;
+    const currentLabel = preparation.steps[currentStep]?.label || "Завершено";
+    const doneCount = preparation.steps.filter((_, i) => {
+      const { isDone } = getStepState(i);
+      return isDone;
+    }).length;
+    const progressPercent = Math.round((doneCount / preparation.steps.length) * 100);
+
+    return (
+      <div className="px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1">
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className="h-full bg-status-progress transition-all" style={{ width: `${progressPercent}%` }} />
+            </div>
+            <p className="text-[11px] font-bold text-foreground mt-1.5">Етап {currentStep + 1}: {currentLabel}</p>
+          </div>
+          <button
+            onClick={() => setExpandedMobile(!expandedMobile)}
+            className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:bg-muted transition-colors"
+          >
+            <ChevronDown size={16} className={cn("transition-transform", expandedMobile && "rotate-180")} />
+          </button>
+        </div>
+        {expandedMobile && (
+          <div className="flex gap-1 pt-2">
+            {preparation.steps.map((step, i) => {
+              const { isDone, isActive, isStep2Issue } = getStepState(i);
+              return (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors",
+                    isDone ? "bg-status-ready text-white" : isStep2Issue ? "bg-status-risk text-white" : isActive ? "bg-yellow-400 text-yellow-900" : "bg-muted text-muted-foreground"
+                  )}>
+                    {isDone ? <Check size={12} /> : i + 1}
+                  </div>
+                  <span className="text-[9px] font-medium text-center line-clamp-2 w-12">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Desktop: Horizontal line with circles and labels below
   return (
-    <div className="px-4 pt-3 pb-2">
-      <div className="flex items-end gap-1">
+    <div className="px-4 py-4">
+      <div className="flex items-end gap-2 mb-3">
         {preparation.steps.map((step, i) => {
-          const isDone = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === 1) || step.done;
-          const isWaiting = waitingForDietAck && i === 0;
-          const isStep2Prepared = waitingForStep2Ack && i === 1;
-          const isStep2Issue = step2AckResult === "question" && i === 1;
-          const isActive = !isDone && !isStep2Prepared && !isStep2Issue && i === firstPendingIdx;
-          const isIssue = isStep2Issue || (isActive && isRisk);
-          const displayLabel = waitingForStep2Ack && i === 1
-            ? "Прийом препарату (очікує старту)"
-            : step.label;
+          const { isDone, isActive, isStep2Issue } = getStepState(i);
+          const circleColor = isDone ? "bg-status-ready" : isStep2Issue ? "bg-status-risk" : isActive ? "bg-yellow-400" : "bg-muted";
+          const circleTextColor = isDone ? "text-white" : isStep2Issue ? "text-white" : isActive ? "text-yellow-900" : "text-muted-foreground";
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={displayLabel}>
-              <div className={cn(
-                "w-full h-1 rounded-full transition-colors",
-                isDone ? "bg-status-ready" : isWaiting ? "bg-orange-400 animate-pulse" : isIssue ? "bg-red-500" : (isStep2Prepared || isActive) ? "bg-yellow-400" : "bg-muted"
-              )} />
-              <span className={cn(
-                "text-[9px] font-bold leading-none",
-                isDone ? "text-status-ready" : isWaiting ? "text-orange-700" : isIssue ? "text-red-500" : (isStep2Prepared || isActive) ? "text-yellow-600" : "text-muted-foreground/40"
-              )}>
-                {i + 1}
-              </span>
+            <div key={i} className="flex-1 flex flex-col items-center">
+              <div className="flex items-end gap-0 mb-2 w-full">
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition-colors shadow-sm", circleColor, circleTextColor)}>
+                  {isDone ? <Check size={14} /> : i + 1}
+                </div>
+                {i < preparation.steps.length - 1 && (
+                  <div className="flex-1 h-0.5 bg-muted mx-1" />
+                )}
+              </div>
+              <p className="text-[9px] font-semibold text-center leading-tight text-foreground truncate w-full" title={step.label}>
+                {step.label}
+              </p>
             </div>
           );
         })}
@@ -2965,8 +2858,33 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
   unanswered: ChatMessage[];
   onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet") => void;
 }) {
+  const [systemExpanded, setSystemExpanded] = useState(false);
+  
+  const systemMessages = chat.filter((m) => !m.unanswered && m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")));
+  const activeMessages = chat.filter((m) => !m.unanswered && (m.sender === "patient" || m.sender === "doctor" || (m.sender === "ai" && !systemMessages.includes(m))));
+  
   return (
     <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[linear-gradient(180deg,#f7fcff_0%,#ecf8ff_100%)]">
+      {/* System History (collapsible) */}
+      {systemMessages.length > 0 && (
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+          <button
+            onClick={() => setSystemExpanded(!systemExpanded)}
+            className="w-full flex items-center justify-between text-[11px] font-bold text-slate-700 hover:text-slate-900 transition-colors"
+          >
+            <span>Історія (Система)</span>
+            <ChevronDown size={14} className={cn("transition-transform", systemExpanded && "rotate-180")} />
+          </button>
+          {systemExpanded && (
+            <div className="mt-2 space-y-1 text-[10px] text-slate-600 border-t border-slate-200 pt-2">
+              {systemMessages.map((msg, i) => (
+                <p key={i} className="leading-tight">{msg.text} <span className="text-slate-500">({msg.time})</span></p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
@@ -2984,7 +2902,7 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
       ))}
 
       {/* Chat history — messenger bubbles */}
-      {chat.filter((m) => !m.unanswered).map((msg, i) => {
+      {activeMessages.map((msg, i) => {
         const isPatient = msg.sender === "patient";
         const isDoctor = msg.sender === "doctor";
         return (
@@ -2995,13 +2913,13 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
                 isPatient
                   ? "bg-[hsl(257,85%,95%)] border border-violet-200 rounded-br-sm"
                   : isDoctor
-                    ? "bg-emerald-50 border border-emerald-200 rounded-bl-sm"
+                    ? "bg-green-50 border border-green-300 rounded-bl-sm"
                     : "bg-white border border-sky-100 rounded-bl-sm"
               )}
             >
               <p className={cn(
                 "text-[11px] font-bold mb-0.5",
-                isPatient ? "text-violet-700" : isDoctor ? "text-emerald-700" : "text-sky-700"
+                isPatient ? "text-violet-700" : isDoctor ? "text-green-700" : "text-sky-700"
               )}>
                 {isPatient ? "Клієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
               </p>
@@ -3032,22 +2950,63 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
   );
 }
 
-// ── Chat Input — single mic button, no arrow ──
+// ── Chat Input — textarea with smart line expansion ──
 function ChatInput() {
   const [value, setValue] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setValue(newValue);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      const newHeight = Math.min(Math.max(36, textareaRef.current.scrollHeight), 100);
+      textareaRef.current.style.height = `${newHeight}px`;
+    }
+  };
+
+  const handleSend = () => {
+    if (value.trim()) {
+      // TODO: Send message through parent handler
+      console.log("Sending:", value);
+      setValue("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   return (
     <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-center gap-2 bg-[hsl(200,100%,96%)] rounded-full px-4 py-1.5">
-        <input
-          type="text"
+      <div className="flex items-end gap-2.5 bg-[hsl(200,100%,96%)] rounded-lg p-2.5">
+        <textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
           placeholder="Відповісти..."
-          className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
+          rows={1}
+          className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none leading-5 max-h-[100px]"
         />
-        <button className="w-12 h-12 flex items-center justify-center rounded-full bg-[hsl(30,95%,62%)] text-white hover:opacity-90 active:scale-[0.93] transition-all shadow-md">
-          <Mic size={28} />
+        <button
+          onClick={handleSend}
+          disabled={!value.trim()}
+          className={cn(
+            "w-8 h-8 flex items-center justify-center rounded transition-all shrink-0",
+            value.trim()
+              ? "bg-sky-600 text-white hover:bg-sky-700 active:scale-[0.93]"
+              : "bg-muted text-muted-foreground cursor-not-allowed opacity-40"
+          )}
+          title="Надіслати (Enter)"
+        >
+          <Send size={16} strokeWidth={2} />
         </button>
       </div>
     </div>

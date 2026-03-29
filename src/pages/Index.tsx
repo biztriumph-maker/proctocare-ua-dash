@@ -423,6 +423,12 @@ export default function Index() {
     setPatients((prev) => sanitizePatientsAssistantNotes(prev));
   }, []);
 
+  // Cleanup old assistant sessions and temporary logs on mount
+  useEffect(() => {
+    readAssistantStoreWithCleanup();
+    cleanupTemporaryChatLogs();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem("proctocare_all_patients", JSON.stringify(patients));
   }, [patients]);
