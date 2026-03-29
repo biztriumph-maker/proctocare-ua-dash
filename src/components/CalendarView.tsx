@@ -11,7 +11,7 @@ interface CalendarSlot {
 
 interface CalendarViewProps {
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string; allergies?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -252,8 +252,9 @@ function SlotPopover({
 }: {
   slot: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
   hour: number;
+  dateStr?: string;
   onClose: () => void;
-  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; allergies?: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string; allergies?: string }) => void;
   openDirection: "up" | "down";
   openHorizontal: "left" | "right" | "center";
 }) {
@@ -272,7 +273,7 @@ function SlotPopover({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00` });
+            onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00`, date: dateStr });
           }}
           className="flex items-center gap-1.5 min-w-0 hover:underline"
         >
@@ -295,7 +296,7 @@ function SlotPopover({
       <button
         onClick={(e) => {
           e.stopPropagation();
-          onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00` });
+          onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00`, date: dateStr });
         }}
         className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
       >
@@ -318,7 +319,7 @@ function WeekGrid({
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
   onSelectDay: (d: Date) => void;
-  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -467,6 +468,7 @@ function WeekGrid({
                      <SlotPopover
                       slot={slot.patient}
                       hour={hour}
+                      dateStr={dateToStr(d)}
                       onClose={() => setActivePopover(null)}
                       onPatientClick={onPatientClick}
                       openDirection={openDirection as "up" | "down"}
@@ -494,7 +496,7 @@ function DayGrid({
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -542,7 +544,7 @@ function DayGrid({
             <button
               onClick={() => {
                 if (slot.patient) {
-                  onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00` });
+                  onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00`, date: dateToStr(date) });
                 } else {
                   onSlotClick(date, slot.hour);
                 }

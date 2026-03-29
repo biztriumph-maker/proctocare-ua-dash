@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Clock, Calendar, RotateCcw } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -602,6 +602,7 @@ function getPreparationProgress(patient: Patient, services?: string[]): { percen
 export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
+  const mobileTabScrollRef = useRef<HTMLDivElement>(null);
   const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [localFullName, setLocalFullName] = useState(() => {
@@ -641,6 +642,12 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
       document.body.style.overflow = prevOverflow;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!mobileTabScrollRef.current) return;
+    mobileTabScrollRef.current.scrollTop = 0;
+  }, [activeTab, isMobile]);
 
   useEffect(() => {
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
@@ -828,6 +835,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   // Build event log from state flags
   const eventLogs: EventLog[] = useMemo(() => {
     const logs: EventLog[] = [];
+    logs.push({
+      timestamp: patient.time || "--:--",
+      event: `Картку відкрито · ${isoToDisplay(activeVisitIso)}`,
+      status: "completed",
+    });
     if (welcomeSent) logs.push({
       timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
       event: "Вітальне повідомлення надіслано",
@@ -858,8 +870,15 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
       event: `Підготовку перезапущено (перенос з ${rescheduleNoticeOriginalDate})`,
       status: "warning",
     });
+    if (logs.length === 1) {
+      logs.push({
+        timestamp: patient.time || "--:--",
+        event: "Очікування наступної дії пацієнта",
+        status: "pending",
+      });
+    }
     return logs.reverse();
-  }, [welcomeSent, dietInstructionSent, waitingForStep2Ack, step2AckResult, rescheduleNoticeOriginalDate]);
+  }, [welcomeSent, dietInstructionSent, waitingForStep2Ack, step2AckResult, rescheduleNoticeOriginalDate, patient.time, activeVisitIso]);
 
   // Auto-send welcome message when all 4 fields are filled for the first time
   useEffect(() => {
@@ -1233,13 +1252,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => setHistoryModalOpen(true)}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
-              title="Системний логс"
-            >
-              <Clock size={18} />
-            </button>
-            <button
               onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
             >
@@ -1276,9 +1288,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               ))}
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto">
+            <div ref={mobileTabScrollRef} className="flex-1 min-h-0 overflow-y-auto">
               {activeTab === "card" ? (
-                <div className="p-4 space-y-3">
+                <div className="p-4 space-y-3 min-h-full">
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                     <ProfilePane
                       profile={mergedProfile}
@@ -1297,19 +1309,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                     <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
                   </ContentBlock>
-                  <ContentBlock title="Трекер підготовки" icon={<Activity size={13} />}>
-                    <LinearProgressBar
-                      preparation={preparation}
-                      status={effectiveStatus}
-                      waitingForDietAck={waitingForDietAck}
-                      dietInstructionSent={dietInstructionSent}
-                      waitingForStep2Ack={waitingForStep2Ack}
-                      step2AckResult={step2AckResult}
-                    />
-                  </ContentBlock>
                 </div>
               ) : activeTab === "files" ? (
-                <div className="p-4 space-y-3">
+                <div className="p-4 space-y-3 min-h-full">
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                     <FilesPane
                       files={localFiles}
@@ -1325,7 +1327,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
-                <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="p-4 min-h-full flex flex-col gap-3">
                   <ContentBlock title="Журнал подій" icon={<Activity size={13} />}
                     headerRight={
                       <div className="flex items-center gap-2">
@@ -1336,15 +1338,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                         >
                           <FileText size={14} className="text-muted-foreground" />
                         </button>
-                        {mergedProfile.phone && (
-                          <a
-                            href={`tel:${mergedProfile.phone}`}
-                            className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm active:scale-[0.93] transition-all shrink-0"
-                            title={mergedProfile.phone}
-                          >
-                            <Phone size={13} strokeWidth={2.5} className="text-white" />
-                          </a>
-                        )}
                       </div>
                     }
                   >
@@ -1356,9 +1349,20 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                       waitingForStep2Ack={waitingForStep2Ack}
                       step2AckResult={step2AckResult}
                     />
+                    <div className="px-4 pb-3 space-y-1.5">
+                      {eventLogs.slice(0, 3).map((log, i) => (
+                        <div key={`mobile-log-${i}`} className="text-[11px] text-muted-foreground leading-snug truncate">
+                          <span className="font-semibold text-foreground/80">{log.timestamp}</span>
+                          <span className="mx-1">·</span>
+                          <span>{log.event}</span>
+                        </div>
+                      ))}
+                    </div>
                   </ContentBlock>
-                  <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
-                  <ChatInput />
+                  <div className="flex-1 min-h-0 bg-card rounded-xl overflow-hidden shadow-[0_6px_16px_rgba(0,0,0,0.08)] flex flex-col">
+                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
+                    <ChatInput />
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1846,8 +1850,8 @@ function LinearProgressBar({ preparation, status, waitingForDietAck = false, die
       {/* Labels above line */}
       <div className="flex justify-between mb-2 gap-1">
         {preparation.steps.map((step, i) => (
-          <div key={`label-${i}`} className="flex-1 flex flex-col items-center">
-            <p className="text-[8px] font-semibold text-center leading-tight text-foreground truncate w-full" title={step.label}>
+          <div key={`label-${i}`} className="flex-1 min-w-0 flex flex-col items-center overflow-hidden">
+            <p className="text-[8px] font-semibold text-center leading-tight text-foreground truncate w-full max-w-full px-0.5" title={step.label}>
               {step.label}
             </p>
           </div>

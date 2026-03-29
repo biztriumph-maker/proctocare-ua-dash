@@ -903,11 +903,23 @@ export default function Index() {
               openNewEntry(`${y}-${m}-${d}`, hour);
             }}
             onPatientClick={(p) => {
-              // Prefer stable ID lookup from calendar to avoid losing patient context.
+              // Prefer exact lookup by stable ID, then by date+time+name to avoid stale fallback cards.
               const real = (p.id
                 ? allCalendarPatients.find((rp) => rp.id === p.id)
-                : allCalendarPatients.find((rp) => rp.name === p.name && rp.time === p.time));
-              setSelectedPatient(real || {
+                : allCalendarPatients.find((rp) =>
+                    rp.name === p.name &&
+                    rp.time === p.time &&
+                    (!p.date || rp.date === p.date)
+                  ));
+              if (real) {
+                const donor = allCalendarPatients
+                  .filter((rp) => rp.id !== real.id && personKey(rp) === personKey(real))
+                  .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+                setSelectedPatient(hydrateMissingProfile(real, donor));
+                return;
+              }
+
+              setSelectedPatient({
                 id: `cal-${p.name}-${p.time}`,
                 name: p.name,
                 patronymic: p.patronymic,
@@ -915,7 +927,7 @@ export default function Index() {
                 procedure: p.procedure,
                 status: p.status,
                 aiSummary: "Дані з календаря",
-                date: focusDate || todayIso,
+                date: p.date || todayIso,
                 fromForm: true,
               });
             }}
