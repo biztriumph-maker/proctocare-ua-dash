@@ -807,6 +807,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     return hasName && hasPhone && hasService && hasDateTime;
   }, [localFullName, fields.phone, localServices, patient.date, patient.time]);
 
+
   const missingFields = useMemo(() => {
     const missing: string[] = [];
     if (localFullName.trim().split(/\s+/).filter(Boolean).length < 2) missing.push("ПІБ");
@@ -815,6 +816,42 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     if (!patient.date || !patient.time) missing.push("Дата/Час");
     return missing;
   }, [localFullName, fields.phone, localServices, patient.date, patient.time]);
+
+  // Build event log from state flags
+  const eventLogs: EventLog[] = useMemo(() => {
+    const logs: EventLog[] = [];
+    if (welcomeSent) logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: "Вітальне повідомлення надіслано",
+      status: "completed",
+    });
+    if (dietInstructionSent) logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: "Інструкція щодо харчування надіслана",
+      status: "completed",
+    });
+    if (waitingForStep2Ack) logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: "Очікування підтвердження пацієнта",
+      status: "pending",
+    });
+    if (step2AckResult === "confirmed") logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: "Пацієнт підтвердив готовність",
+      status: "completed",
+    });
+    if (step2AckResult === "question") logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: "Пацієнт має запитання",
+      status: "warning",
+    });
+    if (rescheduleNoticeOriginalDate) logs.push({
+      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+      event: `Підготовку перезапущено (перенос з ${rescheduleNoticeOriginalDate})`,
+      status: "warning",
+    });
+    return logs.reverse();
+  }, [welcomeSent, dietInstructionSent, waitingForStep2Ack, step2AckResult, rescheduleNoticeOriginalDate]);
 
   // Auto-send welcome message when all 4 fields are filled for the first time
   useEffect(() => {
@@ -1274,58 +1311,28 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 </div>
               ) : activeTab === "assistant" ? (
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  <ContentBlock title="Підготовка та зв'язок" icon={<Activity size={13} />}
-                    headerRight={mergedProfile.phone ? (
-                      <a
-                        href={`tel:${mergedProfile.phone}`}
-                        className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm active:scale-[0.93] transition-all shrink-0"
-                        title={mergedProfile.phone}
-                      >
-                        <Phone size={13} strokeWidth={2.5} className="text-white" />
-                      </a>
-                    ) : undefined}
-                  >
-                    {rescheduleNoticeOriginalDate && (
-                      <div className="px-4 pt-2">
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
-                          <RotateCcw size={12} className="shrink-0" />
-                          <span>Підготовку перезапущено (перенос із {rescheduleNoticeOriginalDate})</span>
-                        </div>
+                  <ContentBlock title="Журнал подій" icon={<Activity size={13} />}
+                    headerRight={
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setHistoryModalOpen(true)}
+                          className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                          title="Журнал подій"
+                        >
+                          <FileText size={14} className="text-muted-foreground" />
+                        </button>
+                        {mergedProfile.phone && (
+                          <a
+                            href={`tel:${mergedProfile.phone}`}
+                            className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm active:scale-[0.93] transition-all shrink-0"
+                            title={mergedProfile.phone}
+                          >
+                            <Phone size={13} strokeWidth={2.5} className="text-white" />
+                          </a>
+                        )}
                       </div>
-                    )}
-                    <div className="mx-4 mt-2">
-                      {step2AckResult === "confirmed" ? (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
-                          <Check size={12} className="shrink-0" />
-                          <span>Інструкцію щодо харчування підтверджено пацієнтом</span>
-                        </div>
-                      ) : step2AckResult === "question" ? (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
-                          <AlertTriangle size={12} className="shrink-0" />
-                          <span>Пацієнт має запитання щодо дієти. Лікаря повідомлено</span>
-                        </div>
-                      ) : waitingForStep2Ack && dietInstructionSent ? (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1">
-                          <Clock size={12} className="shrink-0" />
-                          <span>Інструкцію щодо харчування надіслано. Очікую відповідь пацієнта</span>
-                        </div>
-                      ) : welcomeSent ? (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
-                          <Check size={12} className="shrink-0" />
-                          <span>Вітальне повідомлення надіслано</span>
-                        </div>
-                      ) : allFieldsReady ? (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1 animate-pulse">
-                          <Clock size={12} className="shrink-0" />
-                          <span>Всі дані готові. Надсилаю вітальне повідомлення...</span>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                          <Clock size={12} className="shrink-0" />
-                          <span>Чекаю на заповнення: {missingFields.join(", ")}</span>
-                        </div>
-                      )}
-                    </div>
+                    }
+                  >
                     <LinearProgressBar
                       preparation={preparation}
                       status={effectiveStatus}
@@ -1383,6 +1390,13 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setHistoryModalOpen(true)}
+                      className="px-2 py-1 flex items-center gap-1 rounded hover:bg-muted transition-colors text-xs font-medium text-muted-foreground"
+                      title="Журнал подій"
+                    >
+                      📜 Журнал подій
+                    </button>
                     {unanswered.length > 0 && (
                       <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
                         <AlertTriangle size={12} />
@@ -1401,47 +1415,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   </div>
                 }
               >
-                {rescheduleNoticeOriginalDate && (
-                  <div className="px-4 pt-2">
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1">
-                      <RotateCcw size={12} className="shrink-0" />
-                      <span>Підготовку перезапущено (перенос із {rescheduleNoticeOriginalDate})</span>
-                    </div>
-                  </div>
-                )}
-                <div className="mx-4 mt-2">
-                  {step2AckResult === "confirmed" ? (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
-                      <Check size={12} className="shrink-0" />
-                      <span>Інструкцію щодо харчування підтверджено пацієнтом</span>
-                    </div>
-                  ) : step2AckResult === "question" ? (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
-                      <AlertTriangle size={12} className="shrink-0" />
-                      <span>Пацієнт має запитання щодо дієти. Лікаря повідомлено</span>
-                    </div>
-                  ) : waitingForStep2Ack && dietInstructionSent ? (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1">
-                      <Clock size={12} className="shrink-0" />
-                      <span>Інструкцію щодо харчування надіслано. Очікую відповідь пацієнта</span>
-                    </div>
-                  ) : welcomeSent ? (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
-                      <Check size={12} className="shrink-0" />
-                      <span>Вітальне повідомлення надіслано</span>
-                    </div>
-                  ) : allFieldsReady ? (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1 animate-pulse">
-                      <Clock size={12} className="shrink-0" />
-                      <span>Всі дані готові. Надсилаю вітальне повідомлення...</span>
-                    </div>
-                  ) : (
-                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                      <Clock size={12} className="shrink-0" />
-                      <span>Чекаю на заповнення: {missingFields.join(", ")}</span>
-                    </div>
-                  )}
-                </div>
                 <LinearProgressBar
                   preparation={preparation}
                   status={effectiveStatus}
@@ -1515,7 +1488,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
         )}
 
         {/* History Modal */}
-        <HistoryModal isOpen={historyModalOpen} onClose={() => setHistoryModalOpen(false)} chat={chat} />
+        <HistoryModal isOpen={historyModalOpen} onClose={() => setHistoryModalOpen(false)} chat={chat} eventLogs={eventLogs} />
       </div>
     </div>
   );
@@ -2815,41 +2788,84 @@ function renderBoldText(text: string) {
   );
 }
 
-// ── System History Modal (Desktop) ──
-function HistoryModal({ isOpen, onClose, chat }: {
+// ── System History Modal (Desktop & Mobile) ──
+type EventLog = {
+  timestamp: string;
+  event: string;
+  status: "pending" | "completed" | "warning" | "error";
+};
+
+function HistoryModal({ isOpen, onClose, chat, eventLogs = [] }: {
   isOpen: boolean;
   onClose: () => void;
   chat: ChatMessage[];
+  eventLogs?: EventLog[];
 }) {
   if (!isOpen) return null;
 
   const systemMessages = chat.filter((m) => !m.unanswered && m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")));
+  
+  const getStatusColor = (status: string): string => {
+    switch (status) {
+      case "completed": return "text-green-700 bg-green-50";
+      case "warning": return "text-yellow-700 bg-yellow-50";
+      case "error": return "text-red-700 bg-red-50";
+      default: return "text-slate-600 bg-slate-50";
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card rounded-xl shadow-xl border border-border/60 w-full max-w-md max-h-[70vh] flex flex-col animate-fade-in" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
-          <h3 className="text-sm font-bold text-foreground">Системний логс</h3>
+    <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+      <div className="bg-card rounded-xl shadow-xl border border-border/60 w-full max-w-2xl max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 shrink-0">
+          <div>
+            <h3 className="text-base font-bold text-foreground">📜 Журнал подій</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Порядок діяльності та статуси</p>
+          </div>
           <button
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
           >
-            <X size={16} className="text-muted-foreground" />
+            <X size={18} className="text-muted-foreground" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {systemMessages.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Немає системних повідомлень</p>
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {eventLogs.length === 0 && systemMessages.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Немає записів у журналі</p>
           ) : (
-            systemMessages.map((msg, i) => (
-              <div key={i} className="text-xs text-foreground bg-muted/30 rounded px-3 py-2 border border-border/30">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-muted-foreground">Система</span>
-                  <span className="text-muted-foreground text-[10px]">{msg.time}</span>
+            <div className="space-y-4">
+              {/* Event Log Table */}
+              {eventLogs.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-foreground mb-2 uppercase opacity-60">Подорож</h4>
+                  <div className="space-y-1">
+                    {eventLogs.map((log, i) => (
+                      <div key={i} className={cn("flex gap-3 px-3 py-2 rounded border", getStatusColor(log.status))}>
+                        <span className="font-mono text-[10px] shrink-0 whitespace-nowrap">{log.timestamp}</span>
+                        <span className="text-xs flex-1">{log.event}</span>
+                        <span className="text-[10px] font-semibold uppercase shrink-0">{log.status === "completed" ? "✓" : log.status === "error" ? "✗" : log.status === "warning" ? "!" : "○"}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p className="leading-relaxed">{msg.text}</p>
-              </div>
-            ))
+              )}
+              
+              {/* System Messages */}
+              {systemMessages.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-foreground mb-2 uppercase opacity-60">Повідомлення системи</h4>
+                  <div className="space-y-1">
+                    {systemMessages.map((msg, i) => (
+                      <div key={i} className="flex gap-3 px-3 py-2 rounded bg-muted/30 border border-border/30">
+                        <span className="font-mono text-[10px] shrink-0 whitespace-nowrap">{msg.time}</span>
+                        <p className="text-xs leading-relaxed flex-1">{msg.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
