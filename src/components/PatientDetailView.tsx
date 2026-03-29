@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Headphones, Check, Clock, Calendar, RotateCcw } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Mic, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Clock, Calendar, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -19,6 +19,7 @@ interface ChatMessage {
   text: string;
   time: string;
   unanswered?: boolean;
+  quickReply?: { yes: string; no: string; context?: "greeting" | "diet" };
 }
 
 interface PatientDetailViewProps {
@@ -221,6 +222,64 @@ function getPatientContactName(patient: Patient): string {
   return `${salutation} ${firstName}${middleName ? ` ${middleName}` : ""}`;
 }
 
+function toGenitiveForm(word: string): string {
+  const w = word.trim();
+  if (!w) return w;
+
+  // Basic Ukrainian inflection rules for common masculine forms used in UI messages.
+  if (/енко$/i.test(w)) return `${w}а`;
+  if (/ич$/i.test(w)) return `${w}а`;
+  if (/ій$/i.test(w)) return `${w.slice(0, -1)}я`;
+  if (/й$/i.test(w)) return `${w.slice(0, -1)}я`;
+  if (/[бвгґджзклмнпрстфхцчшщ]$/i.test(w)) return `${w}а`;
+  return w;
+}
+
+function toVocativeForm(word: string): string {
+  const w = word.trim();
+  if (!w) return w;
+
+  if (/ич$/i.test(w)) return `${w}у`;
+  if (/й$/i.test(w)) return `${w.slice(0, -1)}ю`;
+  if (/о$/i.test(w)) return `${w.slice(0, -1)}е`;
+  if (/а$/i.test(w)) return `${w.slice(0, -1)}о`;
+  if (/я$/i.test(w)) return `${w.slice(0, -1)}є`;
+  if (/[бвгґджзклмнпрстфхцчшщ]$/i.test(w)) return `${w}е`;
+  return w;
+}
+
+function getPatientGreetingLine(patient: Patient): string {
+  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
+  const parts = full.split(/\s+/).filter(Boolean);
+  const firstName = parts[1] || parts[0] || "Пацієнт";
+  const middleName = patient.patronymic || parts[2] || "";
+  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
+
+  if (isFemale) {
+    return `Вітаю, Пані ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}!`;
+  }
+
+  return `Вітаю, Пане ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}!`;
+}
+
+function getPatientAddressInVocative(patient: Patient): string {
+  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
+  const parts = full.split(/\s+/).filter(Boolean);
+  const firstName = parts[1] || parts[0] || "Пацієнте";
+  const middleName = patient.patronymic || parts[2] || "";
+  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
+  const salutation = isFemale ? "Пані" : "Пане";
+  return `${salutation} ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}`;
+}
+
+function getDoctorNameInGenitive(doctor: DoctorProfile): string {
+  // Keep surname in base form, inflect first+middle names as requested in UI copy.
+  const surname = doctor.surname.trim();
+  const firstName = toGenitiveForm(doctor.firstName);
+  const middleName = toGenitiveForm(doctor.middleName);
+  return `${surname} ${firstName} ${middleName}`.replace(/\s+/g, " ").trim();
+}
+
 function buildEmulationGreetingMessage(params: {
   patient: Patient;
   doctor: DoctorProfile;
@@ -228,13 +287,206 @@ function buildEmulationGreetingMessage(params: {
   appointmentIsoDate: string;
   appointmentTime: string;
 }): string {
-  const patientName = getPatientContactName(params.patient);
+  const patientGreetingLine = getPatientGreetingLine(params.patient);
   const doctorFullName = `${params.doctor.surname} ${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
-  const doctorShortName = `${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
-  const apptDate = `${isoToDisplay(params.appointmentIsoDate)} о ${params.appointmentTime || "--:--"}`;
+  const doctorFullNameGenitive = getDoctorNameInGenitive(params.doctor);
   const dietStartDate = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 3));
+  const doctorShortName = `${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
 
-  return `Вітаю, ${patientName}! Це цифровий асистент лікаря ${doctorFullName}.\n\nВи записані на процедуру ${params.serviceName}, яка відбудеться ${apptDate}.\n\n${doctorShortName} доручив мені супроводжувати вашу підготовку. Ми разом подбаємо про те, щоб майбутня процедура пройшла максимально легко, комфортно та принесла найкращий результат для вашого здоров'я.\n\nНаш перший етап — бережна дієта, яку ми розпочнемо ${dietStartDate}.\n\nЧи готові ви отримати перелік того, що допоможе вам правильно підготуватися?`;
+  return `**${patientGreetingLine}**\n\nЦе цифровий асистент лікаря **${doctorFullNameGenitive}**.\n\nВи записані на процедуру: **${params.serviceName}**, яка відбудеться **${isoToDisplay(params.appointmentIsoDate)}** о **${params.appointmentTime || "--:--"}**.\n\n**${doctorShortName}** доручив мені супроводжувати вашу підготовку. Ми разом подбаємо про те, щоб майбутня процедура пройшла максимально легко, комфортно та принесла найкращий результат для вашого здоров'я.\n\nНаш перший етап — бережна дієта, яку ми розпочнемо **${dietStartDate}**.\n\nЧи готові ви отримати перелік того, що допоможе вам правильно підготуватися?`;
+}
+
+function buildDietInstructionMessage(params: { patient: Patient; appointmentIsoDate: string }): string {
+  const patientAddress = getPatientAddressInVocative(params.patient);
+  const dietStart = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 3));
+  const dayBefore = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 1));
+  const apptDay = formatUkrainianDayMonth(params.appointmentIsoDate);
+
+  return `Чудово! **${patientAddress}**, надсилаю докладний перелік для підготовки. Будь ласка, прочитайте його уважно.
+
+ЗАБОРОНЕНО (ЗА 3 ДНІ ДО ПРОЦЕДУРИ):
+Починаючи з **${dietStart}**, необхідно повністю виключити з раціону: БУРЯК, МАК, СЕЗАМ, ГОРІХИ ТА НАСІННЯ, а також будь-які продукти, які їх містять.
+
+ДЕНЬ ПЕРЕД ПРОЦЕДУРОЮ (**${dayBefore}**):
+
+Сніданок (що можна їсти):
+Картопляне пюре, йогурт без добавок, яйця, відварена курка.
+
+З 14:00 (ЩО НЕ МОЖНА РОБИТИ):
+
+КАТЕГОРИЧНО ЗАБОРОНЕНО: вживати зупи, овочі, фрукти та будь-які дрібні продукти (сезам, насіння тощо).
+
+Можна пити: чай, воду, компот (крім напоїв червоного кольору).
+
+ВАЖЛИВІ ЗАУВАЖЕННЯ ЩОДО ПРЕПАРАТІВ ТА РЕЖИМУ:
+
+Зранку в день процедури (**${apptDay}**): якщо вона проводиться з медичним сном (наркозом), НЕ МОЖНА приймати препарати від тиску (антигіпертензивні).
+
+Після процедури з медичним сном: людині, якій робили наркоз, КАТЕГОРИЧНО ЗАБОРОНЕНО сідати за кермо.
+
+НЕОБХІДНО ПРИДБАТИ ЗАЗДАЛЕГІДЬ:
+Вам потрібно купити в аптеці препарат ФОРТРАНС (4 пакети). Детальну схему прийому препарату я надішлю вам пізніше.
+
+**${patientAddress}**, чи все вам зрозуміло? Які саме продукти вам заборонено вживати у ці дні?`;
+}
+
+// ── Autonomous assistant trigger helpers ─────────────────────────────────────
+
+const WELCOME_SENT_LS_KEY = "proctocare_welcome_sent";
+const ASSISTANT_CHAT_LS_KEY = "proctocare_assistant_chat";
+const ASSISTANT_CHAT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+type AssistantSessionState = {
+  messages: ChatMessage[];
+  waitingForDietAck: boolean;
+  dietInstructionSent: boolean;
+  waitingForStep2Ack: boolean;
+  step2AckResult: "none" | "confirmed" | "question";
+  welcomeSent: boolean;
+};
+
+type AssistantSessionStoredState = AssistantSessionState & {
+  savedAt: number;
+};
+
+function getVisitIsoFromSessionKey(key: string): string {
+  const parts = key.split("__");
+  return parts[1] || "";
+}
+
+function normalizeAndPruneAssistantStore(store: Record<string, unknown>): { cleaned: Record<string, AssistantSessionStoredState>; changed: boolean } {
+  const cleaned: Record<string, AssistantSessionStoredState> = {};
+  const now = Date.now();
+  let changed = false;
+
+  for (const [key, value] of Object.entries(store)) {
+    if (!value || typeof value !== "object") {
+      changed = true;
+      continue;
+    }
+
+    const session = value as Partial<AssistantSessionStoredState>;
+    if (!Array.isArray(session.messages)) {
+      changed = true;
+      continue;
+    }
+
+    let savedAt = typeof session.savedAt === "number" ? session.savedAt : NaN;
+    if (!Number.isFinite(savedAt)) {
+      const visitIso = getVisitIsoFromSessionKey(key);
+      const visitTs = new Date(`${visitIso}T00:00:00`).getTime();
+      savedAt = Number.isFinite(visitTs) ? visitTs : now;
+      changed = true;
+    }
+
+    if (now - savedAt > ASSISTANT_CHAT_TTL_MS) {
+      changed = true;
+      continue;
+    }
+
+    cleaned[key] = {
+      messages: session.messages,
+      waitingForDietAck: !!session.waitingForDietAck,
+      dietInstructionSent: !!session.dietInstructionSent,
+      waitingForStep2Ack: !!session.waitingForStep2Ack,
+      step2AckResult: session.step2AckResult === "confirmed" || session.step2AckResult === "question" ? session.step2AckResult : "none",
+      welcomeSent: !!session.welcomeSent,
+      savedAt,
+    };
+  }
+
+  return { cleaned, changed };
+}
+
+function isViberPhoneValid(phone: string): boolean {
+  // Viber Ukraine: +380 followed by exactly 9 digits
+  return /^\+380\d{9}$/.test(phone.replace(/\s/g, ""));
+}
+
+function getWelcomeEntry(patientId: string, visitIso: string): { time: string; text: string } | null {
+  try {
+    const raw = localStorage.getItem(WELCOME_SENT_LS_KEY);
+    if (!raw) return null;
+    const store = JSON.parse(raw) as Record<string, { time: string; text: string } | boolean>;
+    const entry = store[`${patientId}__${visitIso}`];
+    if (!entry || typeof entry === "boolean") return null;
+    return entry as { time: string; text: string };
+  } catch {
+    return null;
+  }
+}
+
+function parseWelcomeText(text: string): { greeting: string; body: string } {
+  try {
+    const parsed = JSON.parse(text) as { greeting?: string; body?: string };
+    if (parsed.greeting && parsed.body) {
+      return {
+        greeting: parsed.greeting,
+        body: `**${parsed.greeting}**\n\n${parsed.body}`,
+      };
+    }
+  } catch {
+    // Backward compatibility for old plain-text entries.
+  }
+  return { greeting: "", body: text };
+}
+
+function isWelcomeSent(patientId: string, visitIso: string): boolean {
+  try {
+    const raw = localStorage.getItem(WELCOME_SENT_LS_KEY);
+    if (!raw) return false;
+    const store = JSON.parse(raw) as Record<string, unknown>;
+    return !!store[`${patientId}__${visitIso}`];
+  } catch {
+    return false;
+  }
+}
+
+function markWelcomeSent(patientId: string, visitIso: string, time: string, text: string): void {
+  try {
+    const raw = localStorage.getItem(WELCOME_SENT_LS_KEY);
+    const store = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    store[`${patientId}__${visitIso}`] = { time, text };
+    localStorage.setItem(WELCOME_SENT_LS_KEY, JSON.stringify(store));
+  } catch { /* ignore storage errors */ }
+}
+
+function getAssistantSession(patientId: string, visitIso: string): AssistantSessionState | null {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_CHAT_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const { cleaned, changed } = normalizeAndPruneAssistantStore(parsed);
+    if (changed) localStorage.setItem(ASSISTANT_CHAT_LS_KEY, JSON.stringify(cleaned));
+    const entry = cleaned[`${patientId}__${visitIso}`];
+    if (!entry || !Array.isArray(entry.messages)) return null;
+    return {
+      messages: entry.messages,
+      waitingForDietAck: !!entry.waitingForDietAck,
+      dietInstructionSent: !!entry.dietInstructionSent,
+      waitingForStep2Ack: !!entry.waitingForStep2Ack,
+      step2AckResult: entry.step2AckResult === "confirmed" || entry.step2AckResult === "question" ? entry.step2AckResult : "none",
+      welcomeSent: !!entry.welcomeSent,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveAssistantSession(patientId: string, visitIso: string, session: AssistantSessionState): void {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_CHAT_LS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const { cleaned } = normalizeAndPruneAssistantStore(parsed);
+    cleaned[`${patientId}__${visitIso}`] = {
+      ...session,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(ASSISTANT_CHAT_LS_KEY, JSON.stringify(cleaned));
+    window.dispatchEvent(new CustomEvent("proctocare-assistant-chat-updated"));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function renderHistory(history?: Array<{ value: string; timestamp: string; date: string }>) {
@@ -379,19 +631,81 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(patient.date || new Date().toISOString().slice(0, 10));
   const [rescheduleTime, setRescheduleTime] = useState(patient.time || "");
+  const restoredAssistantSession = getAssistantSession(patient.id, activeVisitIso);
 
   useEffect(() => {
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
     setRescheduleTime(patient.time || "");
   }, [patient.id, patient.date, patient.time]);
 
-  const [emulatedMessages, setEmulatedMessages] = useState<ChatMessage[]>([]);
-  const [waitingForDietAck, setWaitingForDietAck] = useState(false);
+  const [emulatedMessages, setEmulatedMessages] = useState<ChatMessage[]>(() => {
+    if (restoredAssistantSession?.messages?.length) {
+      return restoredAssistantSession.messages;
+    }
+    const entry = getWelcomeEntry(patient.id, activeVisitIso);
+    if (!entry) return [];
+    const doctor = getDoctorProfile();
+    const serviceName = patient.procedure || "процедуру";
+    const text = buildEmulationGreetingMessage({
+      patient,
+      doctor,
+      serviceName,
+      appointmentIsoDate: activeVisitIso,
+      appointmentTime: patient.time || "",
+    });
+    return [{ sender: "ai", text, time: entry.time, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }];
+  });
+  const [waitingForDietAck, setWaitingForDietAck] = useState(restoredAssistantSession?.waitingForDietAck ?? false);
+  const [dietInstructionSent, setDietInstructionSent] = useState(restoredAssistantSession?.dietInstructionSent ?? false);
+  const [waitingForStep2Ack, setWaitingForStep2Ack] = useState(restoredAssistantSession?.waitingForStep2Ack ?? false);
+  const [step2AckResult, setStep2AckResult] = useState<"none" | "confirmed" | "question">(restoredAssistantSession?.step2AckResult ?? "none");
+  const [welcomeSent, setWelcomeSent] = useState(() => restoredAssistantSession?.welcomeSent ?? isWelcomeSent(patient.id, activeVisitIso));
 
   useEffect(() => {
-    setEmulatedMessages([]);
+    const restored = getAssistantSession(patient.id, activeVisitIso);
+    if (restored) {
+      setEmulatedMessages(restored.messages);
+      setWaitingForDietAck(restored.waitingForDietAck);
+      setDietInstructionSent(restored.dietInstructionSent);
+      setWaitingForStep2Ack(restored.waitingForStep2Ack);
+      setStep2AckResult(restored.step2AckResult);
+      setWelcomeSent(restored.welcomeSent);
+      return;
+    }
+
+    const entry = getWelcomeEntry(patient.id, activeVisitIso);
+    if (entry) {
+      const doctor = getDoctorProfile();
+      const serviceName = patient.procedure || "процедуру";
+      const text = buildEmulationGreetingMessage({
+        patient,
+        doctor,
+        serviceName,
+        appointmentIsoDate: activeVisitIso,
+        appointmentTime: patient.time || "",
+      });
+      setEmulatedMessages([{ sender: "ai", text, time: entry.time, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }]);
+      setWelcomeSent(true);
+    } else {
+      setEmulatedMessages([]);
+      setWelcomeSent(false);
+    }
     setWaitingForDietAck(false);
+    setDietInstructionSent(false);
+    setWaitingForStep2Ack(false);
+    setStep2AckResult("none");
   }, [patient.id, activeVisitIso]);
+
+  useEffect(() => {
+    saveAssistantSession(patient.id, activeVisitIso, {
+      messages: emulatedMessages,
+      waitingForDietAck,
+      dietInstructionSent,
+      waitingForStep2Ack,
+      step2AckResult,
+      welcomeSent,
+    });
+  }, [patient.id, activeVisitIso, emulatedMessages, waitingForDietAck, dietInstructionSent, waitingForStep2Ack, step2AckResult, welcomeSent]);
 
   const baseChat = getMockChat(patient);
   const chat = [...baseChat, ...emulatedMessages];
@@ -447,21 +761,111 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     return isoToDisplay(nearestArchivedIso);
   }, [mergedProtocolHistory, mergedProcedureHistory, localFiles, activeVisitIso]);
 
-  const handleEmulateGreeting = () => {
-    const doctor = getDoctorProfile();
-    const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "процедуру");
-    const messageText = buildEmulationGreetingMessage({
-      patient,
-      doctor,
-      serviceName,
-      appointmentIsoDate: activeVisitIso,
-      appointmentTime: patient.time || "",
-    });
-    const messageTime = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+  // ── Autonomous assistant readiness ──────────────────────────────────────────
+  const allFieldsReady = useMemo(() => {
+    const hasName = localFullName.trim().split(/\s+/).filter(Boolean).length >= 2;
+    const hasPhone = isViberPhoneValid(fields.phone);
+    const hasService = localServices.length > 0;
+    const hasDateTime = !!(patient.date && patient.time);
+    return hasName && hasPhone && hasService && hasDateTime;
+  }, [localFullName, fields.phone, localServices, patient.date, patient.time]);
 
-    setEmulatedMessages((prev) => [...prev, { sender: "doctor", text: messageText, time: messageTime }]);
-    setWaitingForDietAck(true);
-    toast.success("Емуляцію вітання додано в чат");
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (localFullName.trim().split(/\s+/).filter(Boolean).length < 2) missing.push("ПІБ");
+    if (!isViberPhoneValid(fields.phone)) missing.push("Тел");
+    if (localServices.length === 0) missing.push("Послуга");
+    if (!patient.date || !patient.time) missing.push("Дата/Час");
+    return missing;
+  }, [localFullName, fields.phone, localServices, patient.date, patient.time]);
+
+  // Auto-send welcome message when all 4 fields are filled for the first time
+  useEffect(() => {
+    if (!allFieldsReady || welcomeSent) return;
+    const timer = setTimeout(() => {
+      const doctor = getDoctorProfile();
+      const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "процедуру");
+      const messageText = buildEmulationGreetingMessage({
+        patient,
+        doctor,
+        serviceName,
+        appointmentIsoDate: activeVisitIso,
+        appointmentTime: patient.time || "",
+      });
+      const _ts = new Date();
+      const _dd = String(_ts.getDate()).padStart(2, "0");
+      const _mm = String(_ts.getMonth() + 1).padStart(2, "0");
+      const _hhmm = _ts.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+      const messageTime = `${_dd}.${_mm} | ${_hhmm}`;
+      setEmulatedMessages((prev) => [...prev, { sender: "ai", text: messageText, time: messageTime, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }]);
+      setWaitingForDietAck(true);
+      setDietInstructionSent(false);
+      setWaitingForStep2Ack(false);
+      setStep2AckResult("none");
+      markWelcomeSent(patient.id, activeVisitIso, messageTime, messageText);
+      setWelcomeSent(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFieldsReady, welcomeSent]);
+
+  const handleQuickReply = (answer: "yes" | "no", context: "greeting" | "diet" = "greeting") => {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+    const replyTime = `${dd}.${mm} | ${hhmm}`;
+    const replyText = context === "diet"
+      ? (answer === "yes" ? "Так, все зрозуміло" : "Є запитання")
+      : (answer === "yes" ? "Так" : "Ні");
+    // Remove quickReply chips from the greeting message, add patient reply
+    setEmulatedMessages((prev) =>
+      prev
+        .map((m) => m.quickReply ? { ...m, quickReply: undefined } : m)
+        .concat({ sender: "patient", text: replyText, time: replyTime })
+    );
+
+    if (context === "greeting" && answer === "yes") {
+      const dietText = buildDietInstructionMessage({ patient, appointmentIsoDate: activeVisitIso });
+      setEmulatedMessages((prev) => [...prev, {
+        sender: "ai",
+        text: dietText,
+        time: replyTime,
+        quickReply: { yes: "Так, все зрозуміло", no: "Є запитання", context: "diet" },
+      }]);
+      setDietInstructionSent(true);
+      setWaitingForStep2Ack(true);
+      setWaitingForDietAck(false);
+      setStep2AckResult("none");
+      return;
+    }
+
+    if (context === "greeting" && answer === "no") {
+      setDietInstructionSent(false);
+      setWaitingForStep2Ack(false);
+      setStep2AckResult("none");
+      setWaitingForDietAck(false);
+      return;
+    }
+
+    if (context === "diet" && answer === "no") {
+      setEmulatedMessages((prev) => [...prev, {
+        sender: "ai",
+        text: "Передав запит лікарю. Очікуйте відповідь у цьому чаті.",
+        time: replyTime,
+      }]);
+      setStep2AckResult("question");
+    }
+
+    if (context === "diet" && answer === "yes") {
+      setStep2AckResult("confirmed");
+    }
+
+    if (context === "diet") {
+      setWaitingForStep2Ack(false);
+    }
+
+    setWaitingForDietAck(false);
   };
 
   // Derive lastVisit only from explicit historical visit records (seeded/completed visits),
@@ -845,18 +1249,57 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                         </div>
                       </div>
                     )}
-                    <button
-                      onClick={handleEmulateGreeting}
-                      className="mx-4 mt-2 inline-flex items-center gap-1.5 self-start text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-lg px-2.5 py-1.5 transition-colors"
-                    >
-                      <ClipboardList size={13} />
-                      Тест: Емуляція вітання
-                    </button>
-                    <PrepStepper preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
-                    <SidebarTracker preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
+                    <div className="mx-4 mt-2">
+                      {step2AckResult === "confirmed" ? (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
+                          <Check size={12} className="shrink-0" />
+                          <span>Інструкцію щодо харчування підтверджено пацієнтом</span>
+                        </div>
+                      ) : step2AckResult === "question" ? (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
+                          <AlertTriangle size={12} className="shrink-0" />
+                          <span>Пацієнт має запитання щодо дієти. Лікаря повідомлено</span>
+                        </div>
+                      ) : waitingForStep2Ack && dietInstructionSent ? (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1">
+                          <Clock size={12} className="shrink-0" />
+                          <span>Інструкцію щодо харчування надіслано. Очікую відповідь пацієнта</span>
+                        </div>
+                      ) : welcomeSent ? (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
+                          <Check size={12} className="shrink-0" />
+                          <span>Вітальне повідомлення надіслано</span>
+                        </div>
+                      ) : allFieldsReady ? (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1 animate-pulse">
+                          <Clock size={12} className="shrink-0" />
+                          <span>Всі дані готові. Надсилаю вітальне повідомлення...</span>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                          <Clock size={12} className="shrink-0" />
+                          <span>Чекаю на заповнення: {missingFields.join(", ")}</span>
+                        </div>
+                      )}
+                    </div>
+                    <PrepStepper
+                      preparation={preparation}
+                      status={patient.status}
+                      waitingForDietAck={waitingForDietAck}
+                      dietInstructionSent={dietInstructionSent}
+                      waitingForStep2Ack={waitingForStep2Ack}
+                      step2AckResult={step2AckResult}
+                    />
+                    <SidebarTracker
+                      preparation={preparation}
+                      status={patient.status}
+                      waitingForDietAck={waitingForDietAck}
+                      dietInstructionSent={dietInstructionSent}
+                      waitingForStep2Ack={waitingForStep2Ack}
+                      step2AckResult={step2AckResult}
+                    />
                   </ContentBlock>
-                  <AssistantToggle />
-                  <ChatPane chat={chat} unanswered={unanswered} />
+                  <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
                   <ChatInput />
                 </div>
               ) : null}
@@ -930,17 +1373,56 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     </div>
                   </div>
                 )}
-                <button
-                  onClick={handleEmulateGreeting}
-                  className="mx-4 mt-2 inline-flex items-center gap-1.5 self-start text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-lg px-2.5 py-1.5 transition-colors"
-                >
-                  <ClipboardList size={13} />
-                  Тест: Емуляція вітання
-                </button>
-                <PrepStepper preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
-                <SidebarTracker preparation={preparation} status={patient.status} waitingForDietAck={waitingForDietAck} />
-                <AssistantToggle />
-                <ChatPane chat={chat} unanswered={unanswered} />
+                <div className="mx-4 mt-2">
+                  {step2AckResult === "confirmed" ? (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
+                      <Check size={12} className="shrink-0" />
+                      <span>Інструкцію щодо харчування підтверджено пацієнтом</span>
+                    </div>
+                  ) : step2AckResult === "question" ? (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
+                      <AlertTriangle size={12} className="shrink-0" />
+                      <span>Пацієнт має запитання щодо дієти. Лікаря повідомлено</span>
+                    </div>
+                  ) : waitingForStep2Ack && dietInstructionSent ? (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1">
+                      <Clock size={12} className="shrink-0" />
+                      <span>Інструкцію щодо харчування надіслано. Очікую відповідь пацієнта</span>
+                    </div>
+                  ) : welcomeSent ? (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1">
+                      <Check size={12} className="shrink-0" />
+                      <span>Вітальне повідомлення надіслано</span>
+                    </div>
+                  ) : allFieldsReady ? (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-md px-2 py-1 animate-pulse">
+                      <Clock size={12} className="shrink-0" />
+                      <span>Всі дані готові. Надсилаю вітальне повідомлення...</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                      <Clock size={12} className="shrink-0" />
+                      <span>Чекаю на заповнення: {missingFields.join(", ")}</span>
+                    </div>
+                  )}
+                </div>
+                <PrepStepper
+                  preparation={preparation}
+                  status={patient.status}
+                  waitingForDietAck={waitingForDietAck}
+                  dietInstructionSent={dietInstructionSent}
+                  waitingForStep2Ack={waitingForStep2Ack}
+                  step2AckResult={step2AckResult}
+                />
+                <SidebarTracker
+                  preparation={preparation}
+                  status={patient.status}
+                  waitingForDietAck={waitingForDietAck}
+                  dietInstructionSent={dietInstructionSent}
+                  waitingForStep2Ack={waitingForStep2Ack}
+                  step2AckResult={step2AckResult}
+                />
+                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
                 <ChatInput />
               </ContentBlock>
             </div>
@@ -1293,16 +1775,23 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
 }
 
 // ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
-function SidebarTracker({ preparation, status, waitingForDietAck = false }: {
+function SidebarTracker({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
   preparation: ReturnType<typeof getPreparationProgress>;
   status: PatientStatus;
   waitingForDietAck?: boolean;
+  dietInstructionSent?: boolean;
+  waitingForStep2Ack?: boolean;
+  step2AckResult?: "none" | "confirmed" | "question";
 }) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
 
   type StepState = "done" | "inprogress" | "issue" | "pending" | "waiting";
   const getState = (step: { done: boolean }, i: number): StepState => {
+    if (dietInstructionSent && i === 0) return "done";
+    if (step2AckResult === "confirmed" && i === 1) return "done";
+    if (step2AckResult === "question" && i === 1) return "issue";
+    if (waitingForStep2Ack && i === 1) return "inprogress";
     if (waitingForDietAck && i === 0) return "waiting";
     if (step.done) return "done";
     if (i === firstPendingIdx) return isRisk ? "issue" : "inprogress";
@@ -1315,6 +1804,9 @@ function SidebarTracker({ preparation, status, waitingForDietAck = false }: {
       <div className="space-y-1">
         {preparation.steps.map((step, i) => {
           const state = getState(step, i);
+          const displayLabel = waitingForStep2Ack && i === 1
+            ? "Прийом препарату (очікує старту)"
+            : step.label;
           return (
             <div
               key={i}
@@ -1348,7 +1840,7 @@ function SidebarTracker({ preparation, status, waitingForDietAck = false }: {
                 state === "issue"      && "text-red-600 font-bold",
                 state === "pending"    && "text-muted-foreground"
               )}>
-                {step.label}
+                {displayLabel}
               </span>
             </div>
           );
@@ -1452,7 +1944,14 @@ function PreparationTracker({ preparation }: { preparation: ReturnType<typeof ge
 }
 
 // ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
-function PrepStepper({ preparation, status, waitingForDietAck = false }: { preparation: ReturnType<typeof getPreparationProgress>; status: PatientStatus; waitingForDietAck?: boolean }) {
+function PrepStepper({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
+  preparation: ReturnType<typeof getPreparationProgress>;
+  status: PatientStatus;
+  waitingForDietAck?: boolean;
+  dietInstructionSent?: boolean;
+  waitingForStep2Ack?: boolean;
+  step2AckResult?: "none" | "confirmed" | "question";
+}) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
   const isRisk = status === "risk";
 
@@ -1460,19 +1959,24 @@ function PrepStepper({ preparation, status, waitingForDietAck = false }: { prepa
     <div className="px-4 pt-3 pb-2">
       <div className="flex items-end gap-1">
         {preparation.steps.map((step, i) => {
-          const isDone = step.done;
+          const isDone = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === 1) || step.done;
           const isWaiting = waitingForDietAck && i === 0;
-          const isActive = !step.done && i === firstPendingIdx;
-          const isIssue = isActive && isRisk;
+          const isStep2Prepared = waitingForStep2Ack && i === 1;
+          const isStep2Issue = step2AckResult === "question" && i === 1;
+          const isActive = !isDone && !isStep2Prepared && !isStep2Issue && i === firstPendingIdx;
+          const isIssue = isStep2Issue || (isActive && isRisk);
+          const displayLabel = waitingForStep2Ack && i === 1
+            ? "Прийом препарату (очікує старту)"
+            : step.label;
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={step.label}>
+            <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={displayLabel}>
               <div className={cn(
                 "w-full h-1 rounded-full transition-colors",
-                isDone ? "bg-status-ready" : isWaiting ? "bg-orange-400 animate-pulse" : isIssue ? "bg-red-500" : isActive ? "bg-yellow-400" : "bg-muted"
+                isDone ? "bg-status-ready" : isWaiting ? "bg-orange-400 animate-pulse" : isIssue ? "bg-red-500" : (isStep2Prepared || isActive) ? "bg-yellow-400" : "bg-muted"
               )} />
               <span className={cn(
                 "text-[9px] font-bold leading-none",
-                isDone ? "text-status-ready" : isWaiting ? "text-orange-700" : isIssue ? "text-red-500" : isActive ? "text-yellow-600" : "text-muted-foreground/40"
+                isDone ? "text-status-ready" : isWaiting ? "text-orange-700" : isIssue ? "text-red-500" : (isStep2Prepared || isActive) ? "text-yellow-600" : "text-muted-foreground/40"
               )}>
                 {i + 1}
               </span>
@@ -2407,9 +2911,26 @@ function ServicesPane({ services, onServicesChange, showFloatingEdit = true }: {
 }
 
 // ── Chat Pane — Messenger Premium style ──
-function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatMessage[] }) {
+function renderBoldText(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
-    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 bg-[hsl(220,14%,90%)]">
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**")
+          ? <strong key={i}>{part.slice(2, -2)}</strong>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
+function ChatPane({ chat, unanswered, onQuickReply }: {
+  chat: ChatMessage[];
+  unanswered: ChatMessage[];
+  onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet") => void;
+}) {
+  return (
+    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[linear-gradient(180deg,#f7fcff_0%,#ecf8ff_100%)]">
       {/* Pinned unanswered questions */}
       {unanswered.map((msg, i) => (
         <div
@@ -2419,7 +2940,7 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={14} className="text-status-risk shrink-0" />
             <span className="text-xs font-bold text-status-risk">
-              Питання без відповіді · 24.03 | {msg.time}
+              Питання без відповіді · {msg.time}
             </span>
           </div>
           <p className="text-foreground font-bold">{msg.text}</p>
@@ -2430,30 +2951,44 @@ function ChatPane({ chat, unanswered }: { chat: ChatMessage[]; unanswered: ChatM
       {chat.filter((m) => !m.unanswered).map((msg, i) => {
         const isPatient = msg.sender === "patient";
         const isDoctor = msg.sender === "doctor";
-        const isOutgoing = isDoctor;
         return (
-          <div
-            key={i}
-            className={cn("flex", isPatient || isOutgoing ? "justify-end" : "justify-start")}
-          >
+          <div key={i} className={cn("flex flex-col", isPatient ? "items-end" : "items-start")}>
             <div
               className={cn(
-                "rounded-xl px-4 py-2.5 text-sm leading-relaxed max-w-[85%] shadow-[0_2px_6px_rgba(0,0,0,0.06)] whitespace-pre-wrap",
+                "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
                 isPatient
-                  ? "bg-white border border-border/50 rounded-br-sm"
+                  ? "bg-[hsl(257,85%,95%)] border border-violet-200 rounded-br-sm"
                   : isDoctor
-                    ? "bg-sky-600 text-white rounded-br-sm"
-                    : "bg-[hsl(204,100%,94%)] rounded-bl-sm"
+                    ? "bg-emerald-50 border border-emerald-200 rounded-bl-sm"
+                    : "bg-white border border-sky-100 rounded-bl-sm"
               )}
             >
               <p className={cn(
                 "text-[11px] font-bold mb-0.5",
-                isDoctor ? "text-white/90" : "text-muted-foreground"
+                isPatient ? "text-violet-700" : isDoctor ? "text-emerald-700" : "text-sky-700"
               )}>
-                {isPatient ? "Пацієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
+                {isPatient ? "Клієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
               </p>
-              <p className={cn(isDoctor ? "text-white" : "text-foreground")}>{msg.text}</p>
+              <p className="text-foreground">
+                {renderBoldText(msg.text)}
+              </p>
             </div>
+            {msg.quickReply && onQuickReply && (
+              <div className="flex gap-2 mt-1.5">
+                <button
+                  onClick={() => onQuickReply("yes", msg.quickReply?.context)}
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-sky-600 text-white hover:bg-sky-700 active:scale-[0.94] transition-all shadow-sm"
+                >
+                  {msg.quickReply.yes}
+                </button>
+                <button
+                  onClick={() => onQuickReply("no", msg.quickReply?.context)}
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white border border-slate-200 text-foreground hover:bg-slate-50 active:scale-[0.94] transition-all shadow-sm"
+                >
+                  {msg.quickReply.no}
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -2484,34 +3019,4 @@ function ChatInput() {
 }
 
 // ── Assistant Toggle — moved from NewEntryForm ──
-function AssistantToggle() {
-  const [enabled, setEnabled] = useState(false);
 
-  return (
-    <div className="mx-4 mt-3 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/15">
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Headphones size={16} className="text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[12px] font-semibold text-foreground">Підключити асистента</p>
-          <p className="text-[10px] text-muted-foreground">Асистент надішле інструкції у Viber</p>
-        </div>
-      </div>
-      <button
-        onClick={() => setEnabled(!enabled)}
-        className={cn(
-          "relative w-10 h-[22px] rounded-full transition-all duration-200 shrink-0",
-          enabled ? "bg-primary" : "bg-border"
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200",
-            enabled ? "left-[22px]" : "left-[3px]"
-          )}
-        />
-      </button>
-    </div>
-  );
-}

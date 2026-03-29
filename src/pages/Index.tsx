@@ -3,7 +3,6 @@ import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
-import { AIReplyModal, type AIAlertDetail } from "@/components/AIReplyModal";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
 import { PatientDetailView } from "@/components/PatientDetailView";
 import { CalendarView } from "@/components/CalendarView";
@@ -15,8 +14,6 @@ import { cn } from "@/lib/utils";
 const today = new Date();
 const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
-const nextWeek = new Date();
-nextWeek.setDate(nextWeek.getDate() + 5);
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -31,6 +28,185 @@ const _daysToSunday = (7 - _sunday.getDay()) % 7 || 7;
 _sunday.setDate(_sunday.getDate() + _daysToSunday);
 const sundayDateStr = localDateStr(_sunday);
 
+const ASSISTANT_CHAT_LS_KEY = "proctocare_assistant_chat";
+const TEMP_CHAT_LOGS_LS_KEY = "proctocare_temp_chat_logs";
+const ASSISTANT_CHAT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+type AssistantLogMessage = {
+  sender: "ai" | "patient" | "doctor";
+  text: string;
+  time: string;
+};
+
+type AssistantStoredSession = {
+  messages: AssistantLogMessage[];
+  waitingForDietAck: boolean;
+  dietInstructionSent: boolean;
+  waitingForStep2Ack: boolean;
+  step2AckResult: "none" | "confirmed" | "question";
+  welcomeSent: boolean;
+  savedAt?: number;
+};
+
+type DashboardAssistantAlert = {
+  id: string;
+  patientId: string;
+  visitIso: string;
+  patientName: string;
+  patientPhone?: string;
+  question: string;
+  appointmentDate: Date;
+  appointmentTime: string;
+  chatPreview: AssistantLogMessage[];
+  sos: boolean;
+};
+
+function getVisitIsoFromSessionKey(key: string): string {
+  const parts = key.split("__");
+  return parts[1] || "";
+}
+
+function normalizeAndPruneAssistantStore(store: Record<string, unknown>): { cleaned: Record<string, AssistantStoredSession>; changed: boolean } {
+  const cleaned: Record<string, AssistantStoredSession> = {};
+  const now = Date.now();
+  let changed = false;
+
+  for (const [key, value] of Object.entries(store)) {
+    if (!value || typeof value !== "object") {
+      changed = true;
+      continue;
+    }
+
+    const session = value as Partial<AssistantStoredSession>;
+    if (!Array.isArray(session.messages)) {
+      changed = true;
+      continue;
+    }
+
+    let savedAt = typeof session.savedAt === "number" ? session.savedAt : NaN;
+    if (!Number.isFinite(savedAt)) {
+      const visitIso = getVisitIsoFromSessionKey(key);
+      const visitTs = new Date(`${visitIso}T00:00:00`).getTime();
+      savedAt = Number.isFinite(visitTs) ? visitTs : now;
+      changed = true;
+    }
+
+    if (now - savedAt > ASSISTANT_CHAT_TTL_MS) {
+      changed = true;
+      continue;
+    }
+
+    cleaned[key] = {
+      messages: session.messages as AssistantLogMessage[],
+      waitingForDietAck: !!session.waitingForDietAck,
+      dietInstructionSent: !!session.dietInstructionSent,
+      waitingForStep2Ack: !!session.waitingForStep2Ack,
+      step2AckResult: session.step2AckResult === "confirmed" || session.step2AckResult === "question" ? session.step2AckResult : "none",
+      welcomeSent: !!session.welcomeSent,
+      savedAt,
+    };
+  }
+
+  return { cleaned, changed };
+}
+
+function readAssistantStoreWithCleanup(): Record<string, AssistantStoredSession> {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_CHAT_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const { cleaned, changed } = normalizeAndPruneAssistantStore(parsed);
+    if (changed) localStorage.setItem(ASSISTANT_CHAT_LS_KEY, JSON.stringify(cleaned));
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function cleanupTemporaryChatLogs(): void {
+  try {
+    const raw = localStorage.getItem(TEMP_CHAT_LOGS_LS_KEY);
+    if (!raw) return;
+    const now = Date.now();
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (Array.isArray(parsed)) {
+      const cleaned = parsed.filter((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const rec = entry as { savedAt?: number; timestamp?: number; createdAt?: number };
+        const ts = rec.savedAt || rec.timestamp || rec.createdAt || now;
+        return now - ts <= ASSISTANT_CHAT_TTL_MS;
+      });
+      localStorage.setItem(TEMP_CHAT_LOGS_LS_KEY, JSON.stringify(cleaned));
+      return;
+    }
+
+    if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, { savedAt?: number; timestamp?: number; createdAt?: number }>;
+      const cleanedObj: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        const ts = v?.savedAt || v?.timestamp || v?.createdAt || now;
+        if (now - ts <= ASSISTANT_CHAT_TTL_MS) cleanedObj[k] = v;
+      }
+      localStorage.setItem(TEMP_CHAT_LOGS_LS_KEY, JSON.stringify(cleanedObj));
+    }
+  } catch {
+    // ignore malformed temporary logs
+  }
+}
+
+function buildDashboardAssistantAlerts(patients: Patient[]): DashboardAssistantAlert[] {
+  const sessions = readAssistantStoreWithCleanup();
+  cleanupTemporaryChatLogs();
+  const byId = new Map(patients.map((p) => [p.id, p]));
+
+  const alerts: DashboardAssistantAlert[] = [];
+  for (const [key, session] of Object.entries(sessions)) {
+    if (session.step2AckResult !== "question") continue;
+
+    const [patientId, visitIso] = key.split("__");
+    if (!patientId || !visitIso) continue;
+
+    const patient = byId.get(patientId);
+    const lastPatientMessage = [...session.messages].reverse().find((m) => m.sender === "patient");
+    const appointmentDate = new Date(`${visitIso}T00:00:00`);
+    const isValidDate = !Number.isNaN(appointmentDate.getTime());
+
+    alerts.push({
+      id: key,
+      patientId,
+      visitIso,
+      patientName: patient ? `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}` : `Пацієнт ${patientId}`,
+      patientPhone: patient?.phone,
+      question: (lastPatientMessage?.text || "Пацієнт потребує консультації щодо дієти").trim(),
+      appointmentDate: isValidDate ? appointmentDate : new Date(),
+      appointmentTime: patient?.time || "--:--",
+      chatPreview: session.messages.slice(-3),
+      sos: true,
+    });
+  }
+
+  return alerts.sort((a, b) => {
+    const [hA, mA] = (a.appointmentTime || "00:00").split(":").map((x) => parseInt(x || "0", 10));
+    const [hB, mB] = (b.appointmentTime || "00:00").split(":").map((x) => parseInt(x || "0", 10));
+    const tA = a.appointmentDate.getTime() + ((hA * 60 + mA) * 60000);
+    const tB = b.appointmentDate.getTime() + ((hB * 60 + mB) * 60000);
+    return tA - tB;
+  });
+}
+
+function getDoctorPhoneForQuickReply(): string {
+  try {
+    const raw = localStorage.getItem("proctocare_doctor_profile");
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as { phone?: string; phoneNumber?: string; contactPhone?: string };
+    const phone = (parsed.phone || parsed.phoneNumber || parsed.contactPhone || "").trim();
+    return phone;
+  } catch {
+    return "";
+  }
+}
+
 const MOCK_PATIENTS: Patient[] = [
   { id: "1", name: "Коваленко Олена", patronymic: "Василівна", time: "08:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Підготовка завершена, результати аналізів в нормі" },
   { id: "2", name: "Мельник Ігор", patronymic: "Петрович", time: "09:00", procedure: "Ректоскопія", status: "progress", aiSummary: "Очищення розпочато, чекаємо підтвердження" },
@@ -42,45 +218,6 @@ const MOCK_PATIENTS: Patient[] = [
 ];
 
 const MOCK_TOMORROW: Patient[] = [];
-
-const MOCK_AI_ALERTS: AIAlertDetail[] = [
-  {
-    id: "a1",
-    patientName: "Шевченко Тарас",
-    question: "Чи можна приймати Фортранс з діабетом 2 типу?",
-    timestamp: "Сьогодні, 10:20",
-    appointmentDate: today,
-    appointmentTime: "11:00",
-    chatHistory: [
-      { sender: "ai", text: "Доброго дня! Починайте підготовку за інструкцією: дієта без клітковини за 3 дні.", time: "09:00" },
-      { sender: "patient", text: "Дякую. А у мене діабет 2 типу — мені точно можна Фортранс?", time: "10:18" },
-    ],
-  },
-  {
-    id: "a2",
-    patientName: "Лисенко Андрій",
-    question: "Пацієнт запитує про альтернативу препарату",
-    timestamp: "Сьогодні, 11:05",
-    appointmentDate: tomorrow,
-    appointmentTime: "17:00",
-    chatHistory: [
-      { sender: "ai", text: "Вам призначено Мовіпреп для підготовки. Почніть прийом о 18:00.", time: "10:30" },
-      { sender: "patient", text: "Я не переношу цей препарат — мене від нього нудить. Є щось інше?", time: "11:02" },
-    ],
-  },
-  {
-    id: "a3",
-    patientName: "Іваненко Петро",
-    question: "Запитує про дієту перед процедурою",
-    timestamp: "Вчора, 18:30",
-    appointmentDate: nextWeek,
-    appointmentTime: "09:00",
-    chatHistory: [
-      { sender: "ai", text: "Доброго дня! Ваша процедура через тиждень.", time: "18:00" },
-      { sender: "patient", text: "Що можна їсти за 5 днів до процедури?", time: "18:28" },
-    ],
-  },
-];
 
 const statusToFilter: Record<PatientStatus, FilterType> = {
   planning: "attention",
@@ -189,6 +326,64 @@ function rebuildPetushkovRecord(patients: Patient[]): Patient[] {
   return [...others, merged];
 }
 
+const ASSISTANT_NOTE_PATTERNS = [
+  /пацієнт\s+потребує\s+консультац(і|и)ї\s+щодо\s+дієт(и|і)/i,
+  /пацієнт\s+потребує\s+консультац(і|и)ї\s+по\s+дієт(і|е)/i,
+];
+
+function stripAssistantMarkersFromText(value: string | undefined): string | undefined {
+  if (!value || !value.trim()) return value;
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => !ASSISTANT_NOTE_PATTERNS.some((rx) => rx.test(line.trim())));
+
+  const compact = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return compact || "";
+}
+
+function sanitizePatientAssistantNotes(patient: Patient): Patient {
+  let changed = false;
+  const next: Patient = { ...patient };
+
+  const cleanedNotes = stripAssistantMarkersFromText(patient.notes);
+  if (cleanedNotes !== patient.notes) {
+    next.notes = cleanedNotes;
+    changed = true;
+  }
+
+  const cleanedPrimaryNotes = stripAssistantMarkersFromText(patient.primaryNotes);
+  if (cleanedPrimaryNotes !== patient.primaryNotes) {
+    next.primaryNotes = cleanedPrimaryNotes;
+    changed = true;
+  }
+
+  if (Array.isArray(patient.notesHistory) && patient.notesHistory.length > 0) {
+    const cleanedHistory = patient.notesHistory
+      .map((entry) => ({ ...entry, value: stripAssistantMarkersFromText(entry.value) || "" }))
+      .filter((entry) => entry.value.trim());
+
+    const isSameLength = cleanedHistory.length === patient.notesHistory.length;
+    const isSameValues = isSameLength && cleanedHistory.every((entry, idx) => entry.value === patient.notesHistory?.[idx]?.value);
+    if (!isSameValues) {
+      next.notesHistory = cleanedHistory;
+      changed = true;
+    }
+  }
+
+  return changed ? next : patient;
+}
+
+function sanitizePatientsAssistantNotes(patients: Patient[]): Patient[] {
+  let changed = false;
+  const next = patients.map((patient) => {
+    const cleaned = sanitizePatientAssistantNotes(patient);
+    if (cleaned !== patient) changed = true;
+    return cleaned;
+  });
+  return changed ? next : patients;
+}
+
 export default function Index() {
   const [view, setView] = useState<"operational" | "calendar">("operational");
   const [filter, setFilter] = useState<FilterType>("all");
@@ -213,7 +408,7 @@ export default function Index() {
         const parsed = JSON.parse(saved);
         // Clean up legacy tomorrow mock patients just in case they were cached
         const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
-        return rebuildPetushkovRecord(cleaned);
+        return rebuildPetushkovRecord(sanitizePatientsAssistantNotes(cleaned));
       } catch (e) {
         console.error("Failed to parse saved patients", e);
       }
@@ -225,14 +420,54 @@ export default function Index() {
   });
 
   useEffect(() => {
+    setPatients((prev) => sanitizePatientsAssistantNotes(prev));
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem("proctocare_all_patients", JSON.stringify(patients));
   }, [patients]);
 
-  const [replyAlert, setReplyAlert] = useState<AIAlertDetail | null>(null);
+  const [assistantAlerts, setAssistantAlerts] = useState<DashboardAssistantAlert[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
   const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const doctorPhoneForQuickReply = useMemo(() => getDoctorPhoneForQuickReply(), []);
+
+  const refreshAssistantAlerts = useCallback(() => {
+    setAssistantAlerts(buildDashboardAssistantAlerts(patients));
+  }, [patients]);
+
+  useEffect(() => {
+    refreshAssistantAlerts();
+  }, [refreshAssistantAlerts]);
+
+  useEffect(() => {
+    const onAssistantStorageUpdated = () => refreshAssistantAlerts();
+    window.addEventListener("proctocare-assistant-chat-updated", onAssistantStorageUpdated);
+    return () => window.removeEventListener("proctocare-assistant-chat-updated", onAssistantStorageUpdated);
+  }, [refreshAssistantAlerts]);
+
+  useEffect(() => {
+    if (!selectedPatient) return;
+    const actual = patients.find((p) => p.id === selectedPatient.id);
+    if (!actual) return;
+
+    const historyA = JSON.stringify(selectedPatient.notesHistory || []);
+    const historyB = JSON.stringify(actual.notesHistory || []);
+    if (
+      selectedPatient.notes !== actual.notes ||
+      selectedPatient.primaryNotes !== actual.primaryNotes ||
+      historyA !== historyB
+    ) {
+      setSelectedPatient((prev) => prev ? {
+        ...prev,
+        notes: actual.notes,
+        primaryNotes: actual.primaryNotes,
+        notesHistory: actual.notesHistory,
+      } : prev);
+    }
+  }, [patients, selectedPatient]);
 
   const todayPatients = useMemo(() => patients.filter(p => !p.date || p.date === todayDateStr), [patients]);
   const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowDateStr), [patients]);
@@ -305,28 +540,47 @@ export default function Index() {
     setTimeout(() => setNewlyCreatedId(null), 4500);
   }, [logTraining]);
 
-  const handleAIReply = useCallback((alertId: string) => {
-    const alert = MOCK_AI_ALERTS.find((a) => a.id === alertId);
-    if (!alert) return;
+  const handleSendDashboardReply = useCallback((alertId: string, message: string) => {
+    const text = message.trim();
+    if (!text) return;
+
+    const sessions = readAssistantStoreWithCleanup();
+    const session = sessions[alertId];
+    if (!session) return;
+
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+    const messageTime = `${dd}.${mm} | ${hhmm}`;
+
+    sessions[alertId] = {
+      ...session,
+      messages: [...session.messages, { sender: "doctor", text, time: messageTime }],
+      waitingForDietAck: false,
+      waitingForStep2Ack: false,
+      step2AckResult: "none",
+      savedAt: Date.now(),
+    };
+
+    localStorage.setItem(ASSISTANT_CHAT_LS_KEY, JSON.stringify(sessions));
+    cleanupTemporaryChatLogs();
+    window.dispatchEvent(new CustomEvent("proctocare-assistant-chat-updated"));
+
+    const patientId = alertId.split("__")[0] || "";
+    const patientName = assistantAlerts.find((a) => a.id === alertId)?.patientName;
+
     setPatients((prev) =>
       prev.map((p) =>
-        p.name === alert.patientName && p.status === "risk"
-          ? { ...p, status: "progress" as PatientStatus, aiSummary: "Відповідь надана лікарем" }
+        p.id === patientId
+          ? { ...p, status: "progress" as PatientStatus, aiSummary: "Лікар відповів у чаті, очікуємо реакцію пацієнта" }
           : p
       )
     );
-    toast.success(`Відповідь надіслано: ${alert.patientName}`);
-  }, []);
 
-  const handleOpenReply = useCallback((alertId: string) => {
-    const alert = MOCK_AI_ALERTS.find((a) => a.id === alertId);
-    if (alert) setReplyAlert(alert);
-  }, []);
-
-  const handleSendReply = useCallback((alertId: string, _message: string) => {
-    setReplyAlert(null);
-    handleAIReply(alertId);
-  }, [handleAIReply]);
+    setAssistantAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    toast.success(`Відповідь надіслано пацієнту${patientName ? `: ${patientName}` : ""}`);
+  }, [assistantAlerts]);
 
   const handlePatientClick = useCallback((patient: Patient) => {
     const donor = patients
@@ -462,15 +716,9 @@ export default function Index() {
             {/* Column 1: AI Alerts */}
             <div className="space-y-3 sm:space-y-4">
               <AIAlertSection
-                alerts={MOCK_AI_ALERTS.map((a) => ({
-                  id: a.id,
-                  patientName: a.patientName,
-                  question: a.question,
-                  appointmentDate: a.appointmentDate,
-                  appointmentTime: a.appointmentTime,
-                }))}
-                onReply={handleAIReply}
-                onOpenReply={handleOpenReply}
+                alerts={assistantAlerts}
+                onSendReply={handleSendDashboardReply}
+                doctorPhone={doctorPhoneForQuickReply}
               />
 
               {/* Tomorrow card — same size as AI alerts */}
@@ -674,13 +922,6 @@ export default function Index() {
           prefillTime={formPrefill.time}
           onClose={() => setShowForm(false)}
           onSave={handleSaveEntry}
-        />
-      )}
-      {replyAlert && (
-        <AIReplyModal
-          alert={replyAlert}
-          onClose={() => setReplyAlert(null)}
-          onSend={handleSendReply}
         />
       )}
       {selectedPatient && (
