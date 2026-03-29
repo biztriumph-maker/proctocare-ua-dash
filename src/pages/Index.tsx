@@ -903,14 +903,21 @@ export default function Index() {
               openNewEntry(`${y}-${m}-${d}`, hour);
             }}
             onPatientClick={(p) => {
-              // Prefer exact lookup by stable ID, then by date+time+name to avoid stale fallback cards.
-              const real = (p.id
-                ? allCalendarPatients.find((rp) => rp.id === p.id)
-                : allCalendarPatients.find((rp) =>
-                    rp.name === p.name &&
-                    rp.time === p.time &&
-                    (!p.date || rp.date === p.date)
-                  ));
+              // Prefer the strongest match first to keep mobile and desktop patient detail in sync.
+              const exactById = p.id ? allCalendarPatients.find((rp) => rp.id === p.id) : undefined;
+              const exactByDateTimeName = allCalendarPatients.find((rp) =>
+                rp.name === p.name &&
+                rp.time === p.time &&
+                (!!p.date ? rp.date === p.date : true)
+              );
+              const byTimeAndPerson = allCalendarPatients.find((rp) =>
+                rp.time === p.time && personKey(rp) === personKey({ name: p.name, patronymic: p.patronymic })
+              );
+              const byPerson = allCalendarPatients
+                .filter((rp) => personKey(rp) === personKey({ name: p.name, patronymic: p.patronymic }))
+                .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+              const real = exactById || exactByDateTimeName || byTimeAndPerson || byPerson;
               if (real) {
                 const donor = allCalendarPatients
                   .filter((rp) => rp.id !== real.id && personKey(rp) === personKey(real))
@@ -919,7 +926,7 @@ export default function Index() {
                 return;
               }
 
-              setSelectedPatient({
+              const fallbackBase: Patient = {
                 id: `cal-${p.name}-${p.time}`,
                 name: p.name,
                 patronymic: p.patronymic,
@@ -929,7 +936,11 @@ export default function Index() {
                 aiSummary: "Дані з календаря",
                 date: p.date || todayIso,
                 fromForm: true,
-              });
+              };
+              const fallbackDonor = allCalendarPatients
+                .filter((rp) => personKey(rp) === personKey(fallbackBase))
+                .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+              setSelectedPatient(hydrateMissingProfile(fallbackBase, fallbackDonor));
             }}
             searchQuery={searchQuery}
             realPatients={allCalendarPatients}
