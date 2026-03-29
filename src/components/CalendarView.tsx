@@ -326,6 +326,7 @@ function WeekGrid({
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
+  const isMobileViewport = typeof window !== "undefined" && window.innerWidth < 768;
 
   const slotsPerDay = useMemo(() => {
     return weekDates.map((d) => {
@@ -433,6 +434,14 @@ function WeekGrid({
                   <button
                     onClick={() => {
                       if (slot?.patient) {
+                        if (isMobileViewport) {
+                          onPatientClick?.({
+                            ...slot.patient,
+                            time: `${String(hour).padStart(2, "0")}:00`,
+                            date: dateToStr(d),
+                          });
+                          return;
+                        }
                         setActivePopover(activePopover === popoverKey ? null : popoverKey);
                       } else {
                         onSlotClick(d, hour);

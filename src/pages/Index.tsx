@@ -414,15 +414,16 @@ export default function Index() {
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [trainingLog, setTrainingLog] = useState<string[]>([]);
-  const trainingMode = true; // Удалить при подключении внешней базы данных
+  const trainingMode = false;
 
   const logTraining = useCallback((message: string) => {
+    if (!trainingMode) return;
     const now = new Date();
     setTrainingLog((prev) => [
       `${now.toLocaleString()} · ${message}`,
       ...prev,
     ].slice(0, 30));
-  }, []);
+  }, [trainingMode]);
 
   const [patients, setPatients] = useState<Patient[]>(() => {
     const { todayIso: currentTodayIso, tomorrowIso: currentTomorrowIso } = getCurrentScheduleDates();
