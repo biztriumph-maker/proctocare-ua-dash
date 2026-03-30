@@ -11,6 +11,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
+import { savePatientToSupabase, loadPatientsFromSupabase } from "@/lib/supabaseSync";
 
 const today = new Date();
 const tomorrow = new Date();
@@ -654,6 +655,15 @@ export default function Index() {
     cleanupTemporaryChatLogs();
   }, []);
 
+  // Загрузка пациентов из Supabase при старте
+useEffect(() => {
+  loadPatientsFromSupabase().then((data) => {
+    if (data && data.length > 0) {
+      setPatients(data as any);
+    }
+  });
+}, []);
+
   useEffect(() => {
     localStorage.setItem("proctocare_all_patients", JSON.stringify(patients));
   }, [patients]);
@@ -773,6 +783,10 @@ export default function Index() {
       date: entry.date,
       fromForm: true,
     };
+      void savePatientToSupabase(
+  { id: newId, name: entry.name, patronymic: entry.patronymic, phone: entry.phone, birth_date: entry.birthDate },
+  { id: `v-${newId}`, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true }
+);
     setSkeletonPatient(newPatient);
     setShowForm(false);
     setNewlyCreatedId(newId);
