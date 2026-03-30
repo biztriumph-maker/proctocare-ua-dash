@@ -245,6 +245,7 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
 function SlotPopover({
   slot,
   hour,
+  dateStr,
   onClose,
   onPatientClick,
   openDirection,
@@ -326,7 +327,6 @@ function WeekGrid({
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<string | null>(null);
-  const isMobileViewport = typeof window !== "undefined" && window.innerWidth < 768;
 
   const slotsPerDay = useMemo(() => {
     return weekDates.map((d) => {
@@ -434,16 +434,9 @@ function WeekGrid({
                   <button
                     onClick={() => {
                       if (slot?.patient) {
-                        if (isMobileViewport) {
-                          onPatientClick?.({
-                            ...slot.patient,
-                            time: `${String(hour).padStart(2, "0")}:00`,
-                            date: dateToStr(d),
-                          });
-                          return;
-                        }
                         setActivePopover(activePopover === popoverKey ? null : popoverKey);
                       } else {
+                        setActivePopover(null);
                         onSlotClick(d, hour);
                       }
                     }}
@@ -505,7 +498,7 @@ function DayGrid({
 }: {
   date: Date;
   onSlotClick: (date: Date, hour: number) => void;
-  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string }) => void;
+  onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string; allergies?: string }) => void;
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
@@ -517,7 +510,7 @@ function DayGrid({
     return mock.map(slot => {
       const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
       const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
-      if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure } };
+      if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
       return slot;
     });
   }, [date, realPatients]);

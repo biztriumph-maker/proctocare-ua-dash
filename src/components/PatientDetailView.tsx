@@ -778,6 +778,51 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
+  useEffect(() => {
+    const nextProfile = getMockProfile(patient);
+    const nextNotes = patient.notes !== undefined ? patient.notes : nextProfile.notes;
+    const nextProtocol = getInitialActiveProtocol(patient, activeVisitIso);
+    const nextPhone = patient.phone || nextProfile.phone;
+    const nextServices = patient.procedure ? patient.procedure.split(", ") : [];
+    const now = new Date();
+    const todayDisplay = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+    const nextSeededFiles = getSeededMockFiles(patient);
+    const nextInitialFiles = mergeUniqueFileItems(
+      patient.files || (patient.fromForm ? [] : getMockFiles(todayDisplay)),
+      nextSeededFiles
+    );
+
+    setLocalFullName(correctNameSpelling(`${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`));
+    setFields({
+      phone: nextPhone,
+      allergies: nextProfile.allergies,
+      diagnosis: nextProfile.diagnosis,
+      notes: nextNotes,
+      protocol: nextProtocol,
+      birthDate: nextProfile.birthDate,
+    });
+    setLocalServices(nextServices);
+    setLocalFiles(nextInitialFiles);
+  }, [
+    patient.id,
+    patient.name,
+    patient.patronymic,
+    patient.time,
+    patient.date,
+    patient.procedure,
+    patient.birthDate,
+    patient.phone,
+    patient.allergies,
+    patient.diagnosis,
+    patient.lastVisit,
+    patient.notes,
+    patient.primaryNotes,
+    patient.protocol,
+    patient.files,
+    patient.fromForm,
+    activeVisitIso,
+  ]);
+
   const rescheduleNoticeOriginalDate = useMemo(() => {
     const markerForActive = mergedProtocolHistory
       .filter((h) => h.value.startsWith(RESCHEDULED_MARKER))
@@ -1063,7 +1108,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   };
 
   const handleCloseRequest = () => {
-    handleSaveChanges();
+    handleSaveChanges(true);
     onClose();
   };
 
@@ -1078,7 +1123,16 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
     if (!hasDataToFreeze) {
       // Silent reschedule: nothing was documented yet for the current block.
-      onUpdatePatient({ date: rescheduleDate, time: rescheduleTime });
+      const markerEntry = {
+        value: `${RESCHEDULED_MARKER}${rescheduleDate}`,
+        timestamp: previousVisitDisplay,
+        date: previousVisitIso,
+      };
+      onUpdatePatient({
+        date: rescheduleDate,
+        time: rescheduleTime,
+        protocolHistory: [...(patient.protocolHistory || []), markerEntry],
+      });
       setShowReschedulePicker(false);
 
       const d = new Date(rescheduleDate + "T00:00:00");
@@ -1126,6 +1180,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   }, [fields, localFiles, localServices]);
 
   const handleSaveChanges = (silent = false) => {
+    if (!hasUnsavedChanges && !silent) return;
+    if (!hasUnsavedChanges && silent) return;
+
     if (onUpdatePatient) {
       const hasTodayHistoryEntry = (history?: Array<{ value: string; timestamp: string; date: string }>) => {
         if (!history || history.length === 0) return false;
@@ -1182,7 +1239,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
 
       <div className={cn(
-        "relative z-10 w-full bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92dvh] overflow-hidden flex flex-col min-h-0",
+        "relative z-10 w-full h-[92dvh] sm:h-auto bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92dvh] overflow-hidden flex flex-col min-h-0",
         "sm:max-w-[95vw]"
       )}>
         {/* Handle (mobile) */}

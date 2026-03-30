@@ -10,6 +10,7 @@ import { NewEntryForm, type NewEntryData } from "@/components/NewEntryForm";
 import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
 
 const today = new Date();
 const tomorrow = new Date();
@@ -236,7 +237,16 @@ const statusToFilter: Record<PatientStatus, FilterType> = {
 };
 
 function personKey(patient: Pick<Patient, "name" | "patronymic">): string {
-  return `${patient.name.trim().toLowerCase()}|${(patient.patronymic || "").trim().toLowerCase()}`;
+  const compactName = patient.name.replace(/\s+/g, " ").trim().toLowerCase();
+  const nameParts = compactName.split(" ").filter(Boolean);
+
+  const surname = nameParts[0] || "";
+  const firstName = nameParts[1] || "";
+  const explicitPatronymic = (patient.patronymic || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const parsedPatronymic = nameParts.length > 2 ? nameParts.slice(2).join(" ") : "";
+  const patronymic = explicitPatronymic || parsedPatronymic;
+
+  return `${surname}|${firstName}|${patronymic}`;
 }
 
 function profileCompleteness(patient: Patient): number {
@@ -309,6 +319,84 @@ function scheduleSortValue(patient: Patient): number {
   return Number(`${datePart.replace(/-/g, "")}${timePart.replace(":", "")}`);
 }
 
+function parsedIdentity(patient: Pick<Patient, "name" | "patronymic">): { surname: string; firstName: string; patronymic: string } {
+  const compactName = patient.name.replace(/\s+/g, " ").trim().toLowerCase();
+  const nameParts = compactName.split(" ").filter(Boolean);
+
+  const surname = nameParts[0] || "";
+  const firstName = nameParts[1] || "";
+  const explicitPatronymic = (patient.patronymic || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const parsedPatronymic = nameParts.length > 2 ? nameParts.slice(2).join(" ") : "";
+  const patronymic = explicitPatronymic || parsedPatronymic;
+
+  return { surname, firstName, patronymic };
+}
+
+function isSamePerson(a: Pick<Patient, "name" | "patronymic">, b: Pick<Patient, "name" | "patronymic">): boolean {
+  if (personKey(a) === personKey(b)) return true;
+
+  const pa = parsedIdentity(a);
+  const pb = parsedIdentity(b);
+  if (!pa.surname || !pb.surname || pa.surname !== pb.surname) return false;
+
+  if (pa.firstName && pb.firstName && pa.firstName === pb.firstName) return true;
+  if (pa.patronymic && pb.patronymic && pa.patronymic === pb.patronymic) return true;
+
+  return false;
+}
+
+function arePatientsEquivalentForView(a: Patient, b: Patient): boolean {
+  return JSON.stringify({
+    id: a.id,
+    name: a.name,
+    patronymic: a.patronymic,
+    time: a.time,
+    date: a.date,
+    procedure: a.procedure,
+    status: a.status,
+    birthDate: a.birthDate,
+    phone: a.phone,
+    allergies: a.allergies,
+    diagnosis: a.diagnosis,
+    lastVisit: a.lastVisit,
+    notes: a.notes,
+    primaryNotes: a.primaryNotes,
+    protocol: a.protocol,
+    files: a.files,
+    allergiesHistory: a.allergiesHistory,
+    diagnosisHistory: a.diagnosisHistory,
+    notesHistory: a.notesHistory,
+    phoneHistory: a.phoneHistory,
+    birthDateHistory: a.birthDateHistory,
+    protocolHistory: a.protocolHistory,
+    procedureHistory: a.procedureHistory,
+  }) === JSON.stringify({
+    id: b.id,
+    name: b.name,
+    patronymic: b.patronymic,
+    time: b.time,
+    date: b.date,
+    procedure: b.procedure,
+    status: b.status,
+    birthDate: b.birthDate,
+    phone: b.phone,
+    allergies: b.allergies,
+    diagnosis: b.diagnosis,
+    lastVisit: b.lastVisit,
+    notes: b.notes,
+    primaryNotes: b.primaryNotes,
+    protocol: b.protocol,
+    files: b.files,
+    allergiesHistory: b.allergiesHistory,
+    diagnosisHistory: b.diagnosisHistory,
+    notesHistory: b.notesHistory,
+    phoneHistory: b.phoneHistory,
+    birthDateHistory: b.birthDateHistory,
+    protocolHistory: b.protocolHistory,
+    procedureHistory: b.procedureHistory,
+  });
+}
+
 function normalizePersonName(patient: Patient): Patient {
   const compact = patient.name.replace(/\s+/g, " ").trim();
   const hasInitials = compact.includes(".");
@@ -323,16 +411,107 @@ function normalizePersonName(patient: Patient): Patient {
   };
 }
 
+function extractLatestRescheduleTarget(patient: Patient): string | undefined {
+  const markers = (patient.protocolHistory || [])
+    .filter((h) => typeof h.value === "string" && h.value.startsWith("__RESCHEDULED_TO__:"))
+    .map((h) => ({
+      target: h.value.replace("__RESCHEDULED_TO__:", "").trim(),
+      date: h.date || "",
+      timestamp: h.timestamp || "",
+    }))
+    .filter((m) => /^\d{4}-\d{2}-\d{2}$/.test(m.target));
+
+  if (markers.length === 0) return undefined;
+  markers.sort((a, b) => {
+    const byDate = a.date.localeCompare(b.date);
+    if (byDate !== 0) return byDate;
+    return a.timestamp.localeCompare(b.timestamp);
+  });
+  return markers[markers.length - 1].target;
+}
+
 function rebuildPetushkovRecord(patients: Patient[]): Patient[] {
   const petushkov = patients.filter((p) => p.name.toLowerCase().includes("петушков"));
   if (petushkov.length <= 1) return patients;
 
   const others = patients.filter((p) => !p.name.toLowerCase().includes("петушков"));
-  const richest = petushkov.slice().sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
-  const latest = petushkov.slice().sort((a, b) => scheduleSortValue(b) - scheduleSortValue(a))[0];
+  const latestRescheduleTargets = petushkov
+    .map((p) => ({ patient: p, target: extractLatestRescheduleTarget(p) }))
+    .filter((x): x is { patient: Patient; target: string } => !!x.target)
+    .sort((a, b) => scheduleSortValue(a.patient) - scheduleSortValue(b.patient));
 
-  const merged = hydrateMissingProfile(normalizePersonName({ ...latest }), richest);
+  const explicitTarget = latestRescheduleTargets.length > 0
+    ? latestRescheduleTargets[latestRescheduleTargets.length - 1].target
+    : undefined;
+
+  const rescheduleTargets = new Set<string>();
+  if (explicitTarget) rescheduleTargets.add(explicitTarget);
+
+  const candidateScore = (p: Patient): number => {
+    let score = 0;
+    score += profileCompleteness(p) * 100;
+    score += ((p.protocolHistory?.length || 0) + (p.procedureHistory?.length || 0) + (p.notesHistory?.length || 0)) * 10;
+    if (!p.fromForm) score += 25;
+    if (p.status !== "planning") score += 5;
+    if (p.date && rescheduleTargets.has(p.date)) score += 1000;
+    return score;
+  };
+
+  const canonical = petushkov
+    .slice()
+    .sort((a, b) => {
+      const byScore = candidateScore(b) - candidateScore(a);
+      if (byScore !== 0) return byScore;
+      return scheduleSortValue(b) - scheduleSortValue(a);
+    })[0];
+
+  const strongestDonor = petushkov
+    .filter((p) => p.id !== canonical.id)
+    .slice()
+    .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+  const merged = hydrateMissingProfile({ ...canonical }, strongestDonor);
+
+  if (explicitTarget && merged.date !== explicitTarget) {
+    merged.date = explicitTarget;
+  }
+
+  if (explicitTarget) {
+    const targetVisit = petushkov
+      .filter((p) => p.date === explicitTarget)
+      .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+    if (targetVisit?.time) merged.time = targetVisit.time;
+  }
   return [...others, merged];
+}
+
+function unifyProfilesAcrossVisits(patients: Patient[]): Patient[] {
+  let changed = false;
+
+  const out = patients.map((patient) => {
+    const donor = patients
+      .filter((p) => p.id !== patient.id && isSamePerson(p, patient))
+      .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+    const merged = hydrateMissingProfile(patient, donor);
+    if (!arePatientsEquivalentForView(patient, merged)) changed = true;
+    return merged;
+  });
+
+  return changed ? out : patients;
+}
+
+function removeLegacyMockPetushkovDuplicate(patients: Patient[]): Patient[] {
+  const hasRealPetushkov = patients.some((p) => p.id !== "mock-petushkov" && p.name.toLowerCase().includes("петушков"));
+  if (!hasRealPetushkov) return patients;
+
+  const mock = patients.find((p) => p.id === "mock-petushkov");
+  if (!mock) return patients;
+
+  const hasSameReal = patients.some((p) => p.id !== "mock-petushkov" && isSamePerson(p, mock));
+  if (!hasSameReal) return patients;
+
+  return patients.filter((p) => p.id !== "mock-petushkov");
 }
 
 function normalizeDemoScheduleDates(patients: Patient[]): Patient[] {
@@ -406,6 +585,24 @@ function sanitizePatientsAssistantNotes(patients: Patient[]): Patient[] {
   return changed ? next : patients;
 }
 
+function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string): Patient[] | null {
+  const saved = localStorage.getItem("proctocare_all_patients");
+  if (!saved) return null;
+
+  try {
+    const parsed = JSON.parse(saved);
+    const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
+    return normalizeDemoScheduleDates(
+      rebuildPetushkovRecord(
+        removeLegacyMockPetushkovDuplicate(unifyProfilesAcrossVisits(sanitizePatientsAssistantNotes(cleaned)))
+      )
+    );
+  } catch (e) {
+    console.error("Failed to parse saved patients", e);
+    return null;
+  }
+}
+
 export default function Index() {
   const { todayIso, tomorrowIso } = useMemo(() => getCurrentScheduleDates(), []);
   const [view, setView] = useState<"operational" | "calendar">("operational");
@@ -427,26 +624,29 @@ export default function Index() {
 
   const [patients, setPatients] = useState<Patient[]>(() => {
     const { todayIso: currentTodayIso, tomorrowIso: currentTomorrowIso } = getCurrentScheduleDates();
-    const saved = localStorage.getItem("proctocare_all_patients");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Clean up legacy tomorrow mock patients just in case they were cached
-        const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
-        return normalizeDemoScheduleDates(rebuildPetushkovRecord(sanitizePatientsAssistantNotes(cleaned)));
-      } catch (e) {
-        console.error("Failed to parse saved patients", e);
-      }
-    }
+    const stored = loadStoredPatients(currentTodayIso, currentTomorrowIso);
+    if (stored) return stored;
     return [
       ...MOCK_PATIENTS.map(p => ({ ...p, date: p.date || currentTodayIso })),
       ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || currentTomorrowIso })),
-    ];
+    ].map((p) => ({ ...p }));
   });
 
   useEffect(() => {
     setPatients((prev) => sanitizePatientsAssistantNotes(prev));
   }, []);
+
+  useEffect(() => {
+    setPatients((prev) => unifyProfilesAcrossVisits(prev));
+  }, [patients]);
+
+  useEffect(() => {
+    setPatients((prev) => removeLegacyMockPetushkovDuplicate(prev));
+  }, [patients]);
+
+  useEffect(() => {
+    setPatients((prev) => rebuildPetushkovRecord(prev));
+  }, [patients]);
 
   // Cleanup old assistant sessions and temporary logs on mount
   useEffect(() => {
@@ -474,6 +674,17 @@ export default function Index() {
   }, [refreshAssistantAlerts]);
 
   useEffect(() => {
+    const onRemoteUpdated = () => {
+      const loaded = loadStoredPatients(todayIso, tomorrowIso);
+      if (loaded) setPatients(loaded);
+      refreshAssistantAlerts();
+    };
+
+    window.addEventListener(REMOTE_SYNC_EVENT, onRemoteUpdated);
+    return () => window.removeEventListener(REMOTE_SYNC_EVENT, onRemoteUpdated);
+  }, [refreshAssistantAlerts, todayIso, tomorrowIso]);
+
+  useEffect(() => {
     const onAssistantStorageUpdated = () => refreshAssistantAlerts();
     window.addEventListener("proctocare-assistant-chat-updated", onAssistantStorageUpdated);
     return () => window.removeEventListener("proctocare-assistant-chat-updated", onAssistantStorageUpdated);
@@ -481,22 +692,28 @@ export default function Index() {
 
   useEffect(() => {
     if (!selectedPatient) return;
-    const actual = patients.find((p) => p.id === selectedPatient.id);
-    if (!actual) return;
 
-    const historyA = JSON.stringify(selectedPatient.notesHistory || []);
-    const historyB = JSON.stringify(actual.notesHistory || []);
-    if (
-      selectedPatient.notes !== actual.notes ||
-      selectedPatient.primaryNotes !== actual.primaryNotes ||
-      historyA !== historyB
-    ) {
-      setSelectedPatient((prev) => prev ? {
-        ...prev,
-        notes: actual.notes,
-        primaryNotes: actual.primaryNotes,
-        notesHistory: actual.notesHistory,
-      } : prev);
+    const selectedKey = personKey(selectedPatient);
+    const byId = patients.find((p) => p.id === selectedPatient.id);
+    const byVisitAndPerson = patients.find((p) =>
+      (personKey(p) === selectedKey || isSamePerson(p, selectedPatient)) &&
+      p.time === selectedPatient.time &&
+      (!!selectedPatient.date ? p.date === selectedPatient.date : true)
+    );
+    const byPerson = patients
+      .filter((p) => personKey(p) === selectedKey || isSamePerson(p, selectedPatient))
+      .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+    const base = byId || byVisitAndPerson || byPerson;
+    if (!base) return;
+
+    const donor = patients
+      .filter((p) => p.id !== base.id && isSamePerson(p, base))
+      .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+    const hydrated = hydrateMissingProfile(base, donor);
+    if (!arePatientsEquivalentForView(selectedPatient, hydrated)) {
+      setSelectedPatient(hydrated);
     }
   }, [patients, selectedPatient]);
 
@@ -615,7 +832,7 @@ export default function Index() {
 
   const handlePatientClick = useCallback((patient: Patient) => {
     const donor = patients
-      .filter((p) => p.id !== patient.id && personKey(p) === personKey(patient))
+      .filter((p) => p.id !== patient.id && isSamePerson(p, patient))
       .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
     setSelectedPatient(hydrateMissingProfile(patient, donor));
@@ -640,10 +857,22 @@ export default function Index() {
   }, []);
 
   const handleDeletePatient = useCallback((patientId: string) => {
-    setPatients((prev) => prev.filter((p) => p.id !== patientId));
+    setPatients((prev) => {
+      const byId = prev.find((p) => p.id === patientId);
+      const sel = selectedPatient;
+      if (!byId && sel) {
+        const byIdentity = prev.find((p) =>
+          isSamePerson(p, sel) &&
+          p.time === sel.time &&
+          (!!sel.date ? p.date === sel.date : true)
+        );
+        if (byIdentity) return prev.filter((p) => p.id !== byIdentity.id);
+      }
+      return prev.filter((p) => p.id !== patientId);
+    });
     setSelectedPatient(null);
     toast("Запис видалено");
-  }, []);
+  }, [selectedPatient]);
 
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -904,24 +1133,25 @@ export default function Index() {
               openNewEntry(`${y}-${m}-${d}`, hour);
             }}
             onPatientClick={(p) => {
+              const incomingKey = personKey({ name: p.name, patronymic: p.patronymic });
               // Prefer the strongest match first to keep mobile and desktop patient detail in sync.
               const exactById = p.id ? allCalendarPatients.find((rp) => rp.id === p.id) : undefined;
               const exactByDateTimeName = allCalendarPatients.find((rp) =>
-                rp.name === p.name &&
+                (personKey(rp) === incomingKey || isSamePerson(rp, { name: p.name, patronymic: p.patronymic })) &&
                 rp.time === p.time &&
                 (!!p.date ? rp.date === p.date : true)
               );
               const byTimeAndPerson = allCalendarPatients.find((rp) =>
-                rp.time === p.time && personKey(rp) === personKey({ name: p.name, patronymic: p.patronymic })
+                rp.time === p.time && (personKey(rp) === incomingKey || isSamePerson(rp, { name: p.name, patronymic: p.patronymic }))
               );
               const byPerson = allCalendarPatients
-                .filter((rp) => personKey(rp) === personKey({ name: p.name, patronymic: p.patronymic }))
+                .filter((rp) => personKey(rp) === incomingKey || isSamePerson(rp, { name: p.name, patronymic: p.patronymic }))
                 .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
               const real = exactById || exactByDateTimeName || byTimeAndPerson || byPerson;
               if (real) {
                 const donor = allCalendarPatients
-                  .filter((rp) => rp.id !== real.id && personKey(rp) === personKey(real))
+                  .filter((rp) => rp.id !== real.id && isSamePerson(rp, real))
                   .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
                 setSelectedPatient(hydrateMissingProfile(real, donor));
                 return;
@@ -939,7 +1169,7 @@ export default function Index() {
                 fromForm: true,
               };
               const fallbackDonor = allCalendarPatients
-                .filter((rp) => personKey(rp) === personKey(fallbackBase))
+                .filter((rp) => isSamePerson(rp, fallbackBase))
                 .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
               setSelectedPatient(hydrateMissingProfile(fallbackBase, fallbackDonor));
             }}
@@ -987,13 +1217,27 @@ export default function Index() {
           onDelete={handleDeletePatient}
           onUpdatePatient={(updates) => {
             setPatients((prev) => {
-              const current = prev.find((p) => p.id === selectedPatient.id);
-              const samePerson = prev.filter((p) => p.id !== selectedPatient.id && personKey(p) === personKey(selectedPatient));
+              const currentById = prev.find((p) => p.id === selectedPatient.id);
+              const currentByIdentity = prev.find((p) =>
+                isSamePerson(p, selectedPatient) &&
+                p.time === selectedPatient.time &&
+                (!!selectedPatient.date ? p.date === selectedPatient.date : true)
+              );
+              const currentByPerson = prev
+                .filter((p) => isSamePerson(p, selectedPatient))
+                .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+              const current = currentById || currentByIdentity || currentByPerson;
+              const targetId = current?.id || selectedPatient.id;
+
+              const samePerson = prev.filter((p) => p.id !== targetId && isSamePerson(p, selectedPatient));
               const donor = samePerson.sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
               const merged = hydrateMissingProfile({ ...(current || selectedPatient), ...updates }, donor);
-              const updated = prev.map((p) => (p.id === selectedPatient.id ? merged : p));
-              const updatedPatient = updated.find((p) => p.id === selectedPatient.id);
+              const updated = current
+                ? prev.map((p) => (p.id === targetId ? merged : p))
+                : [...prev, merged];
+              const updatedPatient = updated.find((p) => p.id === targetId) || merged;
               if (updatedPatient) {
                 logTraining(`Збережено зміни пацієнта: ${updatedPatient.name}`);
               }
