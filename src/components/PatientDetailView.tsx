@@ -2476,15 +2476,21 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     }
 
     if (!blob) {
-      alert(`Це тестовий файл "${file.name}". Справжні файли, які ви завантажите, зможете переглянути.`);
+      setPreview({
+        kind: "unsupported",
+        name: file.name,
+        message: "Файл недоступний для перегляду в цьому браузері. Ймовірно, він був завантажений у старій версії локально без хмарного збереження. Завантажте його повторно, і він відкриватиметься в модальному вікні на всіх пристроях.",
+      });
       return;
     }
 
     const ext = getFileExtension(file.name);
+    const lowerName = file.name.toLowerCase();
     const mime = (file.mimeType || blob.type || "").toLowerCase();
     const urlLooksPdf = (file.url || "").toLowerCase().includes(".pdf");
     const signatureLooksPdf = await looksLikePdfBlob(blob);
-    const isPdf = mime.includes("pdf") || ext === "pdf" || urlLooksPdf || signatureLooksPdf;
+    const nameLooksPdf = lowerName.includes(".pdf");
+    const isPdf = mime.includes("pdf") || ext === "pdf" || nameLooksPdf || urlLooksPdf || signatureLooksPdf;
     if (isPdf) {
       const pdfBlob = mime.includes("pdf")
         ? blob
@@ -2515,17 +2521,11 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       return;
     }
 
-    const viewUrl = URL.createObjectURL(blob);
-    const opened = window.open(viewUrl, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      const fallback = document.createElement("a");
-      fallback.href = viewUrl;
-      fallback.target = "_blank";
-      fallback.rel = "noopener noreferrer";
-      fallback.click();
-    }
-
-    setTimeout(() => URL.revokeObjectURL(viewUrl), 30_000);
+    setPreview({
+      kind: "unsupported",
+      name: file.name,
+      message: "Цей формат поки не підтримується для вбудованого перегляду. Доступні формати для перегляду всередині продукту: PDF, зображення (JPG/PNG/WebP) та DOCX.",
+    });
   };
 
   return (
