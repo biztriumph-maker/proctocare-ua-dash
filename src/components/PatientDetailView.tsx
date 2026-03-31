@@ -626,7 +626,6 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
   const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [localFullName, setLocalFullName] = useState(() => {
     const raw = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`;
@@ -1158,11 +1157,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const handleDeleteVisit = () => {
     if (!onDelete) return;
     setDeleteDialogOpen(true);
-    setDeleteConfirmText("");
   };
 
   const handleConfirmDelete = () => {
-    if (deleteConfirmText !== "ВИДАЛИТИ") return;
     setDeleteDialogOpen(false);
     onDelete!(patient.id);
   };
@@ -1605,22 +1602,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <Trash2 size={16} className="text-destructive shrink-0" />
                 <h3 className="text-sm font-bold text-destructive">Видалення запису пацієнта</h3>
               </div>
-              <p className="text-xs text-muted-foreground mb-1">
-                Ви впевнені, що хочете видалити цей запис?
+              <p className="text-xs text-muted-foreground mb-4">
+                Ви впевнені, що хочете видалити цей запис? Після видалення у вас буде 30 секунд щоб відновити його.
               </p>
-              <p className="text-xs font-bold text-destructive mb-3">
-                Ця дія незворотна. Для підтвердження введіть слово{" "}
-                <span className="font-black tracking-wide">ВИДАЛИТИ</span>
-              </p>
-              <input
-                autoFocus
-                type="text"
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleConfirmDelete(); if (e.key === "Escape") setDeleteDialogOpen(false); }}
-                placeholder="Введіть ВИДАЛИТИ"
-                className="w-full text-sm border-2 border-border rounded-lg px-3 py-2 outline-none focus:border-destructive/60 mb-4 bg-background"
-              />
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setDeleteDialogOpen(false)}
@@ -1630,8 +1614,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 </button>
                 <button
                   onClick={handleConfirmDelete}
-                  disabled={deleteConfirmText !== "ВИДАЛИТИ"}
-                  className="flex-1 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-destructive hover:bg-destructive/90 disabled:opacity-40 disabled:pointer-events-none"
+                  className="flex-1 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-destructive hover:bg-destructive/90"
                 >
                   Видалити
                 </button>
