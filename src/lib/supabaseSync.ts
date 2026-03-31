@@ -45,6 +45,7 @@ export type VisitRow = {
   no_show?: boolean;
   completed?: boolean;
   is_test?: boolean;
+  files?: Array<{ id: string; name: string; type: "doctor" | "patient"; date: string; url?: string; storageKey?: string; mimeType?: string }>;
 };
 
 // Перетворює дані з Supabase у формат дашборду
@@ -69,6 +70,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     fromForm: visit.from_form,
     noShow: visit.no_show,
     completed: visit.completed,
+    files: visit.files || [],
   };
 }
 
@@ -274,6 +276,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('completed' in updates) visitUpdate.completed = updates.completed;
   if ('date' in updates) visitUpdate.visit_date = updates.date;
   if ('time' in updates) visitUpdate.visit_time = updates.time;
+  if ('files' in updates) visitUpdate.files = updates.files;
 
   if (Object.keys(visitUpdate).length > 0) {
     console.log("📝 Updating visit:", visitUpdate);

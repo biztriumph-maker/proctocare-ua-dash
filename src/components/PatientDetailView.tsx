@@ -1146,6 +1146,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     onUpdatePatient?.({ procedure: services.join(", ") });
   };
 
+  const handleFilesChange = (newFiles: FileItem[]) => {
+    setLocalFiles(newFiles);
+    onUpdatePatient?.({ files: newFiles });
+  };
+
   const handleCloseRequest = () => {
     handleSaveChanges(true);
     onClose();
@@ -1433,7 +1438,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                     <FilesPane
                       files={localFiles}
-                      onFilesChange={setLocalFiles}
+                      onFilesChange={handleFilesChange}
                       onFocusEdit={handleFocusOpen}
                       fromForm={patient.fromForm}
                       protocolText={fields.protocol}
@@ -1516,7 +1521,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                 <FilesPane
                   files={localFiles}
-                  onFilesChange={setLocalFiles}
+                  onFilesChange={handleFilesChange}
                   onFocusEdit={handleFocusOpen}
                   fromForm={patient.fromForm}
                   protocolText={fields.protocol}
