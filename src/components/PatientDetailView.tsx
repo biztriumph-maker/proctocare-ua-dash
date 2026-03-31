@@ -503,6 +503,21 @@ function renderHistory(history?: Array<{ value: string; timestamp: string; date:
   );
 }
 
+// Повертає найважливішу послугу для відображення в заголовку
+function getPrimaryService(services: string[]): string {
+  if (services.length === 0) return "";
+  if (services.length === 1) return services[0];
+  // Пріоритет: Поліпектомія > Біопсія > Колоноскопія/Гастроскопія > решта
+  const priority = (s: string) => {
+    if (s.includes("Поліпектомія") || s.includes("Розширена біопсія")) return 1;
+    if (s.includes("Біопсія") || s.includes("OLGA") || s.includes("Гістологія")) return 2;
+    if (s.includes("Колоноскопія") || s.includes("Гастроскопія") || s.includes("Ректо")) return 3;
+    if (s.includes("Медичний сон")) return 5;
+    return 4;
+  };
+  return [...services].sort((a, b) => priority(a) - priority(b))[0];
+}
+
 function getServiceCategory(services: string[]): { label: string; color: string; bgColor: string } {
   const priorityMap = {
     "ОПЕРАЦІЯ": { priority: 1, keywords: ["Поліпектомія", "Розширена біопсія"], color: "#F39C12", bgColor: "#FFF3CD" },
@@ -1074,10 +1089,12 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     const corrected = correctNameSpelling(raw);
     setLocalFullName(corrected);
     setEditingName(false);
-    if (corrected !== raw) {
-      const parts = corrected.trim().split(/\s+/);
-      const newName = parts.slice(0, 2).join(" ");
-      const newPatronymic = parts.slice(2).join(" ");
+    const parts = corrected.trim().split(/\s+/);
+    const newName = parts.slice(0, 2).join(" ");
+    const newPatronymic = parts.slice(2).join(" ");
+    const currentName = patient.name || "";
+    const currentPatronymic = patient.patronymic || "";
+    if (newName !== currentName || newPatronymic !== currentPatronymic) {
       if (onUpdatePatient) onUpdatePatient({ name: newName, patronymic: newPatronymic || undefined });
     }
   };
@@ -1086,6 +1103,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     if (focusField) {
       const trimmedValue = value.trim();
       const preparedValue = focusField.field === "phone" ? getStorablePhone(trimmedValue) : trimmedValue;
+      const fieldName = focusField.field;
       setFields((prev) => {
         if (focusField.field === "allergies" || focusField.field === "diagnosis") {
           // сохраняем как последний вариант, не накапливаем старые значения
@@ -1099,6 +1117,22 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
         return { ...prev, [focusField.field]: preparedValue };
       });
+
+      if (onUpdatePatient) {
+        if (fieldName === "phone") {
+          onUpdatePatient({ phone: preparedValue });
+        } else if (fieldName === "birthDate") {
+          onUpdatePatient({ birthDate: preparedValue });
+        } else if (fieldName === "allergies") {
+          onUpdatePatient({ allergies: preparedValue });
+        } else if (fieldName === "diagnosis") {
+          onUpdatePatient({ diagnosis: preparedValue });
+        } else if (fieldName === "notes") {
+          onUpdatePatient({ notes: preparedValue });
+        } else if (fieldName === "protocol") {
+          onUpdatePatient({ protocol: preparedValue });
+        }
+      }
     }
     setFocusField(null);
   };
@@ -1107,9 +1141,21 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     setFocusField(null);
   };
 
+  const handleServicesChange = (services: string[]) => {
+    setLocalServices(services);
+    onUpdatePatient?.({ procedure: services.join(", ") });
+  };
+
   const handleCloseRequest = () => {
     handleSaveChanges(true);
     onClose();
+  };
+
+  const handleDeleteVisit = () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm("Видалити цей запис пацієнта?");
+    if (!confirmed) return;
+    onDelete(patient.id);
   };
 
   const handleApplyReschedule = () => {
@@ -1304,10 +1350,19 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               <span className="text-muted-foreground font-normal">Час:</span>
               <span className="font-bold text-foreground">{patient.time}</span>
               <span className="text-muted-foreground">|</span>
-              <span className="font-bold text-foreground">{patient.procedure}</span>
+              <span className="font-bold text-foreground">{getPrimaryService(localServices) || patient.procedure}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {onDelete && (
+              <button
+                onClick={handleDeleteVisit}
+                title="Видалити запис"
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors active:scale-[0.93] shrink-0"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
             <button
               onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
@@ -1352,8 +1407,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     <ProfilePane
                       profile={mergedProfile}
                       onFocusEdit={handleFocusOpen}
-                      onBirthDateChange={(value) => setFields((prev) => ({ ...prev, birthDate: value }))}
-                      onPhoneChange={(value) => setFields((prev) => ({ ...prev, phone: value }))}
+                      onBirthDateChange={(value) => {
+                        setFields((prev) => ({ ...prev, birthDate: value }));
+                        onUpdatePatient?.({ birthDate: value });
+                      }}
+                      onPhoneChange={(value) => {
+                        setFields((prev) => ({ ...prev, phone: value }));
+                        onUpdatePatient?.({ phone: value });
+                      }}
                       histories={{
                         phoneHistory: patient.phoneHistory,
                         birthDateHistory: patient.birthDateHistory,
@@ -1364,7 +1425,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     />
                   </ContentBlock>
                   <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
-                    <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
+                    <ServicesPane services={localServices} onServicesChange={handleServicesChange} showFloatingEdit={!focusField} />
                   </ContentBlock>
                 </div>
               ) : activeTab === "files" ? (
@@ -1432,8 +1493,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ProfilePane
                   profile={mergedProfile}
                   onFocusEdit={handleFocusOpen}
-                  onBirthDateChange={(value) => setFields((prev) => ({ ...prev, birthDate: value }))}
-                  onPhoneChange={(value) => setFields((prev) => ({ ...prev, phone: value }))}
+                  onBirthDateChange={(value) => {
+                    setFields((prev) => ({ ...prev, birthDate: value }));
+                    onUpdatePatient?.({ birthDate: value });
+                  }}
+                  onPhoneChange={(value) => {
+                    setFields((prev) => ({ ...prev, phone: value }));
+                    onUpdatePatient?.({ phone: value });
+                  }}
                   histories={{
                     phoneHistory: patient.phoneHistory,
                     birthDateHistory: patient.birthDateHistory,
@@ -1444,7 +1511,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 />
               </ContentBlock>
               <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
-                <ServicesPane services={localServices} onServicesChange={setLocalServices} showFloatingEdit={!focusField} />
+                <ServicesPane services={localServices} onServicesChange={handleServicesChange} showFloatingEdit={!focusField} />
               </ContentBlock>
               <ContentBlock title="Обстеження та Файли" icon={<FileText size={13} />}>
                 <FilesPane

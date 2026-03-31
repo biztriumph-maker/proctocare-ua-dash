@@ -6,7 +6,6 @@ type SyncedEntry = {
 type Snapshot = Record<string, SyncedEntry>;
 
 const SYNCED_KEYS = [
-  "proctocare_all_patients",
   "proctocare_assistant_chat",
   "proctocare_temp_chat_logs",
   "proctocare_doctor_profile",

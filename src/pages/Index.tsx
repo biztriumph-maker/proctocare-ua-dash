@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
@@ -11,7 +11,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
-import { savePatientToSupabase, loadPatientsFromSupabase } from "@/lib/supabaseSync";
+import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode } from "@/lib/supabaseSync";
 
 const today = new Date();
 const tomorrow = new Date();
@@ -225,7 +225,7 @@ const MOCK_PATIENTS: Patient[] = [
   { id: "4", name: "Бондаренко Вікторія", patronymic: "Іванівна", time: "14:00", procedure: "Колоноскопія", status: "ready", aiSummary: "Всі етапи підготовки пройдені успішно" },
   { id: "5", name: "Ткаченко Наталія", patronymic: "Миколаївна", time: "16:00", procedure: "Аноскопія", status: "progress", aiSummary: "Дієта дотримується, очікуємо прийом препарату" },
   { id: "6", name: "Лисенко Андрій", patronymic: "Сергійович", time: "17:00", procedure: "Колоноскопія", status: "risk", aiSummary: "Алергія не підтверджена, потрібна консультація" },
-  { id: "mock-petushkov", name: "Петушков Сергій", patronymic: "Юрійович", time: "09:00", procedure: "Поліпектомія при колоноскопії", status: "planning", aiSummary: "Записаний на процедуру, очікує підготовки", date: sundayDateStr, fromForm: true },
+  { id: "mock-petushkov", name: "Петушков Сергій", patronymic: "Юрійович", time: "09:00", procedure: "Поліпектомія при колоноскопії 1 клас 1А", status: "planning", aiSummary: "Записаний на процедуру, очікує підготовки", date: sundayDateStr, fromForm: true },
 ];
 
 const MOCK_TOMORROW: Patient[] = [];
@@ -632,6 +632,12 @@ export default function Index() {
       ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || currentTomorrowIso })),
     ].map((p) => ({ ...p }));
   });
+  const patientsRef = useRef<Patient[]>(patients);
+  const selectedPatientRef = useRef<Patient | null>(null);
+
+  useEffect(() => {
+    patientsRef.current = patients;
+  }, [patients]);
 
   useEffect(() => {
     setPatients((prev) => sanitizePatientsAssistantNotes(prev));
@@ -655,18 +661,93 @@ export default function Index() {
     cleanupTemporaryChatLogs();
   }, []);
 
-  // Загрузка пациентов из Supabase при старте
-useEffect(() => {
-  loadPatientsFromSupabase().then((data) => {
-    if (data && data.length > 0) {
-      setPatients(data as any);
+  const lastFetchRef = useRef<string | null>(null);
+  const refreshPatientsFromSupabase = useCallback(async (reason: string) => {
+    try {
+      const data = await loadPatientsFromSupabase();
+      if (!data) return;
+
+      if (!isSupabaseDataMode && data.length === 0 && patientsRef.current.length > 0) {
+        await replacePatientsSnapshot(patientsRef.current as unknown as Array<Record<string, unknown>>);
+        const seededSerialized = JSON.stringify(patientsRef.current);
+        lastFetchRef.current = seededSerialized;
+        console.log('🔄 Test sync seeded from local state:', patientsRef.current.length, 'patients');
+        return;
+      }
+
+      const normalized = data as Patient[];
+      const nextSerialized = JSON.stringify(normalized);
+      if (nextSerialized === lastFetchRef.current) return;
+
+      console.log(`🔄 Supabase sync (${reason}):`, normalized.length, "patients");
+      setPatients(normalized);
+      lastFetchRef.current = nextSerialized;
+
+      const activeSelected = selectedPatientRef.current;
+      if (activeSelected) {
+        const selectedKey = personKey(activeSelected);
+        const byId = normalized.find((p) => p.id === activeSelected.id);
+        const byVisitAndPerson = normalized.find((p) =>
+          (personKey(p) === selectedKey || isSamePerson(p, activeSelected)) &&
+          p.time === activeSelected.time &&
+          (!!activeSelected.date ? p.date === activeSelected.date : true)
+        );
+        const byPerson = normalized
+          .filter((p) => personKey(p) === selectedKey || isSamePerson(p, activeSelected))
+          .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+
+        const base = byId || byVisitAndPerson || byPerson;
+        if (base) {
+          const donor = normalized
+            .filter((p) => p.id !== base.id && isSamePerson(p, base))
+            .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
+          const hydrated = hydrateMissingProfile(base, donor);
+
+          setSelectedPatient((prev) => {
+            if (!prev) return prev;
+            if (arePatientsEquivalentForView(prev, hydrated)) return prev;
+            return hydrated;
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Supabase sync error (${reason}):`, error);
     }
-  });
-}, []);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem("proctocare_all_patients", JSON.stringify(patients));
-  }, [patients]);
+    void refreshPatientsFromSupabase("initial");
+
+    const unsubscribeRealtime = subscribeToPatientsRealtime(() => {
+      void refreshPatientsFromSupabase("realtime");
+    });
+
+    const pollInterval = window.setInterval(() => {
+      void refreshPatientsFromSupabase("poll");
+    }, 5000);
+
+    const onFocus = () => {
+      void refreshPatientsFromSupabase("focus");
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshPatientsFromSupabase("visibility");
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      unsubscribeRealtime();
+      clearInterval(pollInterval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refreshPatientsFromSupabase]);
+
+  // Пацієнти зберігаються в Supabase, не в localStorage
 
   const [assistantAlerts, setAssistantAlerts] = useState<DashboardAssistantAlert[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -674,6 +755,10 @@ useEffect(() => {
   const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const doctorPhoneForQuickReply = useMemo(() => getDoctorPhoneForQuickReply(), []);
+
+  useEffect(() => {
+    selectedPatientRef.current = selectedPatient;
+  }, [selectedPatient]);
 
   const refreshAssistantAlerts = useCallback(() => {
     setAssistantAlerts(buildDashboardAssistantAlerts(patients));
@@ -685,8 +770,7 @@ useEffect(() => {
 
   useEffect(() => {
     const onRemoteUpdated = () => {
-      const loaded = loadStoredPatients(todayIso, tomorrowIso);
-      if (loaded) setPatients(loaded);
+      // Пацієнти живуть в Supabase — перезавантажуємо тільки алерти асистента
       refreshAssistantAlerts();
     };
 
@@ -785,7 +869,7 @@ useEffect(() => {
     };
       void savePatientToSupabase(
   { id: newId, name: entry.name, patronymic: entry.patronymic, phone: entry.phone, birth_date: entry.birthDate },
-  { id: `v-${newId}`, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true }
+  { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true }
 );
     setSkeletonPatient(newPatient);
     setShowForm(false);
@@ -858,6 +942,7 @@ useEffect(() => {
         p.id === patientId ? { ...p, noShow: true } : p
       )
     );
+    void updatePatientInSupabase(patientId, { noShow: true });
     toast("Пацієнта позначено як «Не з'явився»");
   }, []);
 
@@ -867,6 +952,7 @@ useEffect(() => {
         p.id === patientId ? { ...p, completed: true, status: "ready" as PatientStatus } : p
       )
     );
+    void updatePatientInSupabase(patientId, { completed: true, status: "ready" });
     toast.success("Процедуру позначено як виконану");
   }, []);
 
@@ -885,6 +971,7 @@ useEffect(() => {
       return prev.filter((p) => p.id !== patientId);
     });
     setSelectedPatient(null);
+    void deletePatientVisitFromSupabase(patientId);
     toast("Запис видалено");
   }, [selectedPatient]);
 
@@ -1261,6 +1348,7 @@ useEffect(() => {
               if (!prev) return prev;
               return { ...prev, ...updates };
             });
+            void updatePatientInSupabase(selectedPatient.id, updates);
           }}
         />
       )}
