@@ -625,6 +625,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
   const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [localFullName, setLocalFullName] = useState(() => {
     const raw = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`;
@@ -1155,9 +1157,14 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const handleDeleteVisit = () => {
     if (!onDelete) return;
-    const confirmed = window.confirm("Видалити цей запис пацієнта?");
-    if (!confirmed) return;
-    onDelete(patient.id);
+    setDeleteDialogOpen(true);
+    setDeleteConfirmText("");
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmText !== "ВИДАЛИТИ") return;
+    setDeleteDialogOpen(false);
+    onDelete!(patient.id);
   };
 
   const handleApplyReschedule = () => {
@@ -1589,6 +1596,48 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             onSave={handleFocusSave}
             onCancel={handleFocusCancel}
           />
+        )}
+
+        {deleteDialogOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-foreground/30 backdrop-blur-sm animate-fade-in" onClick={() => setDeleteDialogOpen(false)}>
+            <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-2">
+                <Trash2 size={16} className="text-destructive shrink-0" />
+                <h3 className="text-sm font-bold text-destructive">Видалення запису пацієнта</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-1">
+                Ви впевнені, що хочете видалити цей запис?
+              </p>
+              <p className="text-xs font-bold text-destructive mb-3">
+                Ця дія незворотна. Для підтвердження введіть слово{" "}
+                <span className="font-black tracking-wide">ВИДАЛИТИ</span>
+              </p>
+              <input
+                autoFocus
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleConfirmDelete(); if (e.key === "Escape") setDeleteDialogOpen(false); }}
+                placeholder="Введіть ВИДАЛИТИ"
+                className="w-full text-sm border-2 border-border rounded-lg px-3 py-2 outline-none focus:border-destructive/60 mb-4 bg-background"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDeleteDialogOpen(false)}
+                  className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+                >
+                  Скасувати
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={deleteConfirmText !== "ВИДАЛИТИ"}
+                  className="flex-1 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-destructive hover:bg-destructive/90 disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Видалити
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {showReschedulePicker && (

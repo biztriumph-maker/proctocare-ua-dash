@@ -963,23 +963,70 @@ export default function Index() {
     toast.success("Процедуру позначено як виконану");
   }, []);
 
+  const pendingDeletionsRef = useRef<Map<string, { patient: Patient; timerId: ReturnType<typeof setTimeout>; intervalId: ReturnType<typeof setInterval> }>>(new Map());
+
   const handleDeletePatient = useCallback((patientId: string) => {
-    setPatients((prev) => {
-      const byId = prev.find((p) => p.id === patientId);
-      const sel = selectedPatient;
-      if (!byId && sel) {
-        const byIdentity = prev.find((p) =>
-          isSamePerson(p, sel) &&
-          p.time === sel.time &&
-          (!!sel.date ? p.date === sel.date : true)
-        );
-        if (byIdentity) return prev.filter((p) => p.id !== byIdentity.id);
-      }
-      return prev.filter((p) => p.id !== patientId);
-    });
+    // Resolve which patient record to delete (id match or identity match)
+    const prev = patientsRef.current;
+    const sel = selectedPatient;
+    const byId = prev.find((p) => p.id === patientId);
+    let target: Patient | undefined = byId;
+    let resolvedId = patientId;
+    if (!byId && sel) {
+      const byIdentity = prev.find((p) =>
+        isSamePerson(p, sel) &&
+        p.time === sel.time &&
+        (!!sel.date ? p.date === sel.date : true)
+      );
+      if (byIdentity) { target = byIdentity; resolvedId = byIdentity.id; }
+    }
+    if (!target) { setSelectedPatient(null); return; }
+
+    const deletedPatient = target;
+    const finalId = resolvedId;
+
+    // Remove from UI immediately
+    setPatients((p) => p.filter((x) => x.id !== finalId));
     setSelectedPatient(null);
-    void deletePatientVisitFromSupabase(patientId);
-    toast("Запис видалено");
+
+    const UNDO_SEC = 30;
+    let remaining = UNDO_SEC;
+    const toastId = `delete-${finalId}`;
+
+    const restorePatient = () => {
+      const pending = pendingDeletionsRef.current.get(finalId);
+      if (!pending) return;
+      clearTimeout(pending.timerId);
+      clearInterval(pending.intervalId);
+      pendingDeletionsRef.current.delete(finalId);
+      setPatients((p) => [deletedPatient, ...p]);
+      toast.dismiss(toastId);
+      toast.success("Запис відновлено");
+    };
+
+    const showToast = () => {
+      toast(`Запис видалено · відновити можна ще ${remaining} с`, {
+        id: toastId,
+        duration: Infinity,
+        action: { label: "Відновити", onClick: restorePatient },
+      });
+    };
+
+    showToast();
+
+    const intervalId = setInterval(() => {
+      remaining--;
+      if (remaining > 0) { showToast(); }
+    }, 1000);
+
+    const timerId = setTimeout(() => {
+      clearInterval(intervalId);
+      toast.dismiss(toastId);
+      pendingDeletionsRef.current.delete(finalId);
+      void deletePatientVisitFromSupabase(finalId);
+    }, UNDO_SEC * 1000);
+
+    pendingDeletionsRef.current.set(finalId, { patient: deletedPatient, timerId, intervalId });
   }, [selectedPatient]);
 
   const tomorrowDate = new Date();
