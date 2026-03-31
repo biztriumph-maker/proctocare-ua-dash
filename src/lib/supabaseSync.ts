@@ -327,15 +327,28 @@ export async function deletePatientVisitFromSupabase(visitId: string) {
 
 const PATIENT_FILES_BUCKET = 'patient-files';
 
+function inferContentType(fileName: string): string {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (ext === 'doc') return 'application/msword';
+  return 'application/octet-stream';
+}
+
 // Завантажити файл в Supabase Storage, повертає публічний URL або null
 export async function uploadFileToSupabaseStorage(visitId: string, file: File): Promise<string | null> {
   if (!USE_SUPABASE) return null;
   try {
     const safeName = file.name.replace(/\s+/g, '_');
     const path = `${visitId}/${Date.now()}-${safeName}`;
+    const contentType = file.type || inferContentType(file.name);
     const { data, error } = await supabase.storage
       .from(PATIENT_FILES_BUCKET)
-      .upload(path, file, { upsert: false, contentType: file.type });
+      .upload(path, file, { upsert: false, contentType });
     if (error) {
       console.warn('⚠️ Storage upload failed:', error.message, '— falling back to local');
       return null;

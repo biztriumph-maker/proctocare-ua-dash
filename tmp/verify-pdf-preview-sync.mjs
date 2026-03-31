@@ -134,13 +134,12 @@ async function assertPdfPreview(page, fileName) {
 
   await page.getByText(fileName).first().waitFor({ timeout: 15000 });
 
-  let iframeVisible = false;
-  try {
-    await page.locator("iframe").first().waitFor({ timeout: 15000 });
-    iframeVisible = true;
-  } catch {
-    iframeVisible = false;
-  }
+  await page.waitForTimeout(2000);
+
+  const canvasCount = await page.locator("canvas").count().catch(() => 0);
+  const loadingVisible = await page.getByText("Завантаження PDF...", { exact: false }).first().isVisible().catch(() => false);
+  const pageCounterText = await page.locator("span", { hasText: /\d+\/\d+/ }).first().textContent().catch(() => null);
+  const renderedVisible = canvasCount > 0;
 
   const hasError = await page
     .getByText("Не вдалося відкрити PDF для перегляду", { exact: false })
@@ -148,7 +147,7 @@ async function assertPdfPreview(page, fileName) {
     .isVisible()
     .catch(() => false);
 
-  return { modalOpened: true, iframeVisible, hasError };
+  return { modalOpened: true, renderedVisible, hasError, canvasCount, loadingVisible, pageCounterText };
 }
 
 async function run() {
@@ -170,8 +169,8 @@ async function run() {
 
   const report = {
     ok: false,
-    desktop: { modalOpened: false, iframeVisible: false, hasError: false },
-    mobile: { modalOpened: false, iframeVisible: false, hasError: false },
+    desktop: { modalOpened: false, renderedVisible: false, hasError: false },
+    mobile: { modalOpened: false, renderedVisible: false, hasError: false },
   };
 
   const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -179,6 +178,14 @@ async function run() {
   const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
   const desktopPage = await desktopContext.newPage();
   const mobilePage = await mobileContext.newPage();
+  const browserConsole = [];
+
+  desktopPage.on("console", (msg) => {
+    if (msg.type() === "error") browserConsole.push(`[desktop] ${msg.text()}`);
+  });
+  mobilePage.on("console", (msg) => {
+    if (msg.type() === "error") browserConsole.push(`[mobile] ${msg.text()}`);
+  });
 
   try {
     await storageUpload(url, key, BUCKET, storagePath, tinyPdfBytes(), "application/pdf");
@@ -243,12 +250,13 @@ async function run() {
 
     report.desktop = desktopResult;
     report.mobile = mobileResult;
+    report.browserConsole = browserConsole;
     report.ok =
       desktopResult.modalOpened &&
-      desktopResult.iframeVisible &&
+      desktopResult.renderedVisible &&
       !desktopResult.hasError &&
       mobileResult.modalOpened &&
-      mobileResult.iframeVisible &&
+      mobileResult.renderedVisible &&
       !mobileResult.hasError;
 
     console.log(JSON.stringify(report, null, 2));
