@@ -42,6 +42,7 @@ const sundayDateStr = localDateStr(_sunday);
 const ASSISTANT_CHAT_LS_KEY = "proctocare_assistant_chat";
 const TEMP_CHAT_LOGS_LS_KEY = "proctocare_temp_chat_logs";
 const ASSISTANT_CHAT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const PURGED_LEGACY_FILE_NAMES = new Set(["Артро буклет рус.pdf"]);
 
 type AssistantLogMessage = {
   sender: "ai" | "patient" | "doctor";
@@ -586,6 +587,22 @@ function sanitizePatientsAssistantNotes(patients: Patient[]): Patient[] {
   return changed ? next : patients;
 }
 
+function removePurgedLegacyFiles(patients: Patient[]): { patients: Patient[]; changed: boolean } {
+  let changed = false;
+
+  const next = patients.map((patient) => {
+    if (!Array.isArray(patient.files) || patient.files.length === 0) return patient;
+
+    const filteredFiles = patient.files.filter((file) => !PURGED_LEGACY_FILE_NAMES.has(String(file.name || "").trim()));
+    if (filteredFiles.length === patient.files.length) return patient;
+
+    changed = true;
+    return { ...patient, files: filteredFiles };
+  });
+
+  return { patients: next, changed };
+}
+
 function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string): Patient[] | null {
   const saved = localStorage.getItem("proctocare_all_patients");
   if (!saved) return null;
@@ -600,11 +617,14 @@ function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string)
       const testName = /^(STAT\d+|E2E\d+)/i.test(fullName) || /test\s*test/i.test(fullName);
       return !testId && !testName;
     });
-    return normalizeDemoScheduleDates(
+    const normalized = normalizeDemoScheduleDates(
       rebuildPetushkovRecord(
         removeLegacyMockPetushkovDuplicate(unifyProfilesAcrossVisits(sanitizePatientsAssistantNotes(withoutKnownTests)))
       )
     );
+    const { patients: withoutPurgedFiles, changed } = removePurgedLegacyFiles(normalized);
+    if (changed) localStorage.setItem("proctocare_all_patients", JSON.stringify(withoutPurgedFiles));
+    return withoutPurgedFiles;
   } catch (e) {
     console.error("Failed to parse saved patients", e);
     return null;
