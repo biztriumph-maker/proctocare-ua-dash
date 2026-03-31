@@ -2160,17 +2160,6 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob; 
         <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
           <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
 
-          {viewerUrl ? (
-            <a
-              href={viewerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
-            >
-              Відкрити в новій вкладці
-            </a>
-          ) : null}
-
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
@@ -2417,8 +2406,17 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   const hasTimeline = historicalDates.length > 0;
 
   const getFileExtension = (name: string): string => {
-    const parts = name.toLowerCase().split(".");
-    return parts.length > 1 ? parts.at(-1) || "" : "";
+    const parts = name.toLowerCase().trim().split(".");
+    return parts.length > 1 ? (parts.at(-1) || "").trim() : "";
+  };
+
+  const looksLikePdfBlob = async (blob: Blob): Promise<boolean> => {
+    try {
+      const head = await blob.slice(0, 5).text();
+      return head === "%PDF-";
+    } catch {
+      return false;
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2484,9 +2482,14 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
     const ext = getFileExtension(file.name);
     const mime = (file.mimeType || blob.type || "").toLowerCase();
-    const isPdf = mime.includes("pdf") || ext === "pdf";
+    const urlLooksPdf = (file.url || "").toLowerCase().includes(".pdf");
+    const signatureLooksPdf = await looksLikePdfBlob(blob);
+    const isPdf = mime.includes("pdf") || ext === "pdf" || urlLooksPdf || signatureLooksPdf;
     if (isPdf) {
-      setPreview({ kind: "pdf", name: file.name, blob, url: file.url });
+      const pdfBlob = mime.includes("pdf")
+        ? blob
+        : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
+      setPreview({ kind: "pdf", name: file.name, blob: pdfBlob, url: file.url });
       return;
     }
 
