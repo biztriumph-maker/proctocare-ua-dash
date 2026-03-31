@@ -779,16 +779,13 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const serviceCategory = getServiceCategory(localServices);
 
-  const _now = new Date();
-  const todayStr = `${String(_now.getDate()).padStart(2, "0")}.${String(_now.getMonth() + 1).padStart(2, "0")}.${_now.getFullYear()}`;
   const seededProtocolHistory = getSeededMockProtocolHistory(patient);
   const seededProcedureHistory = getSeededMockProcedureHistory(patient);
-  const seededFiles = getSeededMockFiles(patient);
   const mergedProtocolHistory = patient.fromForm
     ? mergeUniqueHistoryEntries(patient.protocolHistory, seededProtocolHistory)
     : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
-  const initialFiles = mergeUniqueFileItems(patient.files || (patient.fromForm ? [] : getMockFiles(todayStr)), seededFiles);
+  const initialFiles = patient.files || [];
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
 
   useEffect(() => {
@@ -797,13 +794,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     const nextProtocol = getInitialActiveProtocol(patient, activeVisitIso);
     const nextPhone = patient.phone || nextProfile.phone;
     const nextServices = patient.procedure ? patient.procedure.split(", ") : [];
-    const now = new Date();
-    const todayDisplay = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
-    const nextSeededFiles = getSeededMockFiles(patient);
-    const nextInitialFiles = mergeUniqueFileItems(
-      patient.files || (patient.fromForm ? [] : getMockFiles(todayDisplay)),
-      nextSeededFiles
-    );
+    const nextInitialFiles = patient.files || [];
 
     setLocalFullName(correctNameSpelling(`${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`));
     setFields({
@@ -2068,21 +2059,6 @@ async function deleteBlobFromStorage(key: string): Promise<void> {
   db.close();
 }
 
-function getMockFiles(todayStr: string): FileItem[] {
-  return [
-    { id: "mock_today_img", name: "test_today.jpg", type: "patient", date: todayStr },
-    { id: "mock_archive_pdf", name: "archive_report_2025.pdf", type: "doctor", date: "20.05.2025" },
-  ];
-}
-
-function getSeededMockFiles(patient: Patient): FileItem[] {
-  if (!isPetushkovMockPatient(patient)) return [];
-  return [
-    { id: "mock-old-report-15052025", name: "old_report.pdf", type: "doctor", date: "15.05.2025" },
-    { id: "mock-scan-15052025", name: "scan_2025.jpg", type: "patient", date: "15.05.2025" },
-  ];
-}
-
 function getSeededMockProtocolHistory(patient: Patient): Array<{ value: string; timestamp: string; date: string }> {
   if (!isPetushkovMockPatient(patient)) return [];
   return [
@@ -2103,14 +2079,6 @@ function getSeededMockProcedureHistory(patient: Patient): Array<{ value: string;
       date: "2025-05-15",
     },
   ];
-}
-
-function mergeUniqueFileItems(primary: FileItem[], seeded: FileItem[]): FileItem[] {
-  const map = new Map<string, FileItem>();
-  for (const file of [...seeded, ...primary]) {
-    map.set(file.id, file);
-  }
-  return Array.from(map.values());
 }
 
 const MOCK_PROTOCOL_HISTORY: Array<{ value: string; timestamp: string; date: string }> = [
