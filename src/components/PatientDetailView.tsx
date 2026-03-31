@@ -2799,7 +2799,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               </div>
             )}
 
-            {latestArchivedProtocol && (
+            {latestArchivedProtocol && !protocolText && (
               <button
                 onClick={() => setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date })}
                 className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-2 py-1 transition-colors"
