@@ -146,6 +146,10 @@ function getInitialActiveProtocol(patient: Patient, activeVisitIso: string): str
     .at(-1);
   if (sameVisitEntry?.value?.trim()) return sameVisitEntry.value;
 
+  if (typeof patient.protocol === "string" && patient.protocol.trim()) {
+    return patient.protocol;
+  }
+
   const todayIso = getTodayIsoKyiv();
   if (activeVisitIso > todayIso) return "";
 
