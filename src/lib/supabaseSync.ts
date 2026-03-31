@@ -324,3 +324,44 @@ export async function deletePatientVisitFromSupabase(visitId: string) {
   const { error } = await supabase.from('visits').delete().eq('id', visitId);
   if (error) console.error('Помилка видалення візиту:', error);
 }
+
+const PATIENT_FILES_BUCKET = 'patient-files';
+
+// Завантажити файл в Supabase Storage, повертає публічний URL або null
+export async function uploadFileToSupabaseStorage(visitId: string, file: File): Promise<string | null> {
+  if (!USE_SUPABASE) return null;
+  try {
+    const safeName = file.name.replace(/\s+/g, '_');
+    const path = `${visitId}/${Date.now()}-${safeName}`;
+    const { data, error } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .upload(path, file, { upsert: false, contentType: file.type });
+    if (error) {
+      console.warn('⚠️ Storage upload failed:', error.message, '— falling back to local');
+      return null;
+    }
+    const { data: urlData } = supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .getPublicUrl(data.path);
+    return urlData.publicUrl;
+  } catch (err) {
+    console.warn('⚠️ Storage upload exception:', err);
+    return null;
+  }
+}
+
+// Видалити файл з Supabase Storage
+export async function deleteFileFromSupabaseStorage(publicUrl: string): Promise<void> {
+  if (!USE_SUPABASE) return;
+  try {
+    // Extract path from URL: .../storage/v1/object/public/patient-files/{path}
+    const marker = `/object/public/${PATIENT_FILES_BUCKET}/`;
+    const idx = publicUrl.indexOf(marker);
+    if (idx < 0) return;
+    const filePath = decodeURIComponent(publicUrl.slice(idx + marker.length));
+    const { error } = await supabase.storage.from(PATIENT_FILES_BUCKET).remove([filePath]);
+    if (error) console.warn('⚠️ Storage delete failed:', error.message);
+  } catch (err) {
+    console.warn('⚠️ Storage delete exception:', err);
+  }
+}

@@ -11,6 +11,7 @@ import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import mammoth from "mammoth";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "@/lib/supabaseSync";
 
 GlobalWorkerOptions.workerSrc = "";
 
@@ -1446,6 +1447,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                       procedureHistory={mergedProcedureHistory}
                       activeVisitDate={activeVisitDisplayDate}
                       onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                      visitId={patient.id}
                     />
                   </ContentBlock>
                 </div>
@@ -1529,6 +1531,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   procedureHistory={mergedProcedureHistory}
                   activeVisitDate={activeVisitDisplayDate}
                   onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                  visitId={patient.id}
                 />
               </ContentBlock>
             </div>
@@ -2422,7 +2425,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate, onProtocolPrefill }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate, onProtocolPrefill, visitId }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -2432,6 +2435,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
   activeVisitDate: string;
   onProtocolPrefill: (value: string) => void;
+  visitId?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
@@ -2556,13 +2560,24 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     try {
       const uploaded = await Promise.all(Array.from(e.target.files).map(async (file) => {
         const storageKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
+
+        // Try Supabase Storage first (cross-device access)
+        let publicUrl: string | undefined;
+        if (visitId) {
+          const url = await uploadFileToSupabaseStorage(visitId, file);
+          if (url) publicUrl = url;
+        }
+
+        // Always keep IndexedDB copy as local cache / offline fallback
         await putBlobToStorage(storageKey, file);
+
         return {
           id: Math.random().toString(36).substring(7),
           name: file.name,
           type: "doctor" as const,
           date: activeDate,
           storageKey,
+          url: publicUrl,
           mimeType: file.type,
         } as FileItem;
       }));
@@ -2663,8 +2678,11 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                   try {
                     await deleteBlobFromStorage(fileToDelete.storageKey);
                   } catch (err) {
-                    console.error("Failed to delete file from storage", err);
+                    console.error("Failed to delete file from local storage", err);
                   }
+                }
+                if (fileToDelete?.url) {
+                  void deleteFileFromSupabaseStorage(fileToDelete.url);
                 }
                 onFilesChange(files.filter(x => x.id !== confirmDeleteFile));
                 setConfirmDeleteFile(null);
