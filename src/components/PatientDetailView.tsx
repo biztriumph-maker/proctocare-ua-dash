@@ -1072,8 +1072,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     return [...current, { value: trimmed, timestamp: displayDate, date: todayIso }];
   };
 
-  const handleFocusOpen = (field: string, value: string, history?: HistoryEntry[]) => {
-    setFocusField({ field, value, history });
+  const handleFocusOpen = (field: string, value?: string | null, history?: HistoryEntry[]) => {
+    setFocusField({ field, value: value ?? "", history });
   };
 
   const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -1640,15 +1640,21 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 // ── Focus Mode Overlay ──
 function FocusOverlay({ field, value, history, patientName, allergies, onSave, onCancel }: {
   field: string;
-  value: string;
+  value?: string | null;
   history?: HistoryEntry[];
   patientName: string;
   allergies: string;
   onSave: (value: string) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(field === "phone" ? normalizePhoneWithPlus(value) : value);
-  const baseValue = value.trim();
+  const safeValue = value ?? "";
+  const [text, setText] = useState(field === "phone" ? normalizePhoneWithPlus(safeValue) : safeValue);
+  const baseValue = safeValue.trim();
+
+  useEffect(() => {
+    setText(field === "phone" ? normalizePhoneWithPlus(safeValue) : safeValue);
+  }, [field, safeValue]);
+
   const isDailyField = field === "notes" || field === "allergies" || field === "diagnosis";
   const todayIso = getTodayIsoKyiv();
   const visibleHistory = (history || []).filter((entry) => {
