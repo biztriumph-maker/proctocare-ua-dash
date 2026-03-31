@@ -617,7 +617,6 @@ export default function Index() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [showForm, setShowForm] = useState(false);
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
-  const [pendingDeleteDialog, setPendingDeleteDialog] = useState<{ id: string; patient: Patient; remaining: number } | null>(null);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [trainingLog, setTrainingLog] = useState<string[]>([]);
   const trainingMode = false;
@@ -964,80 +963,22 @@ export default function Index() {
     toast.success("Процедуру позначено як виконану");
   }, []);
 
-  const pendingDeletionsRef = useRef<Map<string, { patient: Patient; timerId: ReturnType<typeof setTimeout>; intervalId: ReturnType<typeof setInterval> }>>(new Map());
-
-  const restorePendingDeletion = useCallback(() => {
-    setPendingDeleteDialog((current) => {
-      if (!current) return current;
-      const pending = pendingDeletionsRef.current.get(current.id);
-      if (!pending) return null;
-      clearTimeout(pending.timerId);
-      clearInterval(pending.intervalId);
-      pendingDeletionsRef.current.delete(current.id);
-      setPatients((prev) => [pending.patient, ...prev]);
-      toast.success("Запис відновлено");
-      return null;
-    });
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      for (const pending of pendingDeletionsRef.current.values()) {
-        clearTimeout(pending.timerId);
-        clearInterval(pending.intervalId);
-      }
-      pendingDeletionsRef.current.clear();
-    };
-  }, []);
-
   const handleDeletePatient = useCallback((patientId: string) => {
-    const prev = patientsRef.current;
-    const sel = selectedPatient;
-    const byId = prev.find((p) => p.id === patientId);
-    let target: Patient | undefined = byId;
-    let resolvedId = patientId;
-
-    if (!byId && sel) {
-      const byIdentity = prev.find((p) =>
-        isSamePerson(p, sel) &&
-        p.time === sel.time &&
-        (!!sel.date ? p.date === sel.date : true)
-      );
-      if (byIdentity) {
-        target = byIdentity;
-        resolvedId = byIdentity.id;
+    setPatients((prev) => {
+      const byId = prev.find((p) => p.id === patientId);
+      const sel = selectedPatient;
+      if (!byId && sel) {
+        const byIdentity = prev.find((p) =>
+          isSamePerson(p, sel) &&
+          p.time === sel.time &&
+          (!!sel.date ? p.date === sel.date : true)
+        );
+        if (byIdentity) return prev.filter((p) => p.id !== byIdentity.id);
       }
-    }
-
-    if (!target) {
-      setSelectedPatient(null);
-      return;
-    }
-
-    const deletedPatient = target;
-    const finalId = resolvedId;
-    const UNDO_SEC = 30;
-
-    setPatients((p) => p.filter((x) => x.id !== finalId));
+      return prev.filter((p) => p.id !== patientId);
+    });
     setSelectedPatient(null);
-    setPendingDeleteDialog({ id: finalId, patient: deletedPatient, remaining: UNDO_SEC });
-
-    const intervalId = setInterval(() => {
-      setPendingDeleteDialog((current) => {
-        if (!current || current.id !== finalId) return current;
-        const nextRemaining = Math.max(0, current.remaining - 1);
-        return { ...current, remaining: nextRemaining };
-      });
-    }, 1000);
-
-    const timerId = setTimeout(() => {
-      clearInterval(intervalId);
-      pendingDeletionsRef.current.delete(finalId);
-      setPendingDeleteDialog((current) => (current?.id === finalId ? null : current));
-      void deletePatientVisitFromSupabase(finalId);
-    }, UNDO_SEC * 1000);
-
-    pendingDeletionsRef.current.set(finalId, { patient: deletedPatient, timerId, intervalId });
+    void deletePatientVisitFromSupabase(patientId);
   }, [selectedPatient]);
 
   const tomorrowDate = new Date();
@@ -1418,24 +1359,6 @@ export default function Index() {
         />
       )}
 
-      {pendingDeleteDialog && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-foreground/30 backdrop-blur-sm animate-fade-in">
-          <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up border border-border/60">
-            <h3 className="text-sm font-bold text-destructive mb-1">Запис видалено</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Запис пацієнта видалиться назавжди через <span className="font-black text-destructive">{pendingDeleteDialog.remaining}</span> с.
-            </p>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                onClick={restorePendingDeletion}
-                className="px-4 py-2 text-sm font-bold text-white bg-status-ready rounded-lg transition-colors active:scale-[0.97] hover:bg-status-ready/90"
-              >
-                Відновити
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

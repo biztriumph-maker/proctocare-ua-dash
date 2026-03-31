@@ -625,7 +625,9 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
   const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePhase, setDeletePhase] = useState<"idle" | "confirm" | "countdown">("idle");
+  const [deleteCountdown, setDeleteCountdown] = useState(30);
+  const deleteTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [localFullName, setLocalFullName] = useState(() => {
     const raw = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`;
@@ -1156,13 +1158,41 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const handleDeleteVisit = () => {
     if (!onDelete) return;
-    setDeleteDialogOpen(true);
+    setDeletePhase("confirm");
   };
 
   const handleConfirmDelete = () => {
-    setDeleteDialogOpen(false);
-    onDelete!(patient.id);
+    setDeletePhase("countdown");
+    let remaining = 30;
+    setDeleteCountdown(remaining);
+    deleteTimerRef.current = setInterval(() => {
+      remaining--;
+      setDeleteCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(deleteTimerRef.current!);
+        deleteTimerRef.current = null;
+        onDelete!(patient.id);
+      }
+    }, 1000);
   };
+
+  const handleRestoreFromDelete = () => {
+    if (deleteTimerRef.current) {
+      clearInterval(deleteTimerRef.current);
+      deleteTimerRef.current = null;
+    }
+    setDeletePhase("idle");
+    setDeleteCountdown(30);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) {
+        clearInterval(deleteTimerRef.current);
+        deleteTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleApplyReschedule = () => {
     if (!onUpdatePatient || !rescheduleDate || !rescheduleTime) return;
@@ -1595,30 +1625,47 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
           />
         )}
 
-        {deleteDialogOpen && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-foreground/30 backdrop-blur-sm animate-fade-in" onClick={() => setDeleteDialogOpen(false)}>
-            <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        {deletePhase !== "idle" && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-foreground/30 backdrop-blur-sm animate-fade-in">
+            <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up">
               <div className="flex items-center gap-2 mb-2">
                 <Trash2 size={16} className="text-destructive shrink-0" />
                 <h3 className="text-sm font-bold text-destructive">Видалення запису пацієнта</h3>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">
-                Ви впевнені, що хочете видалити цей запис? Після видалення у вас буде 30 секунд щоб відновити його.
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setDeleteDialogOpen(false)}
-                  className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
-                >
-                  Скасувати
-                </button>
-                <button
-                  onClick={handleConfirmDelete}
-                  className="flex-1 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-destructive hover:bg-destructive/90"
-                >
-                  Видалити
-                </button>
-              </div>
+              {deletePhase === "confirm" ? (
+                <>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Ви впевнені, що хочете видалити цей запис? Після видалення у вас буде 30 секунд щоб відновити його.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setDeletePhase("idle")}
+                      className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+                    >
+                      Скасувати
+                    </button>
+                    <button
+                      onClick={handleConfirmDelete}
+                      className="flex-1 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-destructive hover:bg-destructive/90"
+                    >
+                      Видалити
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground mb-1">Запис буде видалено назавжди через</p>
+                  <div className="text-5xl font-black text-destructive text-center py-4">
+                    {deleteCountdown}<span className="text-2xl"> с</span>
+                  </div>
+                  <button
+                    onClick={handleRestoreFromDelete}
+                    className="w-full py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] bg-[hsl(142,71%,45%)] hover:bg-[hsl(142,71%,40%)]"
+                  >
+                    Відновити запис
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
