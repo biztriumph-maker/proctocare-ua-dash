@@ -593,9 +593,16 @@ function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string)
   try {
     const parsed = JSON.parse(saved);
     const cleaned = parsed.filter((p: Patient) => !["t1", "t2", "t3", "t4"].includes(p.id));
+    const withoutKnownTests = cleaned.filter((p: Patient) => {
+      const id = String(p.id || "");
+      const fullName = `${p.name || ""} ${p.patronymic || ""}`.trim();
+      const testId = /^(e2e-|status-e2e-|sync-fields-|observe-fields-|verify-refresh-|uibirth-|mod-|remaining-|svc-|pdf-|pdf-health-|file-)/i.test(id);
+      const testName = /^(STAT\d+|E2E\d+)/i.test(fullName) || /test\s*test/i.test(fullName);
+      return !testId && !testName;
+    });
     return normalizeDemoScheduleDates(
       rebuildPetushkovRecord(
-        removeLegacyMockPetushkovDuplicate(unifyProfilesAcrossVisits(sanitizePatientsAssistantNotes(cleaned)))
+        removeLegacyMockPetushkovDuplicate(unifyProfilesAcrossVisits(sanitizePatientsAssistantNotes(withoutKnownTests)))
       )
     );
   } catch (e) {

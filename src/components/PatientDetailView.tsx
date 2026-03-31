@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "@/lib/supabaseSync";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl } from "@/lib/supabaseSync";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -2581,9 +2581,43 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
   const handleViewFile = async (file: FileItem) => {
     let blob: Blob | null = null;
+    let resolvedUrl: string | undefined = file.url;
 
     if (file.storageKey) {
       blob = await getBlobFromStorage(file.storageKey);
+    }
+
+    const tryFetchFromUrl = async (url: string): Promise<Blob | null> => {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.blob();
+      } catch (err) {
+        console.error("Failed to load file URL", err);
+        return null;
+      }
+    };
+
+    if (!blob && resolvedUrl) {
+      blob = await tryFetchFromUrl(resolvedUrl);
+    }
+
+    // Legacy fallback: if URL is missing/stale, try to resolve by visit folder + filename
+    if (!blob && visitId) {
+      const fallbackUrl = await resolveVisitFilePublicUrl(visitId, file.name);
+      if (fallbackUrl) {
+        resolvedUrl = fallbackUrl;
+        blob = await tryFetchFromUrl(fallbackUrl);
+
+        // Persist recovered cloud URL so next open works in any browser/device
+        if (blob && fallbackUrl !== file.url) {
+          onFilesChange(files.map((f) => (
+            f.id === file.id
+              ? { ...f, url: fallbackUrl, mimeType: f.mimeType || blob?.type || inferMimeFromName(f.name) }
+              : f
+          )));
+        }
+      }
     }
 
     if (!blob && file.url) {
@@ -2610,7 +2644,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     const ext = getFileExtension(file.name);
     const lowerName = file.name.toLowerCase();
     const mime = (file.mimeType || blob.type || "").toLowerCase();
-    const urlLooksPdf = (file.url || "").toLowerCase().includes(".pdf");
+    const urlLooksPdf = (resolvedUrl || "").toLowerCase().includes(".pdf");
     const signatureLooksPdf = await looksLikePdfBlob(blob);
     const nameLooksPdf = lowerName.includes(".pdf");
     const isPdf = mime.includes("pdf") || ext === "pdf" || nameLooksPdf || urlLooksPdf || signatureLooksPdf;
@@ -2618,7 +2652,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       const pdfBlob = mime.includes("pdf")
         ? blob
         : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
-      setPreview({ kind: "pdf", name: file.name, blob: pdfBlob, url: file.url });
+      setPreview({ kind: "pdf", name: file.name, blob: pdfBlob, url: resolvedUrl });
       return;
     }
 

@@ -363,6 +363,32 @@ export async function uploadFileToSupabaseStorage(visitId: string, file: File): 
   }
 }
 
+// Знайти публічний URL файлу в Storage для legacy-записів, де URL не був збережений
+export async function resolveVisitFilePublicUrl(visitId: string, fileName: string): Promise<string | null> {
+  if (!USE_SUPABASE) return null;
+  try {
+    const safeName = fileName.replace(/\s+/g, '_');
+    const { data, error } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .list(visitId, { limit: 200, sortBy: { column: 'name', order: 'desc' } });
+
+    if (error || !data?.length) return null;
+
+    const hit = data.find((item) => item.name === safeName || item.name.endsWith(`-${safeName}`));
+    if (!hit?.name) return null;
+
+    const path = `${visitId}/${hit.name}`;
+    const { data: urlData } = supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .getPublicUrl(path);
+
+    return urlData.publicUrl || null;
+  } catch (err) {
+    console.warn('⚠️ Storage resolve URL exception:', err);
+    return null;
+  }
+}
+
 // Видалити файл з Supabase Storage
 export async function deleteFileFromSupabaseStorage(publicUrl: string): Promise<void> {
   if (!USE_SUPABASE) return;
