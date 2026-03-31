@@ -9,11 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
 import { toast } from "sonner";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import mammoth from "mammoth";
 import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage } from "@/lib/supabaseSync";
-
-GlobalWorkerOptions.workerSrc = "";
 
 interface ChatMessage {
   sender: "ai" | "patient" | "doctor";
@@ -2015,7 +2012,7 @@ type FileItem = {
 };
 
 type PreviewState =
-  | { kind: "pdf"; name: string; blob: Blob }
+  | { kind: "pdf"; name: string; blob: Blob; url?: string }
   | { kind: "docx"; name: string; blob: Blob }
   | { kind: "image"; name: string; blob: Blob }
   | { kind: "unsupported"; name: string; message: string };
@@ -2145,129 +2142,17 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
   );
 }
 
-function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }; onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob; url?: string }; onClose: () => void }) {
+  const [viewerUrl, setViewerUrl] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(0);
-  const [scale, setScale] = useState(1.2);
-  const renderTaskRef = useRef<any>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    let loadingTask: ReturnType<typeof getDocument> | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    setLoading(true);
-    setError(null);
-    setPdfDoc(null);
-    setPage(1);
-    setPages(0);
-
-    (async () => {
-      try {
-        const bytes = new Uint8Array(await file.blob.arrayBuffer());
-        timeoutId = setTimeout(() => {
-          if (!cancelled) {
-            setError("PDF не відповідає під час завантаження. Спробую інший режим відкриття в наступному кроці.");
-            setLoading(false);
-          }
-        }, 12000);
-
-        loadingTask = getDocument({
-          data: bytes,
-          disableWorker: true,
-          useSystemFonts: true,
-          isEvalSupported: false,
-          enableXfa: false,
-        });
-        const doc = await loadingTask.promise;
-        if (cancelled) return;
-        if (timeoutId) clearTimeout(timeoutId);
-        setPdfDoc(doc);
-        setPages(doc.numPages || 0);
-      } catch (e) {
-        if (cancelled) return;
-        if (timeoutId) clearTimeout(timeoutId);
-        console.error("PDF preview failed", e);
-        setError("Не вдалося відкрити PDF для перегляду");
-        setLoading(false);
-      }
-    })();
-
+    const objectUrl = URL.createObjectURL(file.blob);
+    setViewerUrl(objectUrl);
     return () => {
-      cancelled = true;
-      if (timeoutId) clearTimeout(timeoutId);
-      if (loadingTask) loadingTask.destroy();
+      URL.revokeObjectURL(objectUrl);
     };
   }, [file.blob]);
-
-  useEffect(() => {
-    if (!pdfDoc) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        if (renderTaskRef.current) {
-          try {
-            renderTaskRef.current.cancel();
-          } catch {
-          }
-        }
-
-        const pdfPage = await pdfDoc.getPage(page);
-        if (cancelled) return;
-
-        const viewport = pdfPage.getViewport({ scale });
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const renderTask = pdfPage.render({ canvasContext: ctx, viewport });
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
-        if (cancelled) return;
-        setLoading(false);
-      } catch (e) {
-        const errorName = typeof e === "object" && e !== null && "name" in e ? String((e as { name?: string }).name) : "";
-        if (!cancelled && errorName !== "RenderingCancelledException") {
-          console.error("PDF render failed", e);
-          setError("Не вдалося відмалювати сторінку PDF");
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {
-        }
-      }
-    };
-  }, [pdfDoc, page, scale]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfDoc) {
-        try {
-          pdfDoc.destroy();
-        } catch {
-        }
-      }
-    };
-  }, [pdfDoc]);
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
@@ -2275,37 +2160,16 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
         <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
           <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
 
-          <button
-            onClick={() => setScale((s) => Math.max(0.7, +(s - 0.1).toFixed(2)))}
-            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
-            title="Зменшити"
-          >
-            -
-          </button>
-          <span className="text-xs font-semibold text-muted-foreground w-12 text-center">{Math.round(scale * 100)}%</span>
-          <button
-            onClick={() => setScale((s) => Math.min(2.5, +(s + 0.1).toFixed(2)))}
-            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
-            title="Збільшити"
-          >
-            +
-          </button>
-
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1 || loading || !!error}
-            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent disabled:opacity-40"
-          >
-            Назад
-          </button>
-          <span className="text-xs font-semibold text-muted-foreground min-w-16 text-center">{pages > 0 ? `${page}/${pages}` : "0/0"}</span>
-          <button
-            onClick={() => setPage((p) => Math.min(pages || 1, p + 1))}
-            disabled={loading || !!error || pages === 0 || page >= pages}
-            className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent disabled:opacity-40"
-          >
-            Вперед
-          </button>
+          {viewerUrl ? (
+            <a
+              href={viewerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-1 text-xs font-bold rounded border border-border hover:bg-accent"
+            >
+              Відкрити в новій вкладці
+            </a>
+          ) : null}
 
           <button
             onClick={onClose}
@@ -2317,14 +2181,17 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob }
         </div>
 
         <div className="flex-1 overflow-auto bg-muted/30 p-4">
-          {loading ? (
-            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Завантаження PDF...</div>
-          ) : error ? (
+          {error ? (
             <div className="h-full flex items-center justify-center text-sm text-destructive font-semibold">{error}</div>
+          ) : !viewerUrl ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Завантаження PDF...</div>
           ) : (
-            <div className="flex justify-center">
-              <canvas ref={canvasRef} className="bg-white rounded shadow-md max-w-full h-auto" />
-            </div>
+            <iframe
+              src={viewerUrl}
+              title={file.name}
+              className="w-full h-full rounded bg-white"
+              onError={() => setError("Не вдалося відкрити PDF для перегляду")}
+            />
           )}
         </div>
       </div>
@@ -2600,7 +2467,10 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
     if (!blob && file.url) {
       try {
-        const res = await fetch(file.url);
+        const res = await fetch(file.url, { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         blob = await res.blob();
       } catch (err) {
         console.error("Failed to load legacy file URL", err);
@@ -2616,7 +2486,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     const mime = (file.mimeType || blob.type || "").toLowerCase();
     const isPdf = mime.includes("pdf") || ext === "pdf";
     if (isPdf) {
-      setPreview({ kind: "pdf", name: file.name, blob });
+      setPreview({ kind: "pdf", name: file.name, blob, url: file.url });
       return;
     }
 
