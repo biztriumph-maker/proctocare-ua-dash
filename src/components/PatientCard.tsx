@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Clock, Check, X } from "lucide-react";
 import { useState } from "react";
+import { hasConfirmedAllergen } from "@/lib/allergyState";
 
 /** Red Shield allergy icon — white "!" on red shield background */
 export function AllergyShield({ size = 14, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) {
@@ -181,6 +182,13 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
               </div>
               <h4 className={cn("flex items-center gap-1.5 text-[13px] sm:text-sm font-semibold leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
                 <span className={cn("shrink-0 w-2 h-2 rounded-full", statusConfig[computePatientStatus(patient)].dot)} />
+                {hasConfirmedAllergen(patient.allergies) && (
+                  <AllergyShield
+                    size={12}
+                    className="shrink-0"
+                    style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.55))" }}
+                  />
+                )}
                 <span className="truncate">{patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}</span>
               </h4>
               <div className="flex items-baseline gap-1.5">
