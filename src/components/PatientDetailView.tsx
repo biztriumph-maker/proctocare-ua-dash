@@ -1631,6 +1631,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       procedureHistory={mergedProcedureHistory}
                       historicalVisitDates={completedPastVisitDates}
                       visitOutcomeByDate={archivedVisitOutcomeByDate}
+                      currentVisitOutcome={patient.noShow ? "no-show" : (patient.completed || patient.status === "ready" ? "completed" : undefined)}
                       activeVisitDate={activeVisitDisplayDate}
                       onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                       visitId={patient.id}
@@ -1718,6 +1719,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   procedureHistory={mergedProcedureHistory}
                   historicalVisitDates={completedPastVisitDates}
                   visitOutcomeByDate={archivedVisitOutcomeByDate}
+                  currentVisitOutcome={patient.noShow ? "no-show" : (patient.completed || patient.status === "ready" ? "completed" : undefined)}
                   activeVisitDate={activeVisitDisplayDate}
                   onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                   visitId={patient.id}
@@ -2775,7 +2777,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, activeVisitDate, onProtocolPrefill, visitId }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -2785,6 +2787,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
   historicalVisitDates?: string[];
   visitOutcomeByDate?: Record<string, "completed" | "no-show">;
+  currentVisitOutcome?: "completed" | "no-show";
   activeVisitDate: string;
   onProtocolPrefill: (value: string) => void;
   visitId?: string;
@@ -2875,6 +2878,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of (historicalVisitDates || [])) if (d !== activeDate) dates.add(d);
     for (const d of Object.keys(visitOutcomeByDate || {})) if (d !== activeDate) dates.add(d);
+    if (currentVisitOutcome) dates.add(activeDate);
     return Array.from(dates).sort((a, b) => {
       const parse = (s: string) => {
         const [d, m, y] = s.split(".");
@@ -2882,7 +2886,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, visitOutcomeByDate, activeDate]);
+  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeDate]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
@@ -3145,7 +3149,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           <div className="absolute left-[27px] top-5 bottom-3 w-px bg-border/50" />
         )}
 
-        {/* ── Current Visit (always expanded, always on top) ── */}
+        {/* ── Current Visit (editable only while visit is active) ── */}
+        {!currentVisitOutcome && (
         <div className="relative pl-8 mb-4">
           <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-primary border-2 border-white shadow-sm" />
 
@@ -3212,6 +3217,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
             Завантажити файл
           </button>
         </div>
+        )}
 
         {/* ── Historical Visits (collapsible) ── */}
         {historicalDates.map((date) => {
@@ -3219,7 +3225,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           const dateFiles = filesByDate.get(date) || [];
           const dateProtocol = protocolByDate.get(date);
           const dateProcedure = procedureByDate.get(date);
-          const dateOutcome = visitOutcomeByDate?.[date];
+          const dateOutcome = date === activeDate ? currentVisitOutcome : visitOutcomeByDate?.[date];
           const rescheduledTo = rescheduledToByDate.get(date);
           const isFrozen = !!rescheduledTo;
 
