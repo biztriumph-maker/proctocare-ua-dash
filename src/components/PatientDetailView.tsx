@@ -684,6 +684,24 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       return parse(b) - parse(a);
     });
   }, [relatedVisits, activeVisitIso]);
+
+  const archivedVisitOutcomeByDate = useMemo(() => {
+    const map: Record<string, "completed" | "no-show"> = {};
+    for (const visit of relatedVisits) {
+      if (!visit.date) continue;
+      if (visit.date >= activeVisitIso) continue;
+
+      const displayDate = isoToDisplay(visit.date);
+      if (visit.noShow) {
+        map[displayDate] = "no-show";
+        continue;
+      }
+      if (visit.completed || visit.status === "ready") {
+        if (!map[displayDate]) map[displayDate] = "completed";
+      }
+    }
+    return map;
+  }, [relatedVisits, activeVisitIso]);
   
   const initialNotes = patient.notes !== undefined ? patient.notes : profile.notes;
   const initialProtocol = getInitialActiveProtocol(patient, activeVisitIso);
@@ -1612,6 +1630,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       protocolHistory={mergedProtocolHistory}
                       procedureHistory={mergedProcedureHistory}
                       historicalVisitDates={completedPastVisitDates}
+                      visitOutcomeByDate={archivedVisitOutcomeByDate}
                       activeVisitDate={activeVisitDisplayDate}
                       onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                       visitId={patient.id}
@@ -1698,6 +1717,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   protocolHistory={mergedProtocolHistory}
                   procedureHistory={mergedProcedureHistory}
                   historicalVisitDates={completedPastVisitDates}
+                  visitOutcomeByDate={archivedVisitOutcomeByDate}
                   activeVisitDate={activeVisitDisplayDate}
                   onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                   visitId={patient.id}
@@ -2764,6 +2784,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
   historicalVisitDates?: string[];
+  visitOutcomeByDate?: Record<string, "completed" | "no-show">;
   activeVisitDate: string;
   onProtocolPrefill: (value: string) => void;
   visitId?: string;
@@ -2853,6 +2874,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     for (const d of procedureByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of (historicalVisitDates || [])) if (d !== activeDate) dates.add(d);
+    for (const d of Object.keys(visitOutcomeByDate || {})) if (d !== activeDate) dates.add(d);
     return Array.from(dates).sort((a, b) => {
       const parse = (s: string) => {
         const [d, m, y] = s.split(".");
@@ -2860,7 +2882,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, activeDate]);
+  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, visitOutcomeByDate, activeDate]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
@@ -3197,6 +3219,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           const dateFiles = filesByDate.get(date) || [];
           const dateProtocol = protocolByDate.get(date);
           const dateProcedure = procedureByDate.get(date);
+          const dateOutcome = visitOutcomeByDate?.[date];
           const rescheduledTo = rescheduledToByDate.get(date);
           const isFrozen = !!rescheduledTo;
 
@@ -3227,6 +3250,25 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                       <p className="text-xs font-semibold text-slate-700">Перенесено: {rescheduledTo}</p>
                     </div>
                   )}
+                  {dateOutcome && !isFrozen && (
+                    <div className={cn(
+                      "rounded-lg p-2.5 border",
+                      dateOutcome === "no-show"
+                        ? "border-status-risk/35 bg-status-risk-bg"
+                        : "border-status-ready/35 bg-status-ready-bg"
+                    )}>
+                      <p className={cn(
+                        "text-[10px] font-bold uppercase tracking-wide mb-1",
+                        dateOutcome === "no-show" ? "text-status-risk" : "text-status-ready"
+                      )}>Статус</p>
+                      <p className={cn(
+                        "text-xs font-semibold",
+                        dateOutcome === "no-show" ? "text-status-risk" : "text-status-ready"
+                      )}>
+                        {dateOutcome === "no-show" ? "Не з'явився на прийом" : "Прийом завершено"}
+                      </p>
+                    </div>
+                  )}
                   {dateProcedure && (
                     <div className="rounded-lg border border-sky-200 bg-sky-50 p-2.5">
                       <p className="text-[10px] font-bold text-sky-700 uppercase tracking-wide mb-1">Послуга</p>
@@ -3244,7 +3286,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                       onDelete={() => setConfirmDeleteFile(file.id)}
                       onView={() => handleViewFile(file)} />
                   ))}
-                  {!dateProtocol && dateFiles.length === 0 && !isFrozen && (
+                  {!dateProtocol && dateFiles.length === 0 && !isFrozen && !dateOutcome && (
                     <p className="text-[11px] text-muted-foreground/40 italic">Немає записів</p>
                   )}
                 </div>

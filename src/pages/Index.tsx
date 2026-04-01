@@ -1019,20 +1019,24 @@ export default function Index() {
   const handleNoShow = useCallback((patientId: string) => {
     setPatients((prev) =>
       prev.map((p) =>
-        p.id === patientId ? { ...p, noShow: true } : p
+        p.id === patientId
+          ? { ...p, noShow: true, completed: false, status: "risk" as PatientStatus }
+          : p
       )
     );
-    void updatePatientInSupabase(patientId, { noShow: true });
+    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk" });
     toast("Пацієнта позначено як «Не з'явився»");
   }, []);
 
   const handleComplete = useCallback((patientId: string) => {
     setPatients((prev) =>
       prev.map((p) =>
-        p.id === patientId ? { ...p, completed: true, status: "ready" as PatientStatus } : p
+        p.id === patientId
+          ? { ...p, completed: true, noShow: false, status: "ready" as PatientStatus }
+          : p
       )
     );
-    void updatePatientInSupabase(patientId, { completed: true, status: "ready" });
+    void updatePatientInSupabase(patientId, { completed: true, noShow: false, status: "ready" });
     toast.success("Процедуру позначено як виконану");
   }, []);
 
