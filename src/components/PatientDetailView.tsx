@@ -2907,7 +2907,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     });
   };
 
-  const activeFiles = filesByDate.get(activeDate) || [];
+  const activeProtocolText = currentVisitOutcome ? "" : protocolText;
+  const activeFiles = currentVisitOutcome ? [] : (filesByDate.get(activeDate) || []);
   const hasTimeline = historicalDates.length > 0;
 
   const getFileExtension = (name: string): string => {
@@ -3169,13 +3170,13 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                 <FileText size={12} className="text-primary" />
                 Висновок лікаря
               </h4>
-              <button onClick={() => onFocusEdit("protocol", protocolText)}
+              <button onClick={() => onFocusEdit("protocol", activeProtocolText)}
                 className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all">
                 <Pencil size={11} className="text-muted-foreground" />
               </button>
             </div>
-            {protocolText ? (
-              <p className="text-sm leading-relaxed text-foreground">{protocolText}</p>
+            {activeProtocolText ? (
+              <p className="text-sm leading-relaxed text-foreground">{activeProtocolText}</p>
             ) : (
               <div className="space-y-2">
                 <button
@@ -3187,7 +3188,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               </div>
             )}
 
-            {latestArchivedProtocol && !protocolText && (
+            {latestArchivedProtocol && !activeProtocolText && !currentVisitOutcome && (
               <button
                 onClick={() => setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date })}
                 className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-2 py-1 transition-colors"
