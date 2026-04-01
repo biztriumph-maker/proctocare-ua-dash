@@ -71,6 +71,27 @@ function dateToStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function getHourFromTime(time?: string): number | null {
+  if (!time || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const [h] = time.split(":");
+  const hour = Number(h);
+  return Number.isFinite(hour) ? hour : null;
+}
+
+function pickPatientForSlot(realPatients: Patient[] | undefined, dateStr: string, hour: number): Patient | undefined {
+  if (!realPatients?.length) return undefined;
+
+  const sameDate = realPatients.filter((p) => p.date === dateStr);
+  const exact = sameDate.find((p) => p.time === `${String(hour).padStart(2, "0")}:00`);
+  if (exact) return exact;
+
+  const sameHour = sameDate
+    .filter((p) => getHourFromTime(p.time) === hour)
+    .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+
+  return sameHour[0];
+}
+
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
@@ -342,8 +363,7 @@ function WeekGrid({
       const mock = getMockSlots(dateStr);
       if (!realPatients?.length) return mock;
       return mock.map(slot => {
-        const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
-        const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
+        const real = pickPatientForSlot(realPatients, dateStr, slot.hour);
         if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
         return slot;
       });
@@ -510,8 +530,7 @@ function DayGrid({
     const mock = getMockSlots(dateStr);
     if (!realPatients?.length) return mock;
     return mock.map(slot => {
-      const timeStr = `${String(slot.hour).padStart(2, "0")}:00`;
-      const real = realPatients.find(p => p.date === dateStr && p.time === timeStr);
+      const real = pickPatientForSlot(realPatients, dateStr, slot.hour);
       if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
       return slot;
     });

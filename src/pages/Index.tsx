@@ -534,6 +534,29 @@ function isoToDisplayDate(iso?: string): string {
   return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
+function pickFocusDateForSearch(patients: Patient[], query: string, todayIso: string): string | undefined {
+  const q = query.trim().toLowerCase();
+  if (!q) return undefined;
+
+  const matches = patients.filter((p) => p.name.toLowerCase().includes(q) && !!p.date);
+  if (matches.length === 0) return undefined;
+
+  const activeToday = matches.find((p) => p.date === todayIso && !p.noShow && !p.completed);
+  if (activeToday?.date) return activeToday.date;
+
+  const todayAny = matches.find((p) => p.date === todayIso);
+  if (todayAny?.date) return todayAny.date;
+
+  const upcomingActive = matches
+    .filter((p) => (p.date || "") >= todayIso)
+    .filter((p) => !p.noShow && !p.completed)
+    .sort((a, b) => scheduleSortValue(a) - scheduleSortValue(b))[0];
+  if (upcomingActive?.date) return upcomingActive.date;
+
+  const latest = matches.slice().sort((a, b) => scheduleSortValue(b) - scheduleSortValue(a))[0];
+  return latest?.date;
+}
+
 function enrichPatientWithVisitHistory(target: Patient, allPatients: Patient[]): Patient {
   const samePersonVisits = allPatients
     .filter((p) => isSamePerson(p, target))
@@ -1041,6 +1064,10 @@ export default function Index() {
     ...patients,
   ], [patients]);
 
+  const calendarFocusDate = useMemo(() => {
+    return pickFocusDateForSearch(allCalendarPatients, searchQuery, todayIso);
+  }, [allCalendarPatients, searchQuery, todayIso]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -1334,12 +1361,7 @@ export default function Index() {
             }}
             searchQuery={searchQuery}
             realPatients={allCalendarPatients}
-            focusDate={(() => {
-              if (!searchQuery.trim()) return undefined;
-              const q = searchQuery.toLowerCase();
-              const match = allCalendarPatients.find(p => p.name.toLowerCase().includes(q) && p.date);
-              return match?.date || undefined;
-            })()}
+            focusDate={calendarFocusDate}
           />
         )}
       </main>
