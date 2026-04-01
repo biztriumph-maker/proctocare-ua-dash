@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
+import type { Patient } from "./PatientCard";
+import { CountryPhoneInput } from "./CountryPhoneInput";
 
 export interface NewEntryData {
   name: string;
@@ -21,6 +23,7 @@ export interface NewEntryData {
 interface NewEntryFormProps {
   prefillDate?: string;
   prefillTime?: string;
+  realPatients?: Patient[];
   onClose: () => void;
   onSave: (entry: NewEntryData) => void;
 }
@@ -38,34 +41,11 @@ const PATIENT_SUGGESTIONS = [
   "Сидоренко Ірина Василівна",
 ];
 
-function normalizeUaPhone(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "+380";
-
-  let localPart = digits;
-  if (localPart.startsWith("380")) localPart = localPart.slice(3);
-  else if (localPart.startsWith("0")) localPart = localPart.slice(1);
-
-  localPart = localPart.slice(0, 9);
-  return `+380${localPart}`;
-}
-
-function formatUaPhoneMasked(value: string): string {
-  const normalized = normalizeUaPhone(value);
-  const localPart = normalized.slice(4);
-  const p1 = localPart.slice(0, 2);
-  const p2 = localPart.slice(2, 5);
-  const p3 = localPart.slice(5, 7);
-  const p4 = localPart.slice(7, 9);
-
-  const chunks = [p1, p2, p3, p4].filter(Boolean);
-  return chunks.length ? `+380 ${chunks.join(" ")}` : "+380";
-}
-
-export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewEntryFormProps) {
+export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [phone, setPhone] = useState("+380 ");
+  const [phone, setPhone] = useState("");
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
   const [procedures, setProcedures] = useState<string[]>([]);
   const [showProcedureSelector, setShowProcedureSelector] = useState(false);
   const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
@@ -89,11 +69,11 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
     : [];
 
   const handleSave = () => {
-    if (!name || !date || !time || procedures.length === 0) return;
+    if (!name || !date || !time || procedures.length === 0 || !isPhoneValid) return;
     const words = name.trim().split(/\s+/);
     const parsedName = words.slice(0, 2).join(" ");
     const patronymic = words.slice(2).join(" ");
-    onSave({ name: parsedName, patronymic, birthDate, phone: normalizeUaPhone(phone), procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
   };
 
   const formattedDate = (() => {
@@ -239,18 +219,12 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
             <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5 block flex items-center gap-1">
               <span className="flex items-center gap-1"><Phone size={10} className="-mt-0.5" /> ТЕЛЕФОН</span> <span className="text-status-risk text-sm leading-none">*</span>
             </label>
-            <input
+            <CountryPhoneInput
               value={phone}
-              onChange={(e) => setPhone(formatUaPhoneMasked(e.target.value))}
-              placeholder="+380 __ ___ __ __"
-              type="tel"
-              className={cn(
-                "w-full px-3 py-2.5 rounded-lg border bg-background text-sm font-medium transition-all focus:outline-none focus:ring-2",
-                phone && phone.replace(/\D/g, "").length !== 12
-                  ? "border-status-risk text-status-risk focus:border-status-risk focus:ring-status-risk/20"
-                  : "text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:ring-primary/20",
-                phone && phone.replace(/\D/g, "").length === 12 && "border-status-ready focus:border-status-ready focus:ring-status-ready/20"
-              )}
+              onChange={setPhone}
+              onValidityChange={setIsPhoneValid}
+              inputClassName="py-2.5"
+              buttonClassName="py-2.5"
             />
           </div>
 
@@ -335,6 +309,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
                     setDate(selectedDate.toISOString().slice(0, 10));
                     setTime(`${String(hour).padStart(2, "0")}:00`);
                   }}
+                  realPatients={realPatients}
                   selectedSlot={date && time ? {
                     dateStr: date,
                     hour: parseInt(time),
@@ -367,7 +342,7 @@ export function NewEntryForm({ prefillDate, prefillTime, onClose, onSave }: NewE
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name.trim() || !date || !time || procedures.length === 0 || phone.replace(/\D/g, "").length !== 12 || birthDate.replace(/\D/g, "").length !== 8}
+          disabled={!name.trim() || !date || !time || procedures.length === 0 || !isPhoneValid || birthDate.replace(/\D/g, "").length !== 8}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис

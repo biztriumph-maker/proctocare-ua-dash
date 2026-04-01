@@ -8,11 +8,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Progress } from "@/components/ui/progress";
 import { ProcedureSelector } from "./ProcedureSelector";
 import { CalendarView } from "./CalendarView";
+import { CountryPhoneInput } from "./CountryPhoneInput";
 import { toast } from "sonner";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
 import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl } from "@/lib/supabaseSync";
+import { isPhoneValueValid, normalizePhoneValue } from "@/lib/phoneCountry";
+import { allergyStatusLabel, encodeAllergyState, hasConfirmedAllergen, parseAllergyState, type AllergyStatus } from "@/lib/allergyState";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -26,6 +29,7 @@ interface ChatMessage {
 
 interface PatientDetailViewProps {
   patient: Patient;
+  allPatients?: Patient[];
   onClose: () => void;
   onUpdatePatient?: (updates: Partial<Patient>) => void;
   onDelete?: (patientId: string) => void;
@@ -72,20 +76,11 @@ function calcAge(birthDate: string): { age: number | null; ageStr: string } {
 }
 
 function normalizePhoneWithPlus(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "+380";
-
-  let localPart = digits;
-  if (localPart.startsWith("380")) localPart = localPart.slice(3);
-  else if (localPart.startsWith("0")) localPart = localPart.slice(1);
-
-  localPart = localPart.slice(0, 9);
-  return `+380${localPart}`;
+  return normalizePhoneValue(value);
 }
 
 function getStorablePhone(value: string): string {
-  const normalized = normalizePhoneWithPlus(value);
-  return normalized === "+380" ? "" : normalized;
+  return normalizePhoneValue(value);
 }
 
 function getTodayIsoKyiv(): string {
@@ -405,8 +400,7 @@ function normalizeAndPruneAssistantStore(store: Record<string, unknown>): { clea
 }
 
 function isViberPhoneValid(phone: string): boolean {
-  // Viber Ukraine: +380 followed by exactly 9 digits
-  return /^\+380\d{9}$/.test(phone.replace(/\s/g, ""));
+  return isPhoneValueValid(phone);
 }
 
 function getWelcomeEntry(patientId: string, visitIso: string): { time: string; text: string } | null {
@@ -553,11 +547,13 @@ function getServiceCategory(services: string[]): { label: string; color: string;
 function getMockProfile(patient: Patient) {
   const birthDateStr = patient.birthDate || "";
   const { ageStr } = calcAge(birthDateStr);
+  const fallbackAllergy = patient.fromForm ? "" : "Пеніцилін";
+  const normalizedAllergy = patient.allergies !== undefined ? patient.allergies : fallbackAllergy;
   return {
     birthDate: birthDateStr,
     age: ageStr,
     phone: patient.phone || (patient.fromForm ? "" : "+380 67 123 45 67"),
-    allergies: patient.allergies || (patient.fromForm ? "" : "Пеніцилін"),
+    allergies: normalizedAllergy,
     diagnosis: patient.diagnosis || (patient.fromForm ? "" : "Поліп сигмовидної кишки (K63.5)"),
     lastVisit: patient.lastVisit || (patient.fromForm ? "" : "12.01.2026"),
     notes: patient.notes || patient.primaryNotes || (patient.fromForm ? "" : "Хронічний гастрит. Приймає омепразол 20мг."),
@@ -620,7 +616,7 @@ function getPreparationProgress(patient: Patient, services?: string[]): { percen
   return { percent, steps };
 }
 
-export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete }: PatientDetailViewProps) {
+export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
@@ -637,6 +633,57 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const profile = getMockProfile(patient);
   const activeVisitIso = patient.date || getTodayIsoKyiv();
   const activeVisitDisplayDate = isoToDisplay(activeVisitIso);
+
+  const relatedVisits = useMemo(() => {
+    const normalize = (v: Pick<Patient, "name" | "patronymic">) => {
+      const compactName = (v.name || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const parts = compactName.split(" ").filter(Boolean);
+      const surname = parts[0] || "";
+      const firstName = parts[1] || "";
+      const explicitPatronymic = (v.patronymic || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const parsedPatronymic = parts.length > 2 ? parts.slice(2).join(" ") : "";
+      const patronymic = explicitPatronymic || parsedPatronymic;
+      return `${surname}|${firstName}|${patronymic}`;
+    };
+
+    const key = normalize(patient);
+    return allPatients
+      .filter((p) => normalize(p) === key)
+      .filter((p) => !!p.date)
+      .slice()
+      .sort((a, b) => `${a.date || ""}${a.time || ""}`.localeCompare(`${b.date || ""}${b.time || ""}`));
+  }, [allPatients, patient]);
+
+  const hasPastVisitFromAll = useMemo(() => {
+    return relatedVisits.some((v) => (v.date || "") < activeVisitIso);
+  }, [relatedVisits, activeVisitIso]);
+
+  const lastCompletedVisitFromAll = useMemo(() => {
+    return relatedVisits
+      .filter((v) => (v.date || "") < activeVisitIso)
+      .filter((v) => !v.noShow)
+      .filter((v) => !!v.completed || v.status === "ready")
+      .sort((a, b) => `${b.date || ""}${b.time || ""}`.localeCompare(`${a.date || ""}${a.time || ""}`))[0];
+  }, [relatedVisits, activeVisitIso]);
+
+  const completedPastVisitDates = useMemo(() => {
+    const unique = new Set<string>();
+    for (const visit of relatedVisits) {
+      if (!visit.date) continue;
+      if (visit.date >= activeVisitIso) continue;
+      if (visit.noShow) continue;
+      if (!visit.completed && visit.status !== "ready") continue;
+      unique.add(isoToDisplay(visit.date));
+    }
+
+    return Array.from(unique).sort((a, b) => {
+      const parse = (s: string) => {
+        const [d, m, y] = s.split(".");
+        return new Date(+y, +m - 1, +d).getTime();
+      };
+      return parse(b) - parse(a);
+    });
+  }, [relatedVisits, activeVisitIso]);
   
   const initialNotes = patient.notes !== undefined ? patient.notes : profile.notes;
   const initialProtocol = getInitialActiveProtocol(patient, activeVisitIso);
@@ -651,6 +698,10 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     protocol: initialProtocol,
     birthDate: profile.birthDate,
   });
+  const currentAllergy = useMemo(() => parseAllergyState(fields.allergies), [fields.allergies]);
+  const [allergyModalOpen, setAllergyModalOpen] = useState(false);
+  const [allergyDraftStatus, setAllergyDraftStatus] = useState<AllergyStatus>(currentAllergy.status);
+  const [allergyDraftText, setAllergyDraftText] = useState(currentAllergy.allergen);
 
   const [localServices, setLocalServices] = useState<string[]>(initialServices);
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
@@ -677,6 +728,11 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     setRescheduleDate(patient.date || new Date().toISOString().slice(0, 10));
     setRescheduleTime(patient.time || "");
   }, [patient.id, patient.date, patient.time]);
+
+  useEffect(() => {
+    setAllergyDraftStatus(currentAllergy.status);
+    setAllergyDraftText(currentAllergy.allergen);
+  }, [currentAllergy.status, currentAllergy.allergen]);
 
   const [emulatedMessages, setEmulatedMessages] = useState<ChatMessage[]>(() => {
     if (restoredAssistantSession?.messages?.length) {
@@ -798,6 +854,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
   const initialFiles = patient.files || [];
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
+  const lastFocusSaveMeta = useRef<{ field: string; at: number } | null>(null);
 
   useEffect(() => {
     const nextProfile = getMockProfile(patient);
@@ -807,15 +864,18 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     const nextServices = patient.procedure ? patient.procedure.split(", ") : [];
     const nextInitialFiles = patient.files || [];
 
+    const savedMeta = lastFocusSaveMeta.current;
+    const protectedField = savedMeta && Date.now() - savedMeta.at < 4000 ? savedMeta.field : null;
+
     setLocalFullName(correctNameSpelling(`${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`));
-    setFields({
-      phone: nextPhone,
-      allergies: nextProfile.allergies,
-      diagnosis: nextProfile.diagnosis,
-      notes: nextNotes,
-      protocol: nextProtocol,
-      birthDate: nextProfile.birthDate,
-    });
+    setFields((prev) => ({
+      phone: protectedField === "phone" ? prev.phone : nextPhone,
+      allergies: protectedField === "allergies" ? prev.allergies : nextProfile.allergies,
+      diagnosis: protectedField === "diagnosis" ? prev.diagnosis : nextProfile.diagnosis,
+      notes: protectedField === "notes" ? prev.notes : nextNotes,
+      protocol: protectedField === "protocol" ? prev.protocol : nextProtocol,
+      birthDate: protectedField === "birthDate" ? prev.birthDate : nextProfile.birthDate,
+    }));
     setLocalServices(nextServices);
     setLocalFiles(nextInitialFiles);
   }, [
@@ -1029,19 +1089,57 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     setWaitingForDietAck(false);
   };
 
-  // Derive lastVisit only from explicit historical visit records (seeded/completed visits),
-  // NOT from procedureHistory (which is an operational change log written by auto-save).
+  // Derive lastVisit from the latest valid archived date: completed visit from schedule
+  // or archived protocol/procedure date (excluding no-show/incomplete visits when known).
   const derivedLastVisit = (() => {
     const currentDate = patient.date || "9999-99-99";
-    const allDates = [
-      ...seededProcedureHistory.map(e => e.date),
-      ...seededProtocolHistory.map(e => e.date),
-    ].filter(d => d < currentDate).sort().reverse();
-    if (!allDates.length) return "";
-    const [y, m, d2] = allDates[0].split("-");
-    return `${d2}.${m}.${y}`;
+    const latestCompletedIso = lastCompletedVisitFromAll?.date;
+
+    const visitByIso = new Map<string, Patient>();
+    for (const visit of relatedVisits) {
+      if (!visit.date) continue;
+      const existing = visitByIso.get(visit.date);
+      if (!existing) {
+        visitByIso.set(visit.date, visit);
+        continue;
+      }
+
+      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready") ? 2 : 0);
+      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready") ? 2 : 0);
+      if (currentRank >= existingRank) visitByIso.set(visit.date, visit);
+    }
+
+    const archivedDateCandidates = new Set<string>();
+    for (const h of mergedProtocolHistory) {
+      if (!h.date || h.value.startsWith(RESCHEDULED_MARKER)) continue;
+      if (h.date >= currentDate) continue;
+      const linkedVisit = visitByIso.get(h.date);
+      if (linkedVisit) {
+        if (linkedVisit.noShow) continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready") continue;
+      }
+      archivedDateCandidates.add(h.date);
+    }
+    for (const h of mergedProcedureHistory) {
+      if (!h.date || h.date >= currentDate) continue;
+      const linkedVisit = visitByIso.get(h.date);
+      if (linkedVisit) {
+        if (linkedVisit.noShow) continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready") continue;
+      }
+      archivedDateCandidates.add(h.date);
+    }
+
+    const latestArchivedIso = Array.from(archivedDateCandidates).sort().reverse()[0];
+    const bestIso = [latestCompletedIso, latestArchivedIso]
+      .filter((d): d is string => !!d)
+      .sort()
+      .reverse()[0];
+
+    return bestIso ? isoToDisplay(bestIso) : "";
   })();
   const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
+  const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0;
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
@@ -1083,6 +1181,20 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
     setFocusField({ field, value: value ?? "", history });
   };
 
+  const handleOpenAllergyModal = () => {
+    const parsed = parseAllergyState(fields.allergies);
+    setAllergyDraftStatus(parsed.status);
+    setAllergyDraftText(parsed.allergen);
+    setAllergyModalOpen(true);
+  };
+
+  const handleSaveAllergyModal = () => {
+    const storedValue = encodeAllergyState(allergyDraftStatus, allergyDraftText);
+    setFields((prev) => ({ ...prev, allergies: storedValue }));
+    onUpdatePatient?.({ allergies: storedValue });
+    setAllergyModalOpen(false);
+  };
+
   const handleNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const raw = e.target.value.trim();
     if (!raw) { setEditingName(false); return; }
@@ -1101,6 +1213,8 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
 
   const handleFocusSave = (value: string) => {
     if (focusField) {
+      lastFocusSaveMeta.current = { field: focusField.field, at: Date.now() };
+      skipNextAutoSave.current = true;
       const trimmedValue = value.trim();
       const preparedValue = focusField.field === "phone" ? getStorablePhone(trimmedValue) : trimmedValue;
       const fieldName = focusField.field;
@@ -1250,12 +1364,17 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
   };
 
   const autoSaveMounted = useRef(false);
+  const skipNextAutoSave = useRef(false);
   useEffect(() => {
     if (!autoSaveMounted.current) {
       autoSaveMounted.current = true;
       return;
     }
     if (!onUpdatePatient) return;
+    if (skipNextAutoSave.current) {
+      skipNextAutoSave.current = false;
+      return;
+    }
     const timer = setTimeout(() => handleSaveChanges(true), 1200);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1271,8 +1390,18 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
         return history[history.length - 1]?.date === getTodayIsoKyiv();
       };
 
-      const allergiesHistory = (fields.allergies !== (patient.allergies || "")) || (!fields.allergies.trim() && hasTodayHistoryEntry(patient.allergiesHistory))
-        ? addHistoryEntry(patient.allergiesHistory, fields.allergies)
+      const currentAllergyState = parseAllergyState(fields.allergies);
+      const currentAllergyHistoryValue = currentAllergyState.status === "allergen"
+        ? currentAllergyState.allergen
+        : allergyStatusLabel(currentAllergyState.status);
+
+      const patientAllergyState = parseAllergyState(patient.allergies || "");
+      const patientAllergyHistoryValue = patientAllergyState.status === "allergen"
+        ? patientAllergyState.allergen
+        : allergyStatusLabel(patientAllergyState.status);
+
+      const allergiesHistory = (fields.allergies !== (patient.allergies || "")) || (currentAllergyHistoryValue !== patientAllergyHistoryValue)
+        ? addHistoryEntry(patient.allergiesHistory, currentAllergyHistoryValue)
         : patient.allergiesHistory;
       const diagnosisHistory = (fields.diagnosis !== (patient.diagnosis || "")) || (!fields.diagnosis.trim() && hasTodayHistoryEntry(patient.diagnosisHistory))
         ? addHistoryEntry(patient.diagnosisHistory, fields.diagnosis)
@@ -1294,24 +1423,30 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
         ? addHistoryEntry(patient.procedureHistory, procedureValue, activeVisitIso)
         : patient.procedureHistory;
 
-      onUpdatePatient({
-        notes: fields.notes,
-        protocol: fields.protocol,
-        phone: getStorablePhone(fields.phone),
-        allergies: fields.allergies,
-        diagnosis: fields.diagnosis,
-        birthDate: fields.birthDate,
-        procedure: procedureValue,
-        files: localFiles,
-        allergiesHistory,
-        diagnosisHistory,
-        notesHistory,
-        phoneHistory,
-        birthDateHistory,
-        protocolHistory,
-        procedureHistory,
-      });
-      if (!silent) toast.success("Дані пацієнта успішно збережено");
+      const updates: Partial<Patient> = {};
+      const stringified = (v: unknown) => JSON.stringify(v ?? null);
+
+      if (fields.notes !== (patient.notes || "")) updates.notes = fields.notes;
+      if (fields.protocol !== (patient.protocol || "")) updates.protocol = fields.protocol;
+      if (getStorablePhone(fields.phone) !== (patient.phone || "")) updates.phone = getStorablePhone(fields.phone);
+      if (fields.allergies !== (patient.allergies || "")) updates.allergies = fields.allergies;
+      if (fields.diagnosis !== (patient.diagnosis || "")) updates.diagnosis = fields.diagnosis;
+      if (fields.birthDate !== (patient.birthDate || "")) updates.birthDate = fields.birthDate;
+      if (procedureValue !== (patient.procedure || "")) updates.procedure = procedureValue;
+      if (stringified(localFiles) !== stringified(patient.files || [])) updates.files = localFiles;
+
+      if (stringified(allergiesHistory) !== stringified(patient.allergiesHistory)) updates.allergiesHistory = allergiesHistory;
+      if (stringified(diagnosisHistory) !== stringified(patient.diagnosisHistory)) updates.diagnosisHistory = diagnosisHistory;
+      if (stringified(notesHistory) !== stringified(patient.notesHistory)) updates.notesHistory = notesHistory;
+      if (stringified(phoneHistory) !== stringified(patient.phoneHistory)) updates.phoneHistory = phoneHistory;
+      if (stringified(birthDateHistory) !== stringified(patient.birthDateHistory)) updates.birthDateHistory = birthDateHistory;
+      if (stringified(protocolHistory) !== stringified(patient.protocolHistory)) updates.protocolHistory = protocolHistory;
+      if (stringified(procedureHistory) !== stringified(patient.procedureHistory)) updates.procedureHistory = procedureHistory;
+
+      if (Object.keys(updates).length > 0) {
+        onUpdatePatient(updates as Record<string, unknown>);
+        if (!silent) toast.success("Дані пацієнта успішно збережено");
+      }
     }
   };
 
@@ -1358,7 +1493,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
               </div>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                  {!patient.fromForm || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 ? "Повторний" : "Новий"}
+                  {isRepeatPatient ? "Повторний" : "Новий"}
                 </span>
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
@@ -1443,6 +1578,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                     <ProfilePane
                       profile={mergedProfile}
                       onFocusEdit={handleFocusOpen}
+                      onAllergyEdit={handleOpenAllergyModal}
                       onBirthDateChange={(value) => {
                         setFields((prev) => ({ ...prev, birthDate: value }));
                         onUpdatePatient?.({ birthDate: value });
@@ -1475,6 +1611,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                       protocolText={fields.protocol}
                       protocolHistory={mergedProtocolHistory}
                       procedureHistory={mergedProcedureHistory}
+                      historicalVisitDates={completedPastVisitDates}
                       activeVisitDate={activeVisitDisplayDate}
                       onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                       visitId={patient.id}
@@ -1530,6 +1667,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                 <ProfilePane
                   profile={mergedProfile}
                   onFocusEdit={handleFocusOpen}
+                  onAllergyEdit={handleOpenAllergyModal}
                   onBirthDateChange={(value) => {
                     setFields((prev) => ({ ...prev, birthDate: value }));
                     onUpdatePatient?.({ birthDate: value });
@@ -1559,6 +1697,7 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
                   protocolText={fields.protocol}
                   protocolHistory={mergedProtocolHistory}
                   procedureHistory={mergedProcedureHistory}
+                  historicalVisitDates={completedPastVisitDates}
                   activeVisitDate={activeVisitDisplayDate}
                   onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
                   visitId={patient.id}
@@ -1619,9 +1758,20 @@ export function PatientDetailView({ patient, onClose, onUpdatePatient, onDelete 
             value={focusField.value}
             history={focusField.history}
             patientName={patient.name}
-            allergies={fields.allergies}
+            allergies={currentAllergy.status === "allergen" ? currentAllergy.allergen : ""}
             onSave={handleFocusSave}
             onCancel={handleFocusCancel}
+          />
+        )}
+
+        {allergyModalOpen && (
+          <AllergyStatusModal
+            status={allergyDraftStatus}
+            allergenText={allergyDraftText}
+            onStatusChange={setAllergyDraftStatus}
+            onAllergenTextChange={setAllergyDraftText}
+            onCancel={() => setAllergyModalOpen(false)}
+            onSave={handleSaveAllergyModal}
           />
         )}
 
@@ -1747,9 +1897,17 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
     return true;
   });
 
+  const formatBirthDateInput = (input: string) => {
+    const raw = input.replace(/[^\d]/g, "").slice(0, 8);
+    if (raw.length <= 2) return raw;
+    if (raw.length <= 4) return `${raw.slice(0, 2)}.${raw.slice(2)}`;
+    return `${raw.slice(0, 2)}.${raw.slice(2, 4)}.${raw.slice(4)}`;
+  };
+
   const fieldLabels: Record<string, string> = {
     protocol: "Висновок лікаря",
     phone: "Телефон",
+    birthDate: "Дата народження",
     allergies: "Алергії",
     diagnosis: "Діагноз",
     notes: "Нотатки",
@@ -1788,10 +1946,21 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
             </div>
             <div className="p-5">
               {field === "phone" ? (
-                <input
-                  type="tel"
+                <CountryPhoneInput
                   value={text}
-                  onChange={(e) => setText(normalizePhoneWithPlus(e.target.value))}
+                  onChange={setText}
+                  autoFocus
+                  buttonClassName="py-3"
+                  inputClassName="py-3"
+                />
+              ) : field === "birthDate" ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={text}
+                  onChange={(e) => setText(formatBirthDateInput(e.target.value))}
+                  placeholder="ДД.ММ.РРРР"
+                  maxLength={10}
                   className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30"
                   autoFocus
                 />
@@ -1839,6 +2008,92 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
   );
 }
 
+function AllergyStatusModal({
+  status,
+  allergenText,
+  onStatusChange,
+  onAllergenTextChange,
+  onCancel,
+  onSave,
+}: {
+  status: AllergyStatus;
+  allergenText: string;
+  onStatusChange: (status: AllergyStatus) => void;
+  onAllergenTextChange: (value: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const canSave = status !== "allergen" || allergenText.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-fade-in" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-card border border-border/60 shadow-elevated p-4 space-y-3 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-foreground">Статус алергії</h3>
+
+        <button
+          type="button"
+          onClick={() => onStatusChange("allergen")}
+          className={cn(
+            "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+            status === "allergen" ? "border-red-400 bg-red-50" : "border-border bg-background hover:bg-red-50/40"
+          )}
+        >
+          <p className="text-sm font-bold text-red-600">🔴 Вказати алерген</p>
+          <p className="text-xs text-red-500/80 mt-0.5">Вкажіть конкретну речовину або препарат</p>
+        </button>
+
+        {status === "allergen" && (
+          <input
+            type="text"
+            value={allergenText}
+            onChange={(e) => onAllergenTextChange(e.target.value)}
+            placeholder="Наприклад: Пеніцилін"
+            className="w-full rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700 outline-none focus:ring-2 focus:ring-red-200"
+            autoFocus
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={() => onStatusChange("none")}
+          className={cn(
+            "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+            status === "none" ? "border-green-400 bg-green-50" : "border-border bg-background hover:bg-green-50/40"
+          )}
+        >
+          <p className="text-sm font-bold text-green-700">✅ Не виявлено</p>
+          <p className="text-xs text-green-700/80 mt-0.5">Алергії немає, перевірили</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onStatusChange("unknown")}
+          className={cn(
+            "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+            status === "unknown" ? "border-slate-400 bg-slate-100" : "border-border bg-background hover:bg-slate-100/60"
+          )}
+        >
+          <p className="text-sm font-bold text-slate-700">⬜ Не з'ясовано</p>
+          <p className="text-xs text-slate-600 mt-0.5">Ще не питали пацієнта</p>
+        </button>
+
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors">
+            Скасувати
+          </button>
+          <button
+            onClick={onSave}
+            disabled={!canSave}
+            className="px-4 py-2 text-sm font-bold text-primary-foreground bg-primary rounded-lg disabled:opacity-40"
+          >
+            Зберегти
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── White Content Block with shadow ──
 function ContentBlock({ children, className, title, icon, headerRight }: {
   children: React.ReactNode;
@@ -1862,9 +2117,10 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, histories }: {
+function ProfilePane({ profile, onFocusEdit, onAllergyEdit, onBirthDateChange, onPhoneChange, histories }: {
   profile: ReturnType<typeof getMockProfile>;
   onFocusEdit: (field: string, value: string, history?: HistoryEntry[]) => void;
+  onAllergyEdit: () => void;
   onBirthDateChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
   histories: {
@@ -1887,6 +2143,7 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
   }, [profile.phone]);
 
   const { ageStr } = calcAge(localBirthDate);
+  const allergy = parseAllergyState(profile.allergies);
 
   return (
     <div className="px-4 pb-4 space-y-3">
@@ -1933,44 +2190,61 @@ function ProfilePane({ profile, onFocusEdit, onBirthDateChange, onPhoneChange, h
             <Pencil size={11} className="text-muted-foreground" />
           </button>
         </div>
-        <input
-          type="tel"
+        <CountryPhoneInput
           value={localPhone}
-          onChange={(e) => {
-            const normalized = normalizePhoneWithPlus(e.target.value);
+          onChange={(nextValue) => {
+            const normalized = normalizePhoneWithPlus(nextValue);
             setLocalPhone(normalized);
             onPhoneChange(getStorablePhone(normalized));
           }}
-          placeholder="+380671234567"
-          className="w-full bg-transparent text-sm font-bold outline-none"
+          buttonClassName="py-2"
+          inputClassName="py-2"
         />
       </div>
 
       {/* Row 3: Алергії */}
-      {profile.allergies ? (
-        <div className="bg-red-50 rounded-xl border border-red-200 px-3 py-2.5">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wide flex items-center gap-1">
-              <AllergyShield size={12} />
-              Алергії
-            </p>
-            <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-100 transition-all">
-              <Pencil size={11} className="text-red-600" />
-            </button>
-          </div>
-          <span className="text-sm font-bold text-red-600">{profile.allergies}</span>
+      <div
+        className={cn(
+          "rounded-xl border px-3 py-2.5",
+          allergy.status === "allergen"
+            ? "bg-red-50 border-red-200"
+            : allergy.status === "none"
+              ? "bg-green-50 border-green-200"
+              : "bg-slate-50 border-slate-200"
+        )}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <p
+            className={cn(
+              "text-[10px] font-bold uppercase tracking-wide flex items-center gap-1",
+              allergy.status === "allergen"
+                ? "text-red-600"
+                : allergy.status === "none"
+                  ? "text-green-700"
+                  : "text-slate-600"
+            )}
+          >
+            {allergy.status === "allergen" && <AllergyShield size={12} />}
+            Алергії
+          </p>
+          <button onClick={onAllergyEdit} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/60 transition-all">
+            <Pencil size={11} className={cn(allergy.status === "allergen" ? "text-red-600" : allergy.status === "none" ? "text-green-700" : "text-slate-500")} />
+          </button>
         </div>
-      ) : (
-        <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Алергії</p>
-            <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-accent transition-all">
-              <Pencil size={11} className="text-muted-foreground" />
-            </button>
-          </div>
-          <button onClick={() => onFocusEdit("allergies", profile.allergies, histories.allergiesHistory)} className="text-sm italic text-muted-foreground/40 text-left w-full hover:text-muted-foreground transition-colors">Не зазначено</button>
-        </div>
-      )}
+
+        <span
+          className={cn(
+            "text-sm font-bold",
+            allergy.status === "allergen"
+              ? "text-red-600"
+              : allergy.status === "none"
+                ? "text-green-700"
+                : "text-slate-600"
+          )}
+        >
+          {allergy.status === "allergen" ? allergy.allergen : allergy.status === "none" ? "Не виявлено" : "Не з'ясовано"}
+        </span>
+      </div>
 
       {/* Row 4: Діагноз */}
       <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
@@ -2481,7 +2755,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, activeVisitDate, onProtocolPrefill, visitId }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, historicalVisitDates, activeVisitDate, onProtocolPrefill, visitId }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -2489,6 +2763,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   protocolText: string;
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
+  historicalVisitDates?: string[];
   activeVisitDate: string;
   onProtocolPrefill: (value: string) => void;
   visitId?: string;
@@ -2577,6 +2852,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     for (const d of protocolByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of procedureByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
+    for (const d of (historicalVisitDates || [])) if (d !== activeDate) dates.add(d);
     return Array.from(dates).sort((a, b) => {
       const parse = (s: string) => {
         const [d, m, y] = s.split(".");
@@ -2584,7 +2860,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, activeDate]);
+  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, activeDate]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));

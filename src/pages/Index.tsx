@@ -528,6 +528,53 @@ function normalizeDemoScheduleDates(patients: Patient[]): Patient[] {
   });
 }
 
+function isoToDisplayDate(iso?: string): string {
+  const parts = (iso || "").split("-");
+  if (parts.length !== 3) return "";
+  return `${parts[2]}.${parts[1]}.${parts[0]}`;
+}
+
+function enrichPatientWithVisitHistory(target: Patient, allPatients: Patient[]): Patient {
+  const samePersonVisits = allPatients
+    .filter((p) => isSamePerson(p, target))
+    .filter((p) => !!p.date)
+    .slice()
+    .sort((a, b) => scheduleSortValue(a) - scheduleSortValue(b));
+
+  if (samePersonVisits.length <= 1) return target;
+
+  const protocolHistory = samePersonVisits
+    .filter((v) => !!v.protocol?.trim())
+    .map((v) => ({
+      value: (v.protocol || "").trim(),
+      timestamp: isoToDisplayDate(v.date),
+      date: v.date || "",
+    }));
+
+  const procedureHistory = samePersonVisits
+    .filter((v) => !!v.procedure?.trim())
+    .map((v) => ({
+      value: (v.procedure || "").trim(),
+      timestamp: isoToDisplayDate(v.date),
+      date: v.date || "",
+    }));
+
+  const currentDate = target.date || "9999-99-99";
+  const lastCompletedVisit = samePersonVisits
+    .filter((v) => (v.date || "") < currentDate)
+    .filter((v) => !v.noShow)
+    .filter((v) => !!v.completed || v.status === "ready")
+    .sort((a, b) => scheduleSortValue(b) - scheduleSortValue(a))[0];
+
+  return {
+    ...target,
+    fromForm: samePersonVisits.length > 1 ? false : target.fromForm,
+    lastVisit: lastCompletedVisit?.date ? isoToDisplayDate(lastCompletedVisit.date) : target.lastVisit,
+    protocolHistory: protocolHistory.length > 0 ? protocolHistory : target.protocolHistory,
+    procedureHistory: procedureHistory.length > 0 ? procedureHistory : target.procedureHistory,
+  };
+}
+
 const ASSISTANT_NOTE_PATTERNS = [
   /пацієнт\s+потребує\s+консультац(і|и)ї\s+щодо\s+дієт(и|і)/i,
   /пацієнт\s+потребує\s+консультац(і|и)ї\s+по\s+дієт(і|е)/i,
@@ -709,11 +756,12 @@ export default function Index() {
             .filter((p) => p.id !== base.id && isSamePerson(p, base))
             .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
           const hydrated = hydrateMissingProfile(base, donor);
+          const enriched = enrichPatientWithVisitHistory(hydrated, normalized);
 
           setSelectedPatient((prev) => {
             if (!prev) return prev;
-            if (arePatientsEquivalentForView(prev, hydrated)) return prev;
-            return hydrated;
+            if (arePatientsEquivalentForView(prev, enriched)) return prev;
+            return enriched;
           });
         }
       }
@@ -813,8 +861,9 @@ export default function Index() {
       .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
     const hydrated = hydrateMissingProfile(base, donor);
-    if (!arePatientsEquivalentForView(selectedPatient, hydrated)) {
-      setSelectedPatient(hydrated);
+    const enriched = enrichPatientWithVisitHistory(hydrated, patients);
+    if (!arePatientsEquivalentForView(selectedPatient, enriched)) {
+      setSelectedPatient(enriched);
     }
   }, [patients, selectedPatient]);
 
@@ -940,7 +989,8 @@ export default function Index() {
       .filter((p) => p.id !== patient.id && isSamePerson(p, patient))
       .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
-    setSelectedPatient(hydrateMissingProfile(patient, donor));
+    const hydrated = hydrateMissingProfile(patient, donor);
+    setSelectedPatient(enrichPatientWithVisitHistory(hydrated, patients));
   }, [patients]);
 
   const handleNoShow = useCallback((patientId: string) => {
@@ -1260,7 +1310,8 @@ export default function Index() {
                 const donor = allCalendarPatients
                   .filter((rp) => rp.id !== real.id && isSamePerson(rp, real))
                   .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
-                setSelectedPatient(hydrateMissingProfile(real, donor));
+                const hydrated = hydrateMissingProfile(real, donor);
+                setSelectedPatient(enrichPatientWithVisitHistory(hydrated, allCalendarPatients));
                 return;
               }
 
@@ -1278,7 +1329,8 @@ export default function Index() {
               const fallbackDonor = allCalendarPatients
                 .filter((rp) => isSamePerson(rp, fallbackBase))
                 .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
-              setSelectedPatient(hydrateMissingProfile(fallbackBase, fallbackDonor));
+              const hydratedFallback = hydrateMissingProfile(fallbackBase, fallbackDonor);
+              setSelectedPatient(enrichPatientWithVisitHistory(hydratedFallback, allCalendarPatients));
             }}
             searchQuery={searchQuery}
             realPatients={allCalendarPatients}
@@ -1313,6 +1365,7 @@ export default function Index() {
         <NewEntryForm
           prefillDate={formPrefill.date}
           prefillTime={formPrefill.time}
+          realPatients={allCalendarPatients}
           onClose={() => setShowForm(false)}
           onSave={handleSaveEntry}
         />
@@ -1320,6 +1373,7 @@ export default function Index() {
       {selectedPatient && (
         <PatientDetailView
           patient={selectedPatient}
+          allPatients={allCalendarPatients}
           onClose={() => setSelectedPatient(null)}
           onDelete={handleDeletePatient}
           onUpdatePatient={(updates) => {

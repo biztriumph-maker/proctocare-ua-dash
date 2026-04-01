@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { computePatientStatus, AllergyShield } from "./PatientCard";
+import { hasConfirmedAllergen, parseAllergyState } from "@/lib/allergyState";
 
 interface CalendarSlot {
   hour: number;
@@ -23,6 +24,13 @@ const statusDot: Record<PatientStatus, string> = {
   progress: "bg-yellow-500",
   risk: "bg-red-500",
   ready: "bg-green-500",
+};
+
+const statusSlotBg: Record<PatientStatus, string> = {
+  planning: "bg-slate-100 border border-slate-300/70",
+  progress: "bg-status-progress-bg border border-status-progress/30",
+  risk: "bg-status-risk-bg border border-status-risk/30",
+  ready: "bg-status-ready-bg border border-status-ready/30",
 };
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
@@ -279,7 +287,7 @@ function SlotPopover({
           className="flex items-center gap-1.5 min-w-0 hover:underline"
         >
           <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
-          {slot.allergies && (
+          {hasConfirmedAllergen(slot.allergies) && (
             <AllergyShield size={13} style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.65))" }} className="shrink-0" />
           )}
           <span className="text-xs font-semibold text-foreground truncate">{(() => {
@@ -408,13 +416,7 @@ function WeekGrid({
               const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
               const openHorizontal = di >= 5 ? "left" : di <= 1 ? "right" : "center";
 
-              const statusBg = slot?.patient
-                ? slot.patient.status === "ready"
-                  ? "bg-status-ready-bg border border-status-ready/25"
-                  : slot.patient.status === "progress"
-                    ? "bg-status-progress-bg border border-status-progress/25"
-                    : "bg-status-risk-bg border border-status-risk/25"
-                : null;
+              const statusBg = slot?.patient ? statusSlotBg[slot.patient.status] : null;
 
               const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
 
@@ -462,7 +464,7 @@ function WeekGrid({
                       <div className="flex items-center gap-0.5">
                         {slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
                         {slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
-                        {slot.patient.status === "progress" && <span className="text-[9px] font-extrabold text-status-risk">₴</span>}
+                        {slot.patient.status === "progress" && <span className="text-[9px] font-extrabold text-status-progress">₴</span>}
                       </div>
                     )}
                   </button>
@@ -516,10 +518,10 @@ function DayGrid({
   }, [date, realPatients]);
 
   const statusColor: Record<PatientStatus, string> = {
-    planning: "bg-slate-100 border-slate-300",
-    progress: "bg-yellow-100 border-yellow-300",
-    risk: "bg-red-100 border-red-300",
-    ready: "bg-green-100 border-green-300",
+    planning: "bg-slate-100 border-slate-300/70",
+    progress: "bg-status-progress-bg border-status-progress/35",
+    risk: "bg-status-risk-bg border-status-risk/35",
+    ready: "bg-status-ready-bg border-status-ready/35",
   };
 
   const statusLabel: Record<PatientStatus, string> = {
@@ -551,7 +553,7 @@ function DayGrid({
                   onSlotClick(date, slot.hour);
                 }
               }}
-              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}\nПідготовка: ${Math.floor(Math.random() * 100)}% виконано${slot.patient.allergies ? `\n⚠️ АЛЕРГІЯ: ${slot.patient.allergies}` : ""}\nОстанній контакт: ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}` : undefined}
+              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}\nПідготовка: ${Math.floor(Math.random() * 100)}% виконано${hasConfirmedAllergen(slot.patient.allergies) ? `\n⚠️ АЛЕРГІЯ: ${parseAllergyState(slot.patient.allergies).allergen}` : ""}\nОстанній контакт: ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}` : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
                 "active:scale-[0.98] animate-reveal-up",
@@ -570,7 +572,7 @@ function DayGrid({
               {slot.patient ? (
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
-                  {slot.patient.allergies && (
+                  {hasConfirmedAllergen(slot.patient.allergies) && (
                     <AllergyShield size={15} style={{ filter: "drop-shadow(0 0 5px rgba(239,68,68,0.7))" }} className="shrink-0" />
                   )}
                   <span className="text-[15px] font-semibold text-foreground truncate">
