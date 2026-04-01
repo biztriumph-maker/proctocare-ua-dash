@@ -1112,6 +1112,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const derivedLastVisit = (() => {
     const currentDate = patient.date || "9999-99-99";
     const latestCompletedIso = lastCompletedVisitFromAll?.date;
+    const closedCurrentVisitIso = patient.date && (patient.completed || patient.status === "ready" || patient.noShow)
+      ? patient.date
+      : undefined;
 
     const visitByIso = new Map<string, Patient>();
     for (const visit of relatedVisits) {
@@ -1149,7 +1152,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     }
 
     const latestArchivedIso = Array.from(archivedDateCandidates).sort().reverse()[0];
-    const bestIso = [latestCompletedIso, latestArchivedIso]
+    const bestIso = [closedCurrentVisitIso, latestCompletedIso, latestArchivedIso]
       .filter((d): d is string => !!d)
       .sort()
       .reverse()[0];
@@ -3149,8 +3152,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           <div className="absolute left-[27px] top-5 bottom-3 w-px bg-border/50" />
         )}
 
-        {/* ── Current Visit (editable only while visit is active) ── */}
-        {!currentVisitOutcome && (
+        {/* ── Current Visit (always editable) ── */}
         <div className="relative pl-8 mb-4">
           <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-primary border-2 border-white shadow-sm" />
 
@@ -3217,7 +3219,6 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
             Завантажити файл
           </button>
         </div>
-        )}
 
         {/* ── Historical Visits (collapsible) ── */}
         {historicalDates.map((date) => {
