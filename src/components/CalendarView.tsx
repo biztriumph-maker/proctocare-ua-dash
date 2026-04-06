@@ -27,7 +27,7 @@ const statusDot: Record<PatientStatus, string> = {
 };
 
 const statusSlotBg: Record<PatientStatus, string> = {
-  planning: "bg-slate-100 border border-slate-300/70",
+  planning: "bg-slate-300 border border-slate-500/70",
   progress: "bg-status-progress-bg border border-status-progress/30",
   risk: "bg-status-risk-bg border border-status-risk/30",
   ready: "bg-status-ready-bg border border-status-ready/30",
@@ -277,26 +277,40 @@ function SlotPopover({
   dateStr,
   onClose,
   onPatientClick,
-  openDirection,
-  openHorizontal,
+  anchorRect,
 }: {
   slot: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
   hour: number;
   dateStr?: string;
   onClose: () => void;
   onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string; allergies?: string }) => void;
-  openDirection: "up" | "down";
-  openHorizontal: "left" | "right" | "center";
+  anchorRect: DOMRect;
 }) {
+  const POPOVER_WIDTH = 200;
+  const POPOVER_HEIGHT = 80;
+  const GAP = 6;
+  const MARGIN = 8;
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Vertical: prefer below, flip to above if no space
+  const spaceBelow = vh - anchorRect.bottom;
+  const top = spaceBelow >= POPOVER_HEIGHT + GAP
+    ? anchorRect.bottom + GAP
+    : anchorRect.top - POPOVER_HEIGHT - GAP;
+
+  // Horizontal: center on anchor, clamp within viewport
+  let left = anchorRect.left + anchorRect.width / 2 - POPOVER_WIDTH / 2;
+  left = Math.max(MARGIN, Math.min(left, vw - POPOVER_WIDTH - MARGIN));
+
   return (
     <div
-      className={cn(
-        "absolute z-20 w-48 bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up",
-        openDirection === "up" ? "bottom-full mb-1" : "top-full mt-1",
-        openHorizontal === "left" ? "right-0" : openHorizontal === "right" ? "left-0" : "left-1/2 -translate-x-1/2"
-      )}
+      className="fixed z-[200] bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up"
       style={{
-        maxWidth: "calc(100vw - 32px)",
+        width: POPOVER_WIDTH,
+        top,
+        left,
       }}
     >
       <div className="flex items-center justify-between">
@@ -355,7 +369,7 @@ function WeekGrid({
   realPatients?: Patient[];
 }) {
   const today = new Date();
-  const [activePopover, setActivePopover] = useState<string | null>(null);
+  const [activePopover, setActivePopover] = useState<{ key: string; rect: DOMRect } | null>(null);
 
   const slotsPerDay = useMemo(() => {
     return weekDates.map((d) => {
@@ -432,10 +446,6 @@ function WeekGrid({
               const past = isPast(d);
               const isSearchMatch = !!(searchQuery.trim() && slot?.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-              // Smart positioning: open up if bottom half, open left if right side
-              const openDirection = hi >= HOURS.length / 2 ? "up" : "down";
-              const openHorizontal = di >= 5 ? "left" : di <= 1 ? "right" : "center";
-
               const statusBg = slot?.patient ? statusSlotBg[slot.patient.status] : null;
 
               const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
@@ -454,9 +464,10 @@ function WeekGrid({
                   )}
                 >
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
                       if (slot?.patient) {
-                        setActivePopover(activePopover === popoverKey ? null : popoverKey);
+                        const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                        setActivePopover(activePopover?.key === popoverKey ? null : { key: popoverKey, rect });
                       } else {
                         setActivePopover(null);
                         onSlotClick(d, hour);
@@ -484,19 +495,17 @@ function WeekGrid({
                       <div className="flex items-center gap-0.5">
                         {slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
                         {slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
-                        {slot.patient.status === "progress" && <span className="text-[9px] font-extrabold text-status-progress">₴</span>}
                       </div>
                     )}
                   </button>
-                  {slot?.patient && activePopover === popoverKey && (
+                  {slot?.patient && activePopover?.key === popoverKey && (
                      <SlotPopover
                       slot={slot.patient}
                       hour={hour}
                       dateStr={dateToStr(d)}
                       onClose={() => setActivePopover(null)}
                       onPatientClick={onPatientClick}
-                      openDirection={openDirection as "up" | "down"}
-                      openHorizontal={openHorizontal}
+                      anchorRect={activePopover.rect}
                     />
                   )}
                 </div>
@@ -537,7 +546,7 @@ function DayGrid({
   }, [date, realPatients]);
 
   const statusColor: Record<PatientStatus, string> = {
-    planning: "bg-slate-100 border-slate-300/70",
+    planning: "bg-slate-300 border-slate-500/70",
     progress: "bg-status-progress-bg border-status-progress/35",
     risk: "bg-status-risk-bg border-status-risk/35",
     ready: "bg-status-ready-bg border-status-ready/35",

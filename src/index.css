@@ -147,6 +147,11 @@
   }
 }
 
+@keyframes pulseStrip {
+  0%, 100% { background: #e07b00; }
+  50%       { background: #f5a623; }
+}
+
 .animate-new-slot-pulse {
   animation: reveal-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both, new-slot-pulse 1s ease-in-out 0.6s 3;
 }

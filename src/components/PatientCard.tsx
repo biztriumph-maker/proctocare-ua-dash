@@ -63,7 +63,7 @@ interface PatientCardProps {
 }
 
 const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string; bgHex: string; textHex: string }> = {
-  planning: { border: "border-l-slate-400", dot: "bg-slate-400", label: "Планування", bg: "bg-slate-100", bgHex: "#E2E8F0", textHex: "#64748B" },
+  planning: { border: "border-l-slate-500", dot: "bg-slate-500", label: "Планування", bg: "bg-slate-300", bgHex: "#CBD5E1", textHex: "#475569" },
   progress: { border: "border-l-yellow-500", dot: "bg-yellow-500", label: "Підготовка", bg: "bg-yellow-100", bgHex: "#FEF3C7", textHex: "#D97706" },
   risk: { border: "border-l-red-500", dot: "bg-red-500", label: "Ризик", bg: "bg-red-100", bgHex: "#FEE2E2", textHex: "#DC2626" },
   ready: { border: "border-l-green-500", dot: "bg-green-500", label: "Допущено", bg: "bg-green-100", bgHex: "#DCFCE7", textHex: "#16A34A" },

@@ -87,7 +87,7 @@ export const PHONE_COUNTRIES: PhoneCountry[] = [
   { iso2: "AZ", nameUk: "Азербайджан", flag: "🇦🇿", dialCode: "994", minNationalLength: 9, maxNationalLength: 9 },
 ];
 
-export const DEFAULT_PHONE_COUNTRY = PHONE_COUNTRIES[0];
+export const DEFAULT_PHONE_COUNTRY = PHONE_COUNTRIES.find((c) => c.iso2 === "UA") ?? PHONE_COUNTRIES[0];
 
 function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
@@ -137,7 +137,6 @@ export function splitPhoneValue(value: string): { country: PhoneCountry; nationa
 
 export function buildPhoneValue(country: PhoneCountry, nationalDigits: string): string {
   const localDigits = onlyDigits(nationalDigits);
-  if (!localDigits) return "";
   return `+${country.dialCode}${localDigits}`;
 }
 

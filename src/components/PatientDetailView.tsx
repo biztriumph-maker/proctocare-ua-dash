@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import imageCompression from 'browser-image-compression';
 import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
@@ -2944,15 +2945,30 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       const uploaded = await Promise.all(Array.from(e.target.files).map(async (file) => {
         const storageKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
 
+        // Compress images before upload
+        let fileToUpload: File = file;
+        if (file.type.startsWith('image/')) {
+          try {
+            const compressed = await imageCompression(file, {
+              maxSizeMB: 1,
+              maxWidthOrHeight: 1920,
+              useWebWorker: true,
+            });
+            fileToUpload = new File([compressed], file.name, { type: compressed.type || file.type });
+          } catch {
+            fileToUpload = file;
+          }
+        }
+
         // Try Supabase Storage first (cross-device access)
         let publicUrl: string | undefined;
         if (visitId) {
-          const url = await uploadFileToSupabaseStorage(visitId, file);
+          const url = await uploadFileToSupabaseStorage(visitId, fileToUpload);
           if (url) publicUrl = url;
         }
 
         // Always keep IndexedDB copy as local cache / offline fallback
-        await putBlobToStorage(storageKey, file);
+        await putBlobToStorage(storageKey, fileToUpload);
 
         return {
           id: Math.random().toString(36).substring(7),

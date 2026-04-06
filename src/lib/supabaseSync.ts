@@ -389,6 +389,18 @@ export async function resolveVisitFilePublicUrl(visitId: string, fileName: strin
   }
 }
 
+// Знайти незакриті візити (status is null AND visit_date < today)
+export async function getUnclosedVisits() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('visits')
+    .select('*, patients (*)')
+    .eq('status', 'planning')
+    .lt('visit_date', today);
+  if (error) console.error(error);
+  return data ?? [];
+}
+
 // Видалити файл з Supabase Storage
 export async function deleteFileFromSupabaseStorage(publicUrl: string): Promise<void> {
   if (!USE_SUPABASE) return;

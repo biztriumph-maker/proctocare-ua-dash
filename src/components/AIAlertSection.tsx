@@ -1,6 +1,8 @@
 import { MessageCircle, ChevronDown, AlertTriangle, Send } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { getUnclosedVisits } from "@/lib/supabaseSync";
+import { supabase } from "@/lib/supabaseClient";
 
 interface AIAlert {
   id: string;
@@ -43,6 +45,29 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [callingId, setCallingId] = useState<string | null>(null);
   const [showDeferred, setShowDeferred] = useState(false);
+  const [unclosedVisits, setUnclosedVisits] = useState<any[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    getUnclosedVisits().then(setUnclosedVisits);
+  }, []);
+
+  const closeVisit = async (status: string) => {
+    const visit = unclosedVisits[0];
+    await supabase
+      .from('visits')
+      .update({
+        status: status,
+        confirmed_at: new Date().toISOString(),
+      })
+      .eq('id', visit.id);
+
+    const updated = unclosedVisits.slice(1);
+    setUnclosedVisits(updated);
+    if (updated.length === 0) {
+      setModalOpen(false);
+    }
+  };
 
   const visible = useMemo(() => {
     return alerts
@@ -260,6 +285,98 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
 
   return (
     <div className="rounded-xl border-2 border-status-progress/30 bg-status-progress-bg p-4 space-y-2.5 animate-reveal-up">
+
+      {/* ── Unclosed visit warning strip ── */}
+      {unclosedVisits.length > 0 && (
+        <div
+          onClick={() => setModalOpen(true)}
+          style={{
+            background: '#e07b00',
+            borderRadius: 10,
+            padding: '11px 13px',
+            marginBottom: 10,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            animation: 'pulseStrip 1.8s ease-in-out infinite',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.25)',
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14,
+            }}>⚠</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                Незакритий прийом
+              </div>
+              <div style={{ fontSize: 11, color: '#fde9c0', marginTop: 2 }}>
+                {unclosedVisits[0].patients?.full_name || unclosedVisits[0].patients?.name || '—'} · {unclosedVisits[0].visit_date}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: 18, color: 'rgba(255,255,255,0.8)' }}>›</div>
+        </div>
+      )}
+
+      {/* ── Unclosed visit modal ── */}
+      {modalOpen && unclosedVisits[0] && (
+        <div
+          onClick={() => setModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(20,30,45,0.55)',
+            zIndex: 200, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 16,
+              padding: 22, width: '100%', maxWidth: 360,
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#1a2b3c', marginBottom: 6 }}>
+              Закрити прийом
+            </div>
+            <div style={{ fontSize: 13, color: '#5a7184', marginBottom: 16, lineHeight: 1.5 }}>
+              Підтвердіть статус прийому. Система зафіксує дату прийому і дату підтвердження окремо.
+            </div>
+            <div style={{ background: '#f5f8fc', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2b3c', marginBottom: 8 }}>
+                {unclosedVisits[0].patients?.full_name || unclosedVisits[0].patients?.name || '—'}
+              </div>
+              <div style={{ fontSize: 13, color: '#5a7184', lineHeight: 2 }}>
+                Дата прийому: {unclosedVisits[0].visit_date}<br />
+                Дата підтвердження: {new Date().toLocaleDateString('uk-UA')}<br />
+                Процедура: {unclosedVisits[0].procedure ?? '—'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => closeVisit('completed')} style={{
+                width: '100%', padding: 14, border: 'none',
+                borderRadius: 10, fontSize: 15, fontWeight: 600,
+                cursor: 'pointer', background: '#1fa866', color: '#ffffff',
+              }}>✓  Прийом відбувся</button>
+              <button onClick={() => closeVisit('no_show')} style={{
+                width: '100%', padding: 14, border: 'none',
+                borderRadius: 10, fontSize: 15, fontWeight: 600,
+                cursor: 'pointer', background: '#d94040', color: '#ffffff',
+              }}>✗  Пацієнт не з'явився</button>
+              <button onClick={() => setModalOpen(false)} style={{
+                width: '100%', padding: 14,
+                border: '1.5px solid #c8d4de',
+                borderRadius: 10, fontSize: 15, fontWeight: 400,
+                cursor: 'pointer', background: '#e4eaf0', color: '#3d5166',
+              }}>Скасувати</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <AlertTriangle size={16} className="text-status-progress shrink-0" />
         <h3 className="text-sm font-semibold text-foreground">
