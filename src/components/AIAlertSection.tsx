@@ -1,5 +1,6 @@
 import { MessageCircle, ChevronDown, AlertTriangle, Send } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { getUnclosedVisits } from "@/lib/supabaseSync";
 import { supabase } from "@/lib/supabaseClient";
@@ -21,6 +22,7 @@ interface AIAlertSectionProps {
   alerts: AIAlert[];
   onSendReply: (id: string, message: string) => void;
   doctorPhone?: string;
+  onVisitClosed?: () => void;
 }
 
 function getDateBadge(date: Date): { label: string; className: string } {
@@ -39,7 +41,7 @@ function getDateBadge(date: Date): { label: string; className: string } {
   return { label: formatted, className: "text-muted-foreground bg-muted font-bold" };
 }
 
-export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSectionProps) {
+export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed }: AIAlertSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -49,17 +51,25 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    getUnclosedVisits().then(setUnclosedVisits);
+    const today = new Date().toISOString().split('T')[0];
+    getUnclosedVisits().then((visits) => {
+      // Extra client-side guard: exclude today's visits (only strictly past dates are "unclosed")
+      setUnclosedVisits(visits.filter((v: any) => v.visit_date < today));
+    });
   }, []);
 
-  const closeVisit = async (status: string) => {
+  const closeVisit = async (outcome: 'completed' | 'no_show') => {
     const visit = unclosedVisits[0];
+    // Update the same boolean fields that handleComplete/handleNoShow use in Index.tsx
+    // so that currentVisitOutcome in PatientDetailView resolves correctly after re-fetch.
+    // NOTE: confirmed_at is NOT in the schema — keep update minimal to avoid silent failures.
+    const dbUpdate = outcome === 'completed'
+      ? { status: 'ready', completed: true, no_show: false }
+      : { status: 'risk', no_show: true, completed: false };
+
     await supabase
       .from('visits')
-      .update({
-        status: status,
-        confirmed_at: new Date().toISOString(),
-      })
+      .update(dbUpdate)
       .eq('id', visit.id);
 
     const updated = unclosedVisits.slice(1);
@@ -67,6 +77,8 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
     if (updated.length === 0) {
       setModalOpen(false);
     }
+    // Notify parent to re-fetch patients so UI reflects the new status immediately
+    onVisitClosed?.();
   };
 
   const visible = useMemo(() => {
@@ -283,8 +295,15 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
     );
   };
 
+  const hasUnclosed = unclosedVisits.length > 0;
+
   return (
-    <div className="rounded-xl border-2 border-status-progress/30 bg-status-progress-bg p-4 space-y-2.5 animate-reveal-up">
+    <div className={cn(
+      "rounded-xl border-2 p-4 space-y-2.5 animate-reveal-up",
+      hasUnclosed
+        ? "border-orange-400/60 bg-orange-50"
+        : "border-status-progress/30 bg-status-progress-bg"
+    )}>
 
       {/* ── Unclosed visit warning strip ── */}
       {unclosedVisits.length > 0 && (
@@ -323,13 +342,13 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
       )}
 
       {/* ── Unclosed visit modal ── */}
-      {modalOpen && unclosedVisits[0] && (
+      {modalOpen && unclosedVisits[0] && createPortal(
         <div
           onClick={() => setModalOpen(false)}
           style={{
             position: 'fixed', inset: 0,
             background: 'rgba(20,30,45,0.55)',
-            zIndex: 200, display: 'flex',
+            zIndex: 9999, display: 'flex',
             alignItems: 'center', justifyContent: 'center', padding: 20,
           }}
         >
@@ -376,14 +395,14 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone }: AIAlertSect
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
       <div className="flex items-center gap-2">
-        <AlertTriangle size={16} className="text-status-progress shrink-0" />
+        <AlertTriangle size={16} className={hasUnclosed ? "text-orange-500 shrink-0" : "text-status-progress shrink-0"} />
         <h3 className="text-sm font-semibold text-foreground">
-          Асистент: потрібна увага
+          {hasUnclosed ? "У вас є незавершені прийоми, що потребують уваги" : "Асистент: потрібна увага"}
         </h3>
-        <span className="ml-auto bg-status-progress text-white text-xs font-bold px-2.5 py-0.5 rounded-full tabular-nums">
-          {visible.length}
+        <span className={cn("ml-auto text-white text-xs font-bold px-2.5 py-0.5 rounded-full tabular-nums", hasUnclosed ? "bg-orange-500" : "bg-status-progress")}>
+          {hasUnclosed ? unclosedVisits.length : visible.length}
         </span>
       </div>
       <div className="space-y-2">

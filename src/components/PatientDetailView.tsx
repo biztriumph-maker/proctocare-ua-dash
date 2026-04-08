@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import imageCompression from 'browser-image-compression';
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw, Loader2, FileImage, Link, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -33,7 +33,9 @@ interface PatientDetailViewProps {
   allPatients?: Patient[];
   onClose: () => void;
   onUpdatePatient?: (updates: Partial<Patient>) => void;
-  onDelete?: (patientId: string) => void;
+  onDelete?: (patientId: string) => Promise<void> | void;
+  /** Called when a completed visit is rescheduled — creates a fresh visit record instead of mutating the old one */
+  onCreateNewVisit?: (newVisit: { date: string; time: string }) => void;
 }
 
 const statusLabel: Record<PatientStatus, string> = {
@@ -617,7 +619,7 @@ function getPreparationProgress(patient: Patient, services?: string[]): { percen
   return { percent, steps };
 }
 
-export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete }: PatientDetailViewProps) {
+export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete, onCreateNewVisit }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
@@ -704,15 +706,26 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return map;
   }, [relatedVisits, activeVisitIso]);
   
-  const initialNotes = patient.notes !== undefined ? patient.notes : profile.notes;
-  const initialProtocol = getInitialActiveProtocol(patient, activeVisitIso);
+  // A completed visit whose date is today or in the past means the card is in "archive mode" —
+  // the active fields (notes, allergies, diagnosis, protocol) must be empty so they are ready
+  // for the NEXT visit, not pre-filled with data from the old completed one.
+  const isCompletedPastVisit = (patient.completed || patient.status === "ready")
+    && (!patient.date || patient.date <= getTodayIsoKyiv());
+
+  const initialNotes = isCompletedPastVisit ? "" : (patient.notes ?? patient.primaryNotes ?? profile.notes);
+  // Completed past visits: active protocol field starts EMPTY so doctor types a fresh
+  // conclusion for the next visit. The saved text lives in archivedProtocolText (patient.protocol)
+  // and is only transferred to this field when the doctor clicks "Скопіювати".
+  const initialProtocol = isCompletedPastVisit ? "" : getInitialActiveProtocol(patient, activeVisitIso);
   const initialPhone = patient.phone || profile.phone;
-  const initialServices = patient.procedure ? patient.procedure.split(", ") : [];
+  const initialServices = (patient.completed || patient.status === "ready" || patient.noShow)
+    ? []
+    : (patient.procedure ? patient.procedure.split(", ") : []);
 
   const [fields, setFields] = useState({
     phone: initialPhone,
-    allergies: profile.allergies,
-    diagnosis: profile.diagnosis,
+    allergies: isCompletedPastVisit ? encodeAllergyState("unknown", "") : profile.allergies,
+    diagnosis: isCompletedPastVisit ? "" : profile.diagnosis,
     notes: initialNotes,
     protocol: initialProtocol,
     birthDate: profile.birthDate,
@@ -863,6 +876,53 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     });
   }, [effectiveStatus, onUpdatePatient, patient.status]);
 
+  // Clear notes field when a visit is marked as completed, so the card
+  // is clean and ready for the next visit session.
+  const prevCompletedRef = useRef(patient.completed);
+  useEffect(() => {
+    const wasCompleted = prevCompletedRef.current;
+    prevCompletedRef.current = patient.completed;
+    if (!wasCompleted && patient.completed) {
+      const updates: Record<string, unknown> = {};
+
+      // Archive current protocol to history and persist the text in DB.
+      // We do NOT clear protocol to "" — keeping it in the DB row lets
+      // enrichPatientWithVisitHistory build protocolHistory for future visits,
+      // enabling the "copy from last visit" button and archive content display.
+      if (fields.protocol?.trim()) {
+        const newEntry = { value: fields.protocol.trim(), timestamp: activeVisitDisplayDate, date: activeVisitIso };
+        const existingHistory = patient.protocolHistory || [];
+        const hasEntry = existingHistory.some((h) => h.date === activeVisitIso && !h.value.startsWith(RESCHEDULED_MARKER));
+        updates.protocolHistory = hasEntry ? existingHistory : [...existingHistory, newEntry];
+        // Save (not clear) so the text survives page refresh via visits.protocol column
+        updates.protocol = fields.protocol.trim();
+      }
+
+      // Clear notes
+      if (fields.notes?.trim()) {
+        setFields((prev) => ({ ...prev, notes: "" }));
+        updates.notes = "";
+      }
+
+      // Clear services: save empty procedure to DB so it doesn't reappear on reload
+      if (localServices.length > 0) {
+        setLocalServices([]);
+        updates.procedure = "";
+      }
+
+      // Reset allergies to "unknown" and diagnosis to empty so the card is clean for the next visit.
+      // Current values are already saved to their _History arrays by the autosave cycle.
+      const unknownAllergyEncoded = encodeAllergyState("unknown", "");
+      setFields((prev) => ({ ...prev, allergies: unknownAllergyEncoded, diagnosis: "" }));
+      updates.allergies = unknownAllergyEncoded;
+      updates.diagnosis = "";
+
+      if (Object.keys(updates).length > 0) {
+        onUpdatePatient?.(updates as Partial<Patient>);
+      }
+    }
+  }, [patient.completed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const serviceCategory = getServiceCategory(localServices);
 
   const seededProtocolHistory = getSeededMockProtocolHistory(patient);
@@ -877,20 +937,28 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   useEffect(() => {
     const nextProfile = getMockProfile(patient);
-    const nextNotes = patient.notes !== undefined ? patient.notes : nextProfile.notes;
-    const nextProtocol = getInitialActiveProtocol(patient, activeVisitIso);
+    const nextCompletedPast = (patient.completed || patient.status === "ready")
+      && (!patient.date || patient.date <= getTodayIsoKyiv());
+    const nextNotes = nextCompletedPast ? "" : (patient.notes ?? patient.primaryNotes ?? nextProfile.notes);
+    // Completed past visits: keep active protocol field empty (or preserve if doctor already
+    // typed/copied into it). Never auto-fill from DB. Sync only when not protected by user.
+    const nextProtocol = nextCompletedPast ? "" : getInitialActiveProtocol(patient, activeVisitIso);
     const nextPhone = patient.phone || nextProfile.phone;
-    const nextServices = patient.procedure ? patient.procedure.split(", ") : [];
+    const nextAllergies = nextCompletedPast ? encodeAllergyState("unknown", "") : nextProfile.allergies;
+    const nextDiagnosis = nextCompletedPast ? "" : nextProfile.diagnosis;
+    const nextServices = (patient.completed || patient.status === "ready" || patient.noShow)
+      ? []
+      : (patient.procedure ? patient.procedure.split(", ") : []);
     const nextInitialFiles = patient.files || [];
 
     const savedMeta = lastFocusSaveMeta.current;
-    const protectedField = savedMeta && Date.now() - savedMeta.at < 4000 ? savedMeta.field : null;
+    const protectedField = savedMeta && Date.now() - savedMeta.at < 30000 ? savedMeta.field : null;
 
     setLocalFullName(correctNameSpelling(`${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`));
     setFields((prev) => ({
       phone: protectedField === "phone" ? prev.phone : nextPhone,
-      allergies: protectedField === "allergies" ? prev.allergies : nextProfile.allergies,
-      diagnosis: protectedField === "diagnosis" ? prev.diagnosis : nextProfile.diagnosis,
+      allergies: protectedField === "allergies" ? prev.allergies : nextAllergies,
+      diagnosis: protectedField === "diagnosis" ? prev.diagnosis : nextDiagnosis,
       notes: protectedField === "notes" ? prev.notes : nextNotes,
       protocol: protectedField === "protocol" ? prev.protocol : nextProtocol,
       birthDate: protectedField === "birthDate" ? prev.birthDate : nextProfile.birthDate,
@@ -1113,7 +1181,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const derivedLastVisit = (() => {
     const currentDate = patient.date || "9999-99-99";
     const latestCompletedIso = lastCompletedVisitFromAll?.date;
-    const closedCurrentVisitIso = patient.date && (patient.completed || patient.status === "ready" || patient.noShow)
+    // Only count as "closed" if the visit date is today or in the past — future visits with stale
+    // completed=true in DB must not pollute lastVisit or archive logic.
+    const closedCurrentVisitIso = patient.date
+      && patient.date <= getTodayIsoKyiv()
+      && (patient.completed || patient.status === "ready" || patient.noShow)
       ? patient.date
       : undefined;
 
@@ -1161,7 +1233,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return bestIso ? isoToDisplay(bestIso) : "";
   })();
   const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
-  const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0;
+  // A visit that has been completed counts as a past visit — so the patient is always "repeat" after first visit
+  const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 || !!(patient.completed || patient.status === "ready");
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
@@ -1288,7 +1361,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   };
 
   const handleCloseRequest = () => {
-    handleSaveChanges(true);
+    try {
+      handleSaveChanges(true);
+    } catch (e) {
+      console.error("Save on close failed:", e);
+    }
     onClose();
   };
 
@@ -1331,10 +1408,33 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   }, []);
 
   const handleApplyReschedule = () => {
-    if (!onUpdatePatient || !rescheduleDate || !rescheduleTime) return;
+    if (!rescheduleDate || !rescheduleTime) return;
+    if (!onUpdatePatient && !onCreateNewVisit) return;
 
     const previousVisitIso = patient.date || getTodayIsoKyiv();
     const previousVisitDisplay = isoToDisplay(previousVisitIso);
+
+    const d = new Date(rescheduleDate + "T00:00:00");
+    const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+
+    // — If the current visit is already completed/ready, create a FRESH visit record
+    //   so the old record stays in DB as archive and persists after page refresh.
+    const isCompletedVisit = patient.completed || patient.status === "ready";
+    if (isCompletedVisit && onCreateNewVisit) {
+      // Save any typed protocol to the OLD (completed) visit before leaving it
+      if (fields.protocol.trim() && onUpdatePatient) {
+        onUpdatePatient({ protocol: fields.protocol.trim() });
+      }
+      onCreateNewVisit({ date: rescheduleDate, time: rescheduleTime });
+      setFields((prev) => ({ ...prev, protocol: "" }));
+      setShowReschedulePicker(false);
+      toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
+      return;
+    }
+
+    // — Planning visit: just move the appointment date on the same record
+    if (!onUpdatePatient) return;
+
     const hasProtocolInCurrentBlock = !!fields.protocol.trim();
     const hasFilesInCurrentBlock = localFiles.some((file) => (file.date || activeVisitDisplayDate) === previousVisitDisplay);
     const hasDataToFreeze = hasProtocolInCurrentBlock || hasFilesInCurrentBlock;
@@ -1349,12 +1449,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       onUpdatePatient({
         date: rescheduleDate,
         time: rescheduleTime,
+        completed: false,
+        noShow: false,
+        status: "planning",
         protocolHistory: [...(patient.protocolHistory || []), markerEntry],
       });
       setShowReschedulePicker(false);
-
-      const d = new Date(rescheduleDate + "T00:00:00");
-      const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
       toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
       return;
     }
@@ -1373,15 +1473,14 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       date: rescheduleDate,
       time: rescheduleTime,
       protocol: "",
+      completed: false,
+      noShow: false,
       protocolHistory: [...(frozenProtocolHistory || []), freezeReasonEntry],
       status: "planning",
     });
 
     setFields((prev) => ({ ...prev, protocol: "" }));
     setShowReschedulePicker(false);
-
-    const d = new Date(rescheduleDate + "T00:00:00");
-    const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
     toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
   };
 
@@ -1449,7 +1548,14 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const stringified = (v: unknown) => JSON.stringify(v ?? null);
 
       if (fields.notes !== (patient.notes || "")) updates.notes = fields.notes;
-      if (fields.protocol !== (patient.protocol || "")) updates.protocol = fields.protocol;
+      // For completed past visits: only save protocol if doctor explicitly typed/copied something
+      // (fields.protocol is non-empty). Never write "" over a saved archived conclusion.
+      const isCompletedPast = (patient.completed || patient.status === "ready")
+        && (!patient.date || patient.date <= getTodayIsoKyiv());
+      const protocolChanged = fields.protocol !== (patient.protocol || "");
+      if (isCompletedPast ? (fields.protocol.trim() && protocolChanged) : protocolChanged) {
+        updates.protocol = fields.protocol;
+      }
       if (getStorablePhone(fields.phone) !== (patient.phone || "")) updates.phone = getStorablePhone(fields.phone);
       if (fields.allergies !== (patient.allergies || "")) updates.allergies = fields.allergies;
       if (fields.diagnosis !== (patient.diagnosis || "")) updates.diagnosis = fields.diagnosis;
@@ -1487,11 +1593,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         </div>
 
         {/* Sticky Header */}
-        <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60 bg-card rounded-t-2xl">
+        <div className="flex items-start justify-between px-5 sm:px-6 pb-3 pt-2 sm:pt-5 border-b border-border/60 bg-card rounded-t-2xl shrink-0 relative z-10">
           <div className="min-w-0 flex-1">
             <div>
               <div className="flex items-center gap-2.5 mb-1">
-                <span className={cn("w-3 h-3 rounded-full shrink-0", statusDot[effectiveStatus])} />
+                <span className={cn("w-3 h-3 rounded-full shrink-0", patient.completed ? "bg-slate-400" : statusDot[effectiveStatus])} />
                 {editingName ? (
                   <input
                     ref={nameInputRef}
@@ -1517,33 +1623,41 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                   {isRepeatPatient ? "Повторний" : "Новий"}
                 </span>
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: serviceCategory.bgColor, color: serviceCategory.color }}
-                >
-                  {serviceCategory.label}
-                </span>
+                {!(patient.completed || patient.status === "ready") && (
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: serviceCategory.bgColor, color: serviceCategory.color }}
+                  >
+                    {serviceCategory.label}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs flex-wrap mt-2 sm:mt-2.5">
               <span className="text-muted-foreground font-normal">Дата:</span>
               <span className="font-bold text-foreground">
-                {patient.date
-                  ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
-                  : "—"}
+                {(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())
+                  ? "—"
+                  : (patient.date
+                    ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
+                    : "—")}
               </span>
               <button
                 onClick={() => setShowReschedulePicker(true)}
-                title="Перенести прийом"
+                title="Призначити наступний прийом"
                 className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-accent transition-all"
               >
                 <Pencil size={11} className="text-muted-foreground" />
               </button>
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
-              <span className="font-bold text-foreground">{patient.time}</span>
-              <span className="text-muted-foreground">|</span>
-              <span className="font-bold text-foreground">{getPrimaryService(localServices) || patient.procedure}</span>
+              <span className="font-bold text-foreground">{(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv()) ? "—" : (patient.time || "—")}</span>
+              {!((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) && getPrimaryService(localServices) && (
+                <>
+                  <span className="text-muted-foreground">|</span>
+                  <span className="font-bold text-foreground">{getPrimaryService(localServices)}</span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1557,6 +1671,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               </button>
             )}
             <button
+              type="button"
               onClick={handleCloseRequest}
               className="w-9 h-9 flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted transition-colors active:scale-[0.93] shrink-0"
             >
@@ -1631,13 +1746,21 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       onFocusEdit={handleFocusOpen}
                       fromForm={patient.fromForm}
                       protocolText={fields.protocol}
+                      archivedProtocolText={patient.protocol || ""}
                       protocolHistory={mergedProtocolHistory}
                       procedureHistory={mergedProcedureHistory}
                       historicalVisitDates={completedPastVisitDates}
                       visitOutcomeByDate={archivedVisitOutcomeByDate}
-                      currentVisitOutcome={patient.noShow ? "no-show" : (patient.completed || patient.status === "ready" ? "completed" : undefined)}
-                      activeVisitDate={activeVisitDisplayDate}
-                      onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                      currentVisitOutcome={
+                        (patient.noShow && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "no-show" :
+                        ((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "completed" :
+                        undefined
+                      }
+                      activeVisitDate={patient.date ? activeVisitDisplayDate : ""}
+                      onProtocolPrefill={(value) => {
+                        lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
+                        setFields((prev) => ({ ...prev, protocol: value }));
+                      }}
                       visitId={patient.id}
                     />
                   </ContentBlock>
@@ -1719,13 +1842,21 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   onFocusEdit={handleFocusOpen}
                   fromForm={patient.fromForm}
                   protocolText={fields.protocol}
+                  archivedProtocolText={patient.protocol || ""}
                   protocolHistory={mergedProtocolHistory}
                   procedureHistory={mergedProcedureHistory}
                   historicalVisitDates={completedPastVisitDates}
                   visitOutcomeByDate={archivedVisitOutcomeByDate}
-                  currentVisitOutcome={patient.noShow ? "no-show" : (patient.completed || patient.status === "ready" ? "completed" : undefined)}
-                  activeVisitDate={activeVisitDisplayDate}
-                  onProtocolPrefill={(value) => setFields((prev) => ({ ...prev, protocol: value }))}
+                  currentVisitOutcome={
+                    (patient.noShow && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "no-show" :
+                    ((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "completed" :
+                    undefined
+                  }
+                  activeVisitDate={patient.date ? activeVisitDisplayDate : ""}
+                  onProtocolPrefill={(value) => {
+                    lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
+                    setFields((prev) => ({ ...prev, protocol: value }));
+                  }}
                   visitId={patient.id}
                 />
               </ContentBlock>
@@ -2393,12 +2524,13 @@ type FileItem = {
   url?: string;
   storageKey?: string;
   mimeType?: string;
+  kind?: "video-link";   // external video URL (YouTube, Drive, iCloud, etc.)
 };
 
 type PreviewState =
   | { kind: "pdf"; name: string; blob: Blob; url?: string }
   | { kind: "docx"; name: string; blob: Blob }
-  | { kind: "image"; name: string; blob: Blob }
+  | { kind: "image"; name: string; url: string }   // URL-based — no blob fetch needed
   | { kind: "unsupported"; name: string; message: string };
 
 const FILE_DB_NAME = "proctocare_files";
@@ -2478,14 +2610,36 @@ const MOCK_PROTOCOL_HISTORY: Array<{ value: string; timestamp: string; date: str
   { value: "Гастроскопія: патологій не виявлено. Слизова шлунка та дванадцятипалої кишки в нормі.", timestamp: "20.05.2025", date: "2025-05-20" },
 ];
 
+// ── Helper: pick icon by file type ──
+function FileTypeIcon({ file }: { file: FileItem }) {
+  if (file.kind === 'video-link') {
+    return <Play size={15} className="text-violet-500 shrink-0" />;
+  }
+  const ext = (file.name.toLowerCase().split('.').pop() || '');
+  const mime = (file.mimeType || '').toLowerCase();
+  if (mime.includes('pdf') || ext === 'pdf') {
+    return <FileText size={15} className="text-red-500 shrink-0" />;
+  }
+  if (mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','bmp'].includes(ext)) {
+    return <FileImage size={15} className="text-emerald-500 shrink-0" />;
+  }
+  if (mime.includes('officedocument') || mime.includes('msword') || ['doc','docx'].includes(ext)) {
+    return <FileText size={15} className="text-blue-500 shrink-0" />;
+  }
+  return <FileText size={15} className={file.type === 'doctor' ? 'text-primary shrink-0' : 'text-status-progress shrink-0'} />;
+}
+
 // ── Shared file row ──
 function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelete: () => void; onView: () => void; readOnly?: boolean }) {
+  const subtitle = file.kind === 'video-link'
+    ? `Відео · ${file.date}`
+    : `${file.type === "doctor" ? "Лікар" : "Пацієнт"} · ${file.date}`;
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
-      <FileText size={15} className={file.type === "doctor" ? "text-primary shrink-0" : "text-status-progress shrink-0"} />
+      <FileTypeIcon file={file} />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
-        <p className="text-[10px] text-muted-foreground">{file.type === "doctor" ? "Лікар" : "Пацієнт"} · {file.date}</p>
+        <p className="text-[10px] text-muted-foreground">{subtitle}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button onClick={onView}
@@ -2688,27 +2842,47 @@ function PdfPreviewModal({ file, onClose }: { file: { name: string; blob: Blob; 
   );
 }
 
-function ImagePreviewModal({ file, onClose }: { file: { name: string; blob: Blob }; onClose: () => void }) {
-  const [url, setUrl] = useState("");
-
+function ImagePreviewModal({ file, onClose }: { file: { name: string; url: string }; onClose: () => void }) {
+  // Close on Escape key
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(file.blob);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [file.blob]);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-card w-full max-w-6xl h-[90vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
-        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
-          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{file.name}</p>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors" title="Закрити перегляд">
-            <X size={16} className="text-muted-foreground" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto bg-muted/30 p-4 flex items-center justify-center">
-          {url ? <img src={url} alt={file.name} className="max-w-full max-h-full object-contain rounded shadow-md bg-white" /> : null}
-        </div>
+    // z-[200] — above all modals (PatientDetailView z-50, confirm dialogs z-[70], other previews z-[80])
+    <div
+      className="fixed inset-0 z-[200] bg-black/90 flex flex-col animate-fade-in"
+      onClick={onClose}
+    >
+      {/* Header */}
+      <div
+        className="shrink-0 flex items-center justify-between px-4 py-3 bg-black/50 backdrop-blur-sm"
+        onClick={e => e.stopPropagation()}
+      >
+        <p className="text-sm font-semibold text-white truncate pr-4 flex-1">{file.name}</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 transition-colors"
+          title="Закрити"
+        >
+          <X size={18} className="text-white" />
+        </button>
+      </div>
+      {/* Image — fills remaining screen; touch pinch-zoom works natively */}
+      <div
+        className="flex-1 overflow-auto flex items-center justify-center p-2"
+        onClick={e => e.stopPropagation()}
+      >
+        <img
+          src={file.url}
+          alt={file.name}
+          className="max-w-full max-h-full object-contain select-none"
+          style={{ touchAction: 'pinch-zoom' }}
+          draggable={false}
+        />
       </div>
     </div>
   );
@@ -2781,12 +2955,14 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, archivedProtocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
   fromForm?: boolean;
   protocolText: string;
+  /** Raw saved protocol from DB for the completed visit — used for archive block and copy button. */
+  archivedProtocolText?: string;
   protocolHistory?: Array<{ value: string; timestamp: string; date: string }>;
   procedureHistory?: Array<{ value: string; timestamp: string; date: string }>;
   historicalVisitDates?: string[];
@@ -2800,6 +2976,10 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
   const [confirmCopyProtocol, setConfirmCopyProtocol] = useState<{ value: string; date: string } | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showVideoInput, setShowVideoInput] = useState(false);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoName, setVideoName] = useState('');
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
@@ -2814,6 +2994,18 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     return map;
   }, [files, activeDate]);
 
+  // Set of dates that belong to definitively closed past visits.
+  // Only dates in this set can trigger archiving of files.
+  const pastVisitDateSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of (historicalVisitDates || [])) s.add(d);
+    for (const d of Object.keys(visitOutcomeByDate || {})) s.add(d);
+    // When the current visit itself is closed, also treat activeDate as a past visit
+    // so its files correctly move into the archive section.
+    if (currentVisitOutcome) s.add(activeDate);
+    return s;
+  }, [historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeDate]);
+
   // Map protocolHistory ISO dates → { displayDate: DD.MM.YYYY, value }
   const protocolByDate = useMemo(() => {
     const map = new Map<string, string>();
@@ -2825,8 +3017,15 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
         map.set(dd, h.value);
       }
     }
+    // For completed visits: if there is no protocolHistory entry for the active date,
+    // fall back to archivedProtocolText (raw visits.protocol from DB) so the archive
+    // section shows the text immediately without needing a protocol_history column.
+    const archiveFallback = archivedProtocolText?.trim() || protocolText?.trim();
+    if (currentVisitOutcome && archiveFallback && !map.has(activeDate)) {
+      map.set(activeDate, archiveFallback);
+    }
     return map;
-  }, [protocolHistory]);
+  }, [protocolHistory, currentVisitOutcome, protocolText, archivedProtocolText, activeDate]);
 
   const rescheduledToByDate = useMemo(() => {
     const map = new Map<string, string>();
@@ -2843,15 +3042,35 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   }, [protocolHistory]);
 
   const latestArchivedProtocol = useMemo(() => {
+    const isCompleted = !!currentVisitOutcome;
+    // If there is no real active visit date (patient.date empty), skip the "same-day" filter
+    // so history entries from today are still surfaced for "no-visit" repeated patient cards.
+    const hasRealActiveVisit = !!activeVisitDate;
     const entries = (protocolHistory || [])
       .filter((h) => !h.value.startsWith(RESCHEDULED_MARKER))
       .filter((h) => {
         const parts = h.date?.split("-");
         if (parts?.length !== 3) return false;
         const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
+        // When the current visit is completed, its own entries also count as archived
+        if (isCompleted) return true;
+        // No real active visit → show all history (don't filter by date)
+        if (!hasRealActiveVisit) return true;
         return dd !== activeDate;
       })
       .sort((a, b) => b.date.localeCompare(a.date));
+
+    // For completed visits: if the protocol text exists but isn't yet in history,
+    // surface it directly so the copy button appears immediately after closing the visit.
+    // Prefer archivedProtocolText (raw DB value) over protocolText (live editable state).
+    const archiveSource = (archivedProtocolText?.trim() || protocolText?.trim());
+    if (isCompleted && archiveSource) {
+      const activeIso = displayToIso(activeDate);
+      const hasEntryForActive = entries.some((e) => e.date === activeIso);
+      if (!hasEntryForActive) {
+        return { value: archiveSource, date: activeDate };
+      }
+    }
 
     const latest = entries[0];
     if (!latest) return null;
@@ -2859,7 +3078,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       value: latest.value,
       date: isoToDisplay(latest.date),
     };
-  }, [protocolHistory, activeDate]);
+  }, [protocolHistory, activeDate, currentVisitOutcome, protocolText]);
 
   const procedureByDate = useMemo(() => {
     const map = new Map<string, string>();
@@ -2873,10 +3092,12 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     return map;
   }, [procedureHistory]);
 
-  // Collect all historical dates (not active), sorted descending
+  // Collect all historical dates (not active), sorted descending.
+  // File dates are only included if they belong to a definitively closed past visit.
   const historicalDates = useMemo(() => {
     const dates = new Set<string>();
-    for (const d of filesByDate.keys()) if (d !== activeDate) dates.add(d);
+    // Only add a file's date to history if it's a known past closed visit date
+    for (const d of filesByDate.keys()) if (d !== activeDate && pastVisitDateSet.has(d)) dates.add(d);
     for (const d of protocolByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of procedureByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
@@ -2890,7 +3111,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       };
       return parse(b) - parse(a);
     });
-  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeDate]);
+  }, [filesByDate, protocolByDate, procedureByDate, rescheduledToByDate, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeDate, pastVisitDateSet]);
 
   // All historical dates start collapsed
   const [collapsedDates, setCollapsedDates] = useState<Set<string>>(() => new Set(historicalDates));
@@ -2908,8 +3129,13 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     });
   };
 
-  const activeProtocolText = currentVisitOutcome ? "" : protocolText;
-  const activeFiles = currentVisitOutcome ? [] : (filesByDate.get(activeDate) || []);
+  // For completed visits fields.protocol == patient.protocol (synced above),
+  // so activeProtocolText naturally reflects whatever is in the DB.
+  // The active block shows the saved conclusion; the copy button allows prefilling from history.
+  const activeProtocolText = protocolText;
+  // Include all files NOT belonging to a definitively closed past visit,
+  // regardless of whether their date matches activeDate (handles rescheduled visits).
+  const activeFiles = currentVisitOutcome ? [] : files.filter(f => !pastVisitDateSet.has(f.date || activeDate));
   const hasTimeline = historicalDates.length > 0;
 
   const getFileExtension = (name: string): string => {
@@ -2940,35 +3166,79 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
+    console.log('[FileUpload] files selected:', e.target.files.length);
+    setIsUploading(true);
 
     try {
       const uploaded = await Promise.all(Array.from(e.target.files).map(async (file) => {
+        console.log('[FileUpload] processing:', file.name, 'size:', file.size, 'type:', file.type);
         const storageKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
 
         // Compress images before upload
         let fileToUpload: File = file;
         if (file.type.startsWith('image/')) {
+          console.log('[FileUpload] compressing image…', { name: file.name, size: file.size, type: file.type });
           try {
             const compressed = await imageCompression(file, {
               maxSizeMB: 1,
               maxWidthOrHeight: 1920,
               useWebWorker: true,
             });
-            fileToUpload = new File([compressed], file.name, { type: compressed.type || file.type });
-          } catch {
+            // Always keep the original MIME type: compressed.type can be '' in some browsers
+            const explicitType = file.type || inferMimeFromName(file.name);
+            fileToUpload = new File([compressed], file.name, { type: explicitType });
+            console.log('[FileUpload] compressed OK:', {
+              originalSize: file.size,
+              compressedSize: fileToUpload.size,
+              type: fileToUpload.type,
+            });
+            if (fileToUpload.size === 0) {
+              console.error('[FileUpload] ✗ compression produced empty blob, using original');
+              fileToUpload = file;
+            }
+          } catch (compressErr) {
+            console.warn('[FileUpload] compression failed, using original:', compressErr);
             fileToUpload = file;
           }
+        } else {
+          // PDF / TXT / DOC — skip compressor entirely
+          console.log('[FileUpload] non-image file, skipping compression:', { name: file.name, size: file.size, type: file.type });
         }
+
+        // Validate before upload
+        if (fileToUpload.size === 0) {
+          throw new Error(`Файл порожній (0 байт): ${file.name}`);
+        }
+        console.log('[FileUpload] pre-upload check OK:', {
+          name: fileToUpload.name,
+          size: fileToUpload.size,
+          type: fileToUpload.type || '(empty type!)',
+          visitId,
+        });
 
         // Try Supabase Storage first (cross-device access)
         let publicUrl: string | undefined;
         if (visitId) {
           const url = await uploadFileToSupabaseStorage(visitId, fileToUpload);
-          if (url) publicUrl = url;
+          if (url) {
+            publicUrl = url;
+            console.log('[FileUpload] ✓ Supabase upload OK:', url);
+          } else {
+            console.warn('[FileUpload] ⚠️ Supabase returned null — file will be local only (check [Storage] errors above)');
+          }
+        } else {
+          console.warn('[FileUpload] ⚠️ visitId is empty — Supabase upload skipped');
         }
 
         // Always keep IndexedDB copy as local cache / offline fallback
-        await putBlobToStorage(storageKey, fileToUpload);
+        // NOTE: IndexedDB is non-fatal — Supabase Storage is the source of truth
+        try {
+          console.log('[FileUpload] saving to IndexedDB…');
+          await putBlobToStorage(storageKey, fileToUpload);
+          console.log('[FileUpload] IndexedDB saved OK');
+        } catch (idbErr) {
+          console.warn('[FileUpload] ⚠️ IndexedDB save failed (non-fatal, file is in Supabase):', idbErr);
+        }
 
         return {
           id: Math.random().toString(36).substring(7),
@@ -2983,117 +3253,138 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
       onFilesChange([...files, ...uploaded]);
     } catch (err) {
-      console.error("Failed to save uploaded files", err);
-      toast.error("Не вдалося зберегти файл. Спробуйте ще раз.");
+      console.error('[FileUpload] ✗ outer catch fired — full error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Не вдалося зберегти файл: ${msg}`);
     } finally {
+      setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleViewFile = async (file: FileItem) => {
-    let blob: Blob | null = null;
-    let resolvedUrl: string | undefined = file.url;
-
-    if (file.storageKey) {
-      blob = await getBlobFromStorage(file.storageKey);
+  const handleSaveVideoLink = () => {
+    const trimUrl = videoUrl.trim();
+    if (!trimUrl) { toast.error('Введіть посилання на відео'); return; }
+    // Basic URL validation
+    try { new URL(trimUrl); } catch {
+      toast.error('Невалідне посилання. Переконайтесь, що URL починається з https://');
+      return;
     }
-
-    const tryFetchFromUrl = async (url: string): Promise<Blob | null> => {
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.blob();
-      } catch (err) {
-        console.error("Failed to load file URL", err);
-        return null;
-      }
+    const label = videoName.trim() || 'Відео матеріали';
+    const newItem: FileItem = {
+      id: Math.random().toString(36).substring(7),
+      name: label,
+      type: 'doctor',
+      date: activeDate,
+      url: trimUrl,
+      kind: 'video-link',
     };
+    onFilesChange([...files, newItem]);
+    setVideoUrl('');
+    setVideoName('');
+    setShowVideoInput(false);
+    toast.success('Посилання збережено');
+  };
 
-    if (!blob && resolvedUrl) {
-      blob = await tryFetchFromUrl(resolvedUrl);
+  const handleViewFile = async (file: FileItem) => {
+    // ── video-link → open directly in new tab ──
+    if (file.kind === 'video-link') {
+      if (file.url) {
+        window.open(file.url, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.error('Посилання відсутнє');
+      }
+      return;
     }
+    try {
+      const ext = getFileExtension(file.name);
+      const mime = (file.mimeType || '').toLowerCase();
+      const isPdf   = mime.includes('pdf') || ext === 'pdf';
+      const isImage = mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+      const isDocx  = mime.includes('officedocument.wordprocessingml.document') || ext === 'docx';
 
-    // Legacy fallback: if URL is missing/stale, try to resolve by visit folder + filename
-    if (!blob && visitId) {
-      const fallbackUrl = await resolveVisitFilePublicUrl(visitId, file.name);
-      if (fallbackUrl) {
-        resolvedUrl = fallbackUrl;
-        blob = await tryFetchFromUrl(fallbackUrl);
+      console.log('[handleViewFile]', { name: file.name, mimeType: file.mimeType, url: file.url, storageKey: file.storageKey, isPdf, isImage, isDocx });
 
-        // Persist recovered cloud URL so next open works in any browser/device
-        if (blob && fallbackUrl !== file.url) {
-          onFilesChange(files.map((f) => (
-            f.id === file.id
-              ? { ...f, url: fallbackUrl, mimeType: f.mimeType || blob?.type || inferMimeFromName(f.name) }
-              : f
-          )));
+      // ── Step 1: resolve the best URL available ──
+      let viewUrl = file.url;
+      if (!viewUrl && visitId) {
+        console.log('[handleViewFile] URL missing, resolving from Supabase Storage…');
+        viewUrl = (await resolveVisitFilePublicUrl(visitId, file.name)) ?? undefined;
+        if (viewUrl) {
+          console.log('[handleViewFile] resolved URL:', viewUrl);
+          // Persist so next open is instant
+          onFilesChange(files.map(f => f.id === file.id ? { ...f, url: viewUrl } : f));
         }
       }
-    }
 
-    if (!blob && file.url) {
-      try {
-        const res = await fetch(file.url, { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+      // ── PDF → always open in new browser tab (most reliable on iOS/Android/desktop) ──
+      // Never use setPreview for PDFs — canvas renderer causes grey screen on mobile.
+      if (isPdf) {
+        let urlToOpen = viewUrl;
+        if (!urlToOpen && file.storageKey) {
+          // Fallback: local IndexedDB blob → object URL (current session only)
+          const blob = await getBlobFromStorage(file.storageKey).catch(() => null);
+          if (blob) {
+            urlToOpen = URL.createObjectURL(blob);
+            console.log('[handleViewFile] PDF → object URL from IndexedDB blob');
+          } else {
+            console.warn('[handleViewFile] ⚠️ blob NOT found in IndexedDB for key:', file.storageKey);
+          }
         }
-        blob = await res.blob();
-      } catch (err) {
-        console.error("Failed to load legacy file URL", err);
+        if (urlToOpen) {
+          console.log('[handleViewFile] PDF → window.open', urlToOpen);
+          const newWindow = window.open(urlToOpen, '_blank', 'noopener,noreferrer');
+          if (newWindow) newWindow.focus();
+          return;
+        }
+        // Both Supabase URL and IndexedDB empty — file was from a previous session without cloud upload
+        console.error('[handleViewFile] ✗ PDF has no URL and no local blob:', file);
+        toast.error('PDF недоступний. Файл збережений лише локально у попередній сесії. Видаліть і завантажте знову.', { duration: 6000 });
+        return;
       }
-    }
 
-    if (!blob) {
-      setPreview({
-        kind: "unsupported",
-        name: file.name,
-        message: "Файл недоступний для перегляду в цьому браузері. Ймовірно, він був завантажений у старій версії локально без хмарного збереження. Завантажте його повторно, і він відкриватиметься в модальному вікні на всіх пристроях.",
-      });
-      return;
-    }
+      // ── Image → Lightbox (URL-based, no fetch/blob download needed) ──
+      if (isImage) {
+        if (viewUrl) {
+          console.log('[handleViewFile] Image → Lightbox', viewUrl);
+          setPreview({ kind: 'image', name: file.name, url: viewUrl });
+          return;
+        }
+        // Fallback: local blob → object URL
+        const blob = await getBlobFromStorage(file.storageKey ?? '').catch(() => null);
+        if (blob) {
+          setPreview({ kind: 'image', name: file.name, url: URL.createObjectURL(blob) });
+          return;
+        }
+        toast.error('Зображення недоступне. Спробуйте завантажити повторно.');
+        return;
+      }
 
-    const ext = getFileExtension(file.name);
-    const lowerName = file.name.toLowerCase();
-    const mime = (file.mimeType || blob.type || "").toLowerCase();
-    const urlLooksPdf = (resolvedUrl || "").toLowerCase().includes(".pdf");
-    const signatureLooksPdf = await looksLikePdfBlob(blob);
-    const nameLooksPdf = lowerName.includes(".pdf");
-    const isPdf = mime.includes("pdf") || ext === "pdf" || nameLooksPdf || urlLooksPdf || signatureLooksPdf;
-    if (isPdf) {
-      const pdfBlob = mime.includes("pdf")
-        ? blob
-        : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
-      setPreview({ kind: "pdf", name: file.name, blob: pdfBlob, url: resolvedUrl });
-      return;
-    }
+      // ── DOCX → blob → mammoth renderer ──
+      if (isDocx) {
+        let blob: Blob | null = file.storageKey
+          ? await getBlobFromStorage(file.storageKey).catch(() => null)
+          : null;
+        if (!blob && viewUrl) {
+          try {
+            const res = await fetch(viewUrl, { cache: 'no-store' });
+            if (res.ok) blob = await res.blob();
+          } catch { /* silent */ }
+        }
+        if (blob) { setPreview({ kind: 'docx', name: file.name, blob }); return; }
+        setPreview({ kind: 'unsupported', name: file.name, message: 'Не вдалося завантажити DOCX для перегляду. Спробуйте ще раз.' }); return;
+      }
 
-    const isImage = mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext);
-    if (isImage) {
-      setPreview({ kind: "image", name: file.name, blob });
-      return;
-    }
+      // ── .doc (legacy binary) ──
+      if ((mime.includes('msword') || ext === 'doc')) {
+        setPreview({ kind: 'unsupported', name: file.name, message: 'Формат .doc є застарілим. Збережіть як .docx, і він відкриється прямо всередині додатку.' }); return;
+      }
 
-    const isDocx = mime.includes("officedocument.wordprocessingml.document") || ext === "docx";
-    if (isDocx) {
-      setPreview({ kind: "docx", name: file.name, blob });
-      return;
+      setPreview({ kind: 'unsupported', name: file.name, message: 'Цей формат не підтримується. Доступні: PDF, зображення (JPG/PNG/WebP), DOCX.' });
+    } catch (err) {
+      console.error('[handleViewFile] ✗ unexpected error:', err);
+      toast.error('Не вдалося відкрити файл. Спробуйте ще раз.');
     }
-
-    const isLegacyWord = mime.includes("msword") || ext === "doc";
-    if (isLegacyWord) {
-      setPreview({
-        kind: "unsupported",
-        name: file.name,
-        message: "Формат .doc є застарілим бінарним форматом Word. У поточному веб-інтерфейсі його неможливо стабільно відкрити всередині продукту без серверної конвертації. Якщо це .docx, він відкриється прямо тут. Якщо це саме .doc, його потрібно зберегти як .docx для внутрішнього перегляду.",
-      });
-      return;
-    }
-
-    setPreview({
-      kind: "unsupported",
-      name: file.name,
-      message: "Цей формат поки не підтримується для вбудованого перегляду. Доступні формати для перегляду всередині продукту: PDF, зображення (JPG/PNG/WebP) та DOCX.",
-    });
   };
 
   return (
@@ -3137,9 +3428,9 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       {confirmCopyProtocol && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmCopyProtocol(null)}>
           <div className="bg-surface-raised rounded-xl shadow-elevated p-5 mx-4 max-w-sm w-full animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-foreground mb-1">Підтвердження копіювання</h3>
+            <h3 className="text-sm font-bold text-foreground mb-1">Замінити поточний висновок?</h3>
             <p className="text-xs text-muted-foreground mb-4">
-              Ви впевнені, що хочете скопіювати дані з візиту за {confirmCopyProtocol.date}? Поточний текст у полі буде видалено.
+              Це замінить ваш поточний текст текстом від {confirmCopyProtocol.date}. Продовжити?
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -3152,10 +3443,11 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                 onClick={() => {
                   onProtocolPrefill(confirmCopyProtocol.value);
                   setConfirmCopyProtocol(null);
+                  toast.success(`Висновок від ${confirmCopyProtocol.date} скопійовано`);
                 }}
                 className="flex-1 py-2.5 text-sm font-bold bg-status-ready text-white rounded-lg transition-colors active:scale-[0.97]"
               >
-                Копіювати
+                Замінити
               </button>
             </div>
           </div>
@@ -3169,30 +3461,63 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           <div className="absolute left-[27px] top-5 bottom-3 w-px bg-border/50" />
         )}
 
-        {/* ── Current Visit (always editable) ── */}
-        <div className="relative pl-8 mb-4">
-          <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-primary border-2 border-white shadow-sm" />
+        {/* ── Current Visit (active work zone — always visible, content empty when completed) ── */}
+        <div className={cn("relative mb-4", currentVisitOutcome ? "pt-1" : "pl-8")}>
+          {!currentVisitOutcome && (
+            <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm bg-primary" />
+          )}
 
-          {/* Header */}
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(activeDate)}</span>
-            <span className="ml-auto text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded-full shrink-0 uppercase tracking-wide">Активний</span>
-          </div>
+          {/* Header — only shown for active (non-completed) visit */}
+          {!currentVisitOutcome && (
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(activeDate)}</span>
+              {displayToIso(activeDate) < getTodayIsoKyiv() ? (
+                <span className="ml-auto text-[8px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">⚠ Незавершений прийом</span>
+              ) : displayToIso(activeDate) > getTodayIsoKyiv() ? (
+                <span className="ml-auto text-[8px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">📅 Заплановано</span>
+              ) : (
+                <span className="ml-auto text-[8px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">✓ Активний</span>
+              )}
+            </div>
+          )}
 
           {/* ВИСНОВОК ЛІКАРЯ — soft highlighted border, editable */}
-          <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 pb-10 space-y-2 mb-2.5 relative">
+          <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2 mb-2.5 relative">
             <div className="flex items-center justify-between">
               <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <FileText size={12} className="text-primary" />
                 Висновок лікаря
               </h4>
-              <button onClick={() => onFocusEdit("protocol", activeProtocolText)}
-                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all">
-                <Pencil size={11} className="text-muted-foreground" />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Copy button — visible when there is archived data AND doctor hasn't typed manually yet */}
+                {latestArchivedProtocol && !activeProtocolText.trim() && (
+                  <button
+                    onClick={() => {
+                      if (activeProtocolText.trim()) {
+                        // Field has content → show confirmation dialog
+                        setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date });
+                      } else {
+                        // Field is empty → copy immediately, no confirmation
+                        onProtocolPrefill(latestArchivedProtocol.value);
+                        toast.success(`Висновок від ${latestArchivedProtocol.date} скопійовано`);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-1.5 py-0.5 transition-colors shrink-0"
+                    title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
+                  >
+                    <ClipboardList size={11} className="shrink-0" />
+                    <span className="hidden sm:inline">Скопіювати</span>
+                    <span>({latestArchivedProtocol.date})</span>
+                  </button>
+                )}
+                <button onClick={() => onFocusEdit("protocol", activeProtocolText)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all">
+                  <Pencil size={11} className="text-muted-foreground" />
+                </button>
+              </div>
             </div>
             {activeProtocolText ? (
-              <p className="text-sm leading-relaxed text-foreground">{activeProtocolText}</p>
+              <p className="text-sm leading-relaxed text-foreground" style={{ whiteSpace: 'pre-wrap' }}>{activeProtocolText}</p>
             ) : (
               <div className="space-y-2">
                 <button
@@ -3202,17 +3527,6 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                   Натисніть, щоб заповнити висновок...
                 </button>
               </div>
-            )}
-
-            {latestArchivedProtocol && !activeProtocolText && !currentVisitOutcome && (
-              <button
-                onClick={() => setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date })}
-                className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-2 py-1 transition-colors"
-                title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
-              >
-                <ClipboardList size={12} className="shrink-0" />
-                <span>Скопіювати ({latestArchivedProtocol.date})</span>
-              </button>
             )}
           </div>
 
@@ -3230,11 +3544,62 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           {/* Upload — current visit only */}
           <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden"
             accept="image/*, .pdf, .doc, .docx, .xls, .xlsx, .txt" />
-          <button onClick={() => fileInputRef.current?.click()}
-            className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2 transition-colors active:scale-[0.97]">
-            <Upload size={13} />
-            Завантажити файл
-          </button>
+
+          {/* Two action buttons side by side */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => !isUploading && fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold text-primary bg-transparent border border-primary/30 hover:bg-primary/5 rounded-lg py-2 transition-colors active:scale-[0.97] disabled:opacity-60 disabled:pointer-events-none"
+            >
+              {isUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+              {isUploading ? "Завантаження..." : "Завантажити файл"}
+            </button>
+            <button
+              onClick={() => { setShowVideoInput(v => !v); setVideoUrl(''); setVideoName(''); }}
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold text-violet-600 bg-transparent border border-violet-300 hover:bg-violet-50 rounded-lg py-2 transition-colors active:scale-[0.97]"
+            >
+              <Link size={13} />
+              Додати відео
+            </button>
+          </div>
+
+          {/* Inline video-link form */}
+          {showVideoInput && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-3 space-y-2 animate-fade-in">
+              <p className="text-[11px] font-semibold text-violet-700">Посилання на відео</p>
+              <input
+                type="text"
+                placeholder="Назва (необов'язково)"
+                value={videoName}
+                onChange={e => setVideoName(e.target.value)}
+                className="w-full text-xs rounded-md border border-border/60 bg-background px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-violet-400"
+              />
+              <input
+                type="url"
+                placeholder="https://drive.google.com/..."
+                value={videoUrl}
+                onChange={e => setVideoUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSaveVideoLink()}
+                className="w-full text-xs rounded-md border border-border/60 bg-background px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-violet-400"
+                autoFocus
+              />
+              <div className="flex gap-2 pt-0.5">
+                <button
+                  onClick={() => { setShowVideoInput(false); setVideoUrl(''); setVideoName(''); }}
+                  className="flex-1 py-1.5 text-xs font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors"
+                >
+                  Скасувати
+                </button>
+                <button
+                  onClick={handleSaveVideoLink}
+                  className="flex-1 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors active:scale-[0.97]"
+                >
+                  Зберегти посилання
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Historical Visits (collapsible) ── */}
@@ -3274,23 +3639,10 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                       <p className="text-xs font-semibold text-slate-700">Перенесено: {rescheduledTo}</p>
                     </div>
                   )}
-                  {dateOutcome && !isFrozen && (
-                    <div className={cn(
-                      "rounded-lg p-2.5 border",
-                      dateOutcome === "no-show"
-                        ? "border-status-risk/35 bg-status-risk-bg"
-                        : "border-status-ready/35 bg-status-ready-bg"
-                    )}>
-                      <p className={cn(
-                        "text-[10px] font-bold uppercase tracking-wide mb-1",
-                        dateOutcome === "no-show" ? "text-status-risk" : "text-status-ready"
-                      )}>Статус</p>
-                      <p className={cn(
-                        "text-xs font-semibold",
-                        dateOutcome === "no-show" ? "text-status-risk" : "text-status-ready"
-                      )}>
-                        {dateOutcome === "no-show" ? "Не з'явився на прийом" : "Прийом завершено"}
-                      </p>
+                  {dateOutcome === "no-show" && !isFrozen && (
+                    <div className="rounded-lg p-2.5 border border-status-risk/35 bg-status-risk-bg">
+                      <p className="text-[10px] font-bold text-status-risk uppercase tracking-wide mb-1">Статус</p>
+                      <p className="text-xs font-semibold text-status-risk">Не з'явився на прийом</p>
                     </div>
                   )}
                   {dateProcedure && (
@@ -3302,7 +3654,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                   {dateProtocol && (
                     <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Висновок лікаря</p>
-                      <p className="text-xs leading-relaxed text-foreground/80">{dateProtocol}</p>
+                      <p className="text-xs leading-relaxed text-foreground/80" style={{ whiteSpace: 'pre-wrap' }}>{dateProtocol}</p>
                     </div>
                   )}
                   {dateFiles.map(file => (

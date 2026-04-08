@@ -11,7 +11,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
-import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode } from "@/lib/supabaseSync";
+import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, createNewVisitForExistingPatient, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode } from "@/lib/supabaseSync";
 
 const today = new Date();
 const tomorrow = new Date();
@@ -783,8 +783,12 @@ export default function Index() {
 
           setSelectedPatient((prev) => {
             if (!prev) return prev;
-            if (arePatientsEquivalentForView(prev, enriched)) return prev;
-            return enriched;
+            // Preserve locally saved notes/protocol that Supabase may not have confirmed yet
+            const safe = (prev.notes && enriched.notes == null)
+              ? { ...enriched, notes: prev.notes }
+              : enriched;
+            if (arePatientsEquivalentForView(prev, safe)) return prev;
+            return safe;
           });
         }
       }
@@ -885,8 +889,12 @@ export default function Index() {
 
     const hydrated = hydrateMissingProfile(base, donor);
     const enriched = enrichPatientWithVisitHistory(hydrated, patients);
-    if (!arePatientsEquivalentForView(selectedPatient, enriched)) {
-      setSelectedPatient(enriched);
+    // Preserve locally saved notes/protocol that Supabase may not have confirmed yet
+    const safe = (selectedPatient.notes && enriched.notes == null)
+      ? { ...enriched, notes: selectedPatient.notes }
+      : enriched;
+    if (!arePatientsEquivalentForView(selectedPatient, safe)) {
+      setSelectedPatient(safe);
     }
   }, [patients, selectedPatient]);
 
@@ -897,7 +905,7 @@ export default function Index() {
     total: todayPatients.length,
     ready: todayPatients.filter((p) => p.status === "ready").length,
     risk: todayPatients.filter((p) => p.status === "risk").length,
-    attention: todayPatients.filter((p) => p.status === "progress").length,
+    attention: todayPatients.filter((p) => p.status === "progress" || p.status === "planning").length,
   }), [todayPatients]);
 
   const filtered = useMemo(() => {
@@ -948,7 +956,7 @@ export default function Index() {
     };
       void savePatientToSupabase(
   { id: newId, name: entry.name, patronymic: entry.patronymic, phone: entry.phone, birth_date: entry.birthDate },
-  { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true }
+  { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined }
 );
     setSkeletonPatient(newPatient);
     setShowForm(false);
@@ -1024,9 +1032,10 @@ export default function Index() {
           : p
       )
     );
-    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk" });
+    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk" })
+      .then(() => refreshPatientsFromSupabase("noShow"));
     toast("Пацієнта позначено як «Не з'явився»");
-  }, []);
+  }, [refreshPatientsFromSupabase]);
 
   const handleComplete = useCallback((patientId: string) => {
     setPatients((prev) =>
@@ -1036,27 +1045,81 @@ export default function Index() {
           : p
       )
     );
-    void updatePatientInSupabase(patientId, { completed: true, noShow: false, status: "ready" });
+    void updatePatientInSupabase(patientId, { completed: true, noShow: false, status: "ready" })
+      .then(() => refreshPatientsFromSupabase("complete"));
     toast.success("Процедуру позначено як виконану");
-  }, []);
+  }, [refreshPatientsFromSupabase]);
 
-  const handleDeletePatient = useCallback((patientId: string) => {
-    setPatients((prev) => {
-      const byId = prev.find((p) => p.id === patientId);
-      const sel = selectedPatient;
-      if (!byId && sel) {
-        const byIdentity = prev.find((p) =>
+  const handleDeletePatient = useCallback(async (patientId: string) => {
+    // Resolve the actual record (by id or by identity match)
+    const allCurrent = patientsRef.current ?? [];
+    const sel = selectedPatientRef.current;
+    const byId = allCurrent.find((p) => p.id === patientId);
+    const target = byId ?? (sel && !byId
+      ? allCurrent.find((p) =>
           isSamePerson(p, sel) &&
           p.time === sel.time &&
           (!!sel.date ? p.date === sel.date : true)
-        );
-        if (byIdentity) return prev.filter((p) => p.id !== byIdentity.id);
-      }
-      return prev.filter((p) => p.id !== patientId);
-    });
+        )
+      : undefined);
+    const resolvedId = target?.id ?? patientId;
+    const patientName = target?.name ?? '';
+
+    // 1. Close UI immediately — card disappears, list cleans up
     setSelectedPatient(null);
-    void deletePatientVisitFromSupabase(patientId);
-  }, [selectedPatient]);
+    setPatients((prev) => prev.filter((p) => p.id !== resolvedId));
+
+    // 2. Await full deep-delete: Storage files + visits + patient row
+    await toast.promise(
+      deletePatientVisitFromSupabase(resolvedId),
+      {
+        loading: `Видалення ${patientName || 'пацієнта'}…`,
+        success: `${patientName || 'Пацієнт'} повністю видалений`,
+        error: 'Помилка при видаленні — перевірте консоль',
+      }
+    );
+  }, []);
+
+  // Called when PatientDetailView reschedules a completed visit.
+  // Creates a NEW visit record in Supabase so the old completed record stays as archive.
+  const handleCreateNewVisit = useCallback((newVisitData: { date: string; time: string }) => {
+    const donor = selectedPatientRef.current;
+    if (!donor) return;
+
+    const newId = `new-${Date.now()}`;
+    const newPatient: Patient = {
+      id: newId,
+      name: donor.name,
+      patronymic: donor.patronymic,
+      phone: donor.phone || '',
+      birthDate: donor.birthDate,
+      allergies: donor.allergies,
+      diagnosis: donor.diagnosis,
+      notes: donor.notes,
+      time: newVisitData.time,
+      date: newVisitData.date,
+      procedure: donor.procedure,
+      status: "planning",
+      aiSummary: "Очікує підготовки",
+      fromForm: true,
+      completed: false,
+      noShow: false,
+    };
+
+    // Optimistically add to list and open card
+    setPatients((prev) => [...prev, newPatient]);
+    setSelectedPatient(newPatient);
+
+    // Persist in Supabase (look up patient_id from old visit, insert new visit row)
+    void createNewVisitForExistingPatient(donor.id, {
+      id: newId,
+      visit_date: newVisitData.date,
+      visit_time: newVisitData.time,
+      procedure: donor.procedure,
+      status: 'planning',
+      from_form: true,
+    }).then(() => refreshPatientsFromSupabase("createNewVisit"));
+  }, [refreshPatientsFromSupabase]);
 
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -1167,6 +1230,7 @@ export default function Index() {
                 alerts={assistantAlerts}
                 onSendReply={handleSendDashboardReply}
                 doctorPhone={doctorPhoneForQuickReply}
+                onVisitClosed={() => void refreshPatientsFromSupabase("visitClosed")}
               />
 
               {/* Tomorrow card — same size as AI alerts */}
@@ -1436,6 +1500,7 @@ export default function Index() {
             });
             void updatePatientInSupabase(selectedPatient.id, updates);
           }}
+          onCreateNewVisit={handleCreateNewVisit}
         />
       )}
 

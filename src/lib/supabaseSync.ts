@@ -46,6 +46,7 @@ export type VisitRow = {
   completed?: boolean;
   is_test?: boolean;
   files?: Array<{ id: string; name: string; type: "doctor" | "patient"; date: string; url?: string; storageKey?: string; mimeType?: string }>;
+  protocol_history?: Array<{ value: string; timestamp: string; date: string }>;
 };
 
 // Перетворює дані з Supabase у формат дашборду
@@ -71,6 +72,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     noShow: visit.no_show,
     completed: visit.completed,
     files: visit.files || [],
+    protocolHistory: visit.protocol_history ?? undefined,
   };
 }
 
@@ -277,6 +279,8 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('date' in updates) visitUpdate.visit_date = updates.date;
   if ('time' in updates) visitUpdate.visit_time = updates.time;
   if ('files' in updates) visitUpdate.files = updates.files;
+  // protocol_history is written only after migration_add_protocol_history.sql is applied in Supabase
+  // if ('protocolHistory' in updates) visitUpdate.protocol_history = updates.protocolHistory;
 
   if (Object.keys(visitUpdate).length > 0) {
     console.log("📝 Updating visit:", visitUpdate);
@@ -312,7 +316,55 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   }
 }
 
-// Видалити візит пацієнта
+// Create a brand-new visit row that references the same patient profile as an existing visit.
+// Used when rescheduling a completed visit: the old record stays as archive, a new one is created.
+export async function createNewVisitForExistingPatient(
+  oldVisitId: string,
+  newVisit: Omit<VisitRow, 'patient_id'>
+): Promise<boolean> {
+  if (!USE_SUPABASE) {
+    // Non-Supabase (dev sync server): use upsert with a minimal payload
+    await fetchJson(getApiUrl('/sync-api/patients/upsert'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient: {
+          id: newVisit.id,
+          name: '__DERIVED__',  // sync server will keep existing name if it knows the id
+        },
+        visit: newVisit,
+      }),
+    });
+    return true;
+  }
+
+  const { data: oldVisit, error: lookupErr } = await supabase
+    .from('visits')
+    .select('patient_id')
+    .eq('id', oldVisitId)
+    .single();
+
+  if (lookupErr || !oldVisit?.patient_id) {
+    console.error('❌ createNewVisitForExistingPatient: cannot find patient_id for', oldVisitId, lookupErr);
+    return false;
+  }
+
+  const { error } = await supabase
+    .from('visits')
+    .insert({ ...newVisit, patient_id: oldVisit.patient_id });
+
+  if (error) {
+    console.error('❌ createNewVisitForExistingPatient: insert failed', error);
+    return false;
+  }
+
+  console.log('✅ New visit created for patient_id', oldVisit.patient_id, 'visit_id', newVisit.id);
+  return true;
+}
+
+const PATIENT_FILES_BUCKET = 'patient-files';
+
+// Sterile deep-delete: Storage files + all visits + patient record
 export async function deletePatientVisitFromSupabase(visitId: string) {
   if (!USE_SUPABASE) {
     await fetchJson(getApiUrl(`/sync-api/patients/${encodeURIComponent(visitId)}`), {
@@ -321,11 +373,79 @@ export async function deletePatientVisitFromSupabase(visitId: string) {
     return;
   }
 
-  const { error } = await supabase.from('visits').delete().eq('id', visitId);
-  if (error) console.error('Помилка видалення візиту:', error);
-}
+  // 1. Resolve patient_id from visit (visit.id === app patient.id)
+  const { data: visitData } = await supabase
+    .from('visits')
+    .select('patient_id')
+    .eq('id', visitId)
+    .single();
+  const patientId: string = visitData?.patient_id ?? visitId;
 
-const PATIENT_FILES_BUCKET = 'patient-files';
+  // 2. Fetch ALL visits for this patient to collect every storage path
+  const { data: allVisits } = await supabase
+    .from('visits')
+    .select('id, files')
+    .eq('patient_id', patientId);
+
+  const visitIds: string[] = allVisits?.map((v: { id: string }) => v.id) ?? [visitId];
+
+  // 3. Collect storage paths from JSONB files in all visits
+  const storagePathsFromJsonb: string[] = [];
+  for (const v of (allVisits ?? [])) {
+    const files = (v as { files?: Array<{ url?: string; storageKey?: string }> }).files ?? [];
+    for (const f of files) {
+      // From storageKey (direct path)
+      if (f.storageKey) {
+        storagePathsFromJsonb.push(f.storageKey);
+        continue;
+      }
+      // From public URL: extract path after /patient-files/
+      if (f.url) {
+        const marker = `/object/public/${PATIENT_FILES_BUCKET}/`;
+        const idx = f.url.indexOf(marker);
+        if (idx >= 0) {
+          storagePathsFromJsonb.push(decodeURIComponent(f.url.slice(idx + marker.length)));
+        }
+      }
+    }
+  }
+
+  // 4. Also list Storage folders for each visit ID (catches any files not reflected in JSONB)
+  const storagePathsFromListing: string[] = [];
+  for (const vid of visitIds) {
+    const { data: listed } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .list(vid, { limit: 200 });
+    if (listed && listed.length > 0) {
+      for (const f of listed) storagePathsFromListing.push(`${vid}/${f.name}`);
+    }
+  }
+
+  // 5. Merge and deduplicate all paths, then delete from Storage
+  const allPaths = Array.from(new Set([...storagePathsFromJsonb, ...storagePathsFromListing]));
+  if (allPaths.length > 0) {
+    const { error: storageError } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .remove(allPaths);
+    if (storageError) console.warn('⚠️ Storage delete failed:', storageError.message);
+    else console.log(`🗑️ Storage: deleted ${allPaths.length} file(s)`);
+  }
+
+  // 6. Delete all visits for this patient
+  const { error: visitsError } = await supabase
+    .from('visits')
+    .delete()
+    .eq('patient_id', patientId);
+  if (visitsError) console.error('Помилка видалення візитів:', visitsError);
+
+  // 7. Delete patient record
+  const { error: patientError } = await supabase
+    .from('patients')
+    .delete()
+    .eq('id', patientId);
+  if (patientError) console.error('Помилка видалення пацієнта:', patientError);
+  else console.log(`🗑️ Patient ${patientId} fully deleted from DB`);
+}
 
 function inferContentType(fileName: string): string {
   const ext = fileName.toLowerCase().split('.').pop() || '';
@@ -341,24 +461,53 @@ function inferContentType(fileName: string): string {
 
 // Завантажити файл в Supabase Storage, повертає публічний URL або null
 export async function uploadFileToSupabaseStorage(visitId: string, file: File): Promise<string | null> {
-  if (!USE_SUPABASE) return null;
+  if (!USE_SUPABASE) {
+    console.warn('[Storage] USE_SUPABASE=false, skipping upload');
+    return null;
+  }
+
+  // --- PRE-UPLOAD VALIDATION ---
+  const contentType = file.type || inferContentType(file.name);
+  console.log('[Storage] → uploadFileToSupabaseStorage', {
+    visitId,
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+    contentType,
+    bucket: PATIENT_FILES_BUCKET,
+  });
+
+  if (!file.size || file.size === 0) {
+    console.error('[Storage] ✗ file.size is 0 — aborting upload for:', file.name);
+    return null;
+  }
+
   try {
-    const safeName = file.name.replace(/\s+/g, '_');
-    const path = `${visitId}/${Date.now()}-${safeName}`;
-    const contentType = file.type || inferContentType(file.name);
+    // Path must be ASCII-only: Cyrillic/special chars in filenames cause broken public URLs.
+    // We store only timestamp + random token + extension. Original name stays in FileItem.name.
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const safePathName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const path = `${visitId}/${safePathName}`;
+    console.log('[Storage] upload path:', path, '| original name:', file.name);
+
     const { data, error } = await supabase.storage
       .from(PATIENT_FILES_BUCKET)
       .upload(path, file, { upsert: false, contentType });
+
     if (error) {
-      console.warn('⚠️ Storage upload failed:', error.message, '— falling back to local');
+      console.error('[Storage] ✗ upload failed — full error object:', error);
+      console.error('[Storage] ✗ error.message:', error.message);
+      console.error('[Storage] ✗ statusCode:', (error as any).statusCode ?? (error as any).status ?? 'n/a');
       return null;
     }
+
+    console.log('[Storage] ✓ upload OK, path:', data.path);
     const { data: urlData } = supabase.storage
       .from(PATIENT_FILES_BUCKET)
       .getPublicUrl(data.path);
     return urlData.publicUrl;
   } catch (err) {
-    console.warn('⚠️ Storage upload exception:', err);
+    console.error('[Storage] ✗ upload threw exception:', err);
     return null;
   }
 }
@@ -389,13 +538,13 @@ export async function resolveVisitFilePublicUrl(visitId: string, fileName: strin
   }
 }
 
-// Знайти незакриті візити (status is null AND visit_date < today)
+// Знайти незакриті візити (status not completed/no_show/ready AND visit_date < today — not including today)
 export async function getUnclosedVisits() {
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await supabase
     .from('visits')
     .select('*, patients (*)')
-    .eq('status', 'planning')
+    .not('status', 'in', '(completed,no_show,ready)')
     .lt('visit_date', today);
   if (error) console.error(error);
   return data ?? [];
