@@ -24,6 +24,7 @@ export interface HistoryEntry {
 
 export interface Patient {
   id: string;
+  patientDbId?: string; // stable Supabase patients.id — used for reliable related-visit filtering
   name: string;
   patronymic?: string;
   time: string;

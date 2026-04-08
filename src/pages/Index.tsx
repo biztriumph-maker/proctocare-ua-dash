@@ -272,15 +272,18 @@ function hydrateMissingProfile(target: Patient, source?: Patient): Patient {
   if (!source) return target;
 
   const out = { ...target };
+  // Only copy true patient-PROFILE fields (stored in patients table in Supabase).
+  // Visit-specific fields (notes, primaryNotes, protocol, files, protocolHistory)
+  // MUST NOT be copied between different visit rows — they belong to individual appointments.
   const scalarFields: Array<keyof Patient> = [
     "birthDate",
     "phone",
     "allergies",
     "diagnosis",
     "lastVisit",
-    "notes",
-    "primaryNotes",
-    "protocol",
+    // "notes" intentionally excluded — stored in visits.notes, per-visit
+    // "primaryNotes" intentionally excluded — stored in visits.primary_notes, per-visit
+    // "protocol" intentionally excluded — visit-specific
   ];
 
   for (const field of scalarFields) {
@@ -292,13 +295,13 @@ function hydrateMissingProfile(target: Patient, source?: Patient): Patient {
   }
 
   const listFields: Array<keyof Patient> = [
-    "files",
+    // "files" intentionally excluded — stored in visits.files, per-visit
     "allergiesHistory",
     "diagnosisHistory",
     "notesHistory",
     "phoneHistory",
     "birthDateHistory",
-    "protocolHistory",
+    // "protocolHistory" intentionally excluded — visit-specific
     "procedureHistory",
   ];
 
@@ -783,13 +786,19 @@ export default function Index() {
 
           setSelectedPatient((prev) => {
             if (!prev) return prev;
-            // Preserve locally saved notes/protocol that Supabase may not have confirmed yet
-            const safe = (prev.notes && enriched.notes == null)
+            // Only preserve locally saved notes/protocol for the SAME visit that hasn't
+            // synced to Supabase yet. Never restore for a new planning visit (fromForm: true)
+            // — those must always open sterile.
+            const isNewPlanningVisit = enriched.fromForm && enriched.status === "planning";
+            const safe = (!isNewPlanningVisit && prev.notes && enriched.notes == null)
               ? { ...enriched, notes: prev.notes }
               : enriched;
-            // CRITICAL: preserve allergies from local state if DB returned empty/null
-            // (can happen when old code corrupted the value, or before Supabase confirms the write)
-            const withAllergies = (prev.allergies && !safe.allergies)
+            // CRITICAL: preserve allergies from local state if DB returned empty/null/unknown.
+            // Allergies belong to the PATIENT (not the visit) and must NEVER be overwritten
+            // by a sync that returns an empty or "unknown" value — treat blank DB value as
+            // "not yet written" and keep whatever the local UI already has.
+            const isAllergyBlankInDb = !safe.allergies || safe.allergies.trim() === "";
+            const withAllergies = (prev.allergies && isAllergyBlankInDb)
               ? { ...safe, allergies: prev.allergies }
               : safe;
             if (arePatientsEquivalentForView(prev, withAllergies)) return prev;
@@ -814,23 +823,35 @@ export default function Index() {
     }, 5000);
 
     const onFocus = () => {
+      // Force fresh fetch — bypass dedup cache so any changes on another device are picked up
+      lastFetchRef.current = null;
       void refreshPatientsFromSupabase("focus");
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
+        // Reset cache so mobile/bg-throttled tab always gets fresh data on return
+        lastFetchRef.current = null;
         void refreshPatientsFromSupabase("visibility");
       }
     };
 
+    const onOnline = () => {
+      // Device came back online (mobile reconnect after sleep/network switch)
+      lastFetchRef.current = null;
+      void refreshPatientsFromSupabase("online");
+    };
+
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onOnline);
 
     return () => {
       unsubscribeRealtime();
       clearInterval(pollInterval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", onOnline);
     };
   }, [refreshPatientsFromSupabase]);
 
@@ -894,12 +915,15 @@ export default function Index() {
 
     const hydrated = hydrateMissingProfile(base, donor);
     const enriched = enrichPatientWithVisitHistory(hydrated, patients);
-    // Preserve locally saved notes/protocol that Supabase may not have confirmed yet
-    const safe = (selectedPatient.notes && enriched.notes == null)
+    // Only preserve locally saved notes for the SAME visit that hasn't synced yet.
+    // Never restore for a new planning visit (fromForm: true) — must stay sterile.
+    const isNewPlanningVisit = enriched.fromForm && enriched.status === "planning";
+    const safe = (!isNewPlanningVisit && selectedPatient.notes && enriched.notes == null)
       ? { ...enriched, notes: selectedPatient.notes }
       : enriched;
-    // CRITICAL: preserve allergies from local state if DB returned empty/null
-    const withAllergies = (selectedPatient.allergies && !safe.allergies)
+    // CRITICAL: preserve allergies from local state if DB returned empty/null/unknown.
+    const isAllergyBlankInDb = !safe.allergies || safe.allergies.trim() === "";
+    const withAllergies = (selectedPatient.allergies && isAllergyBlankInDb)
       ? { ...safe, allergies: selectedPatient.allergies }
       : safe;
     if (!arePatientsEquivalentForView(selectedPatient, withAllergies)) {
@@ -1025,11 +1049,20 @@ export default function Index() {
   }, [assistantAlerts]);
 
   const handlePatientClick = useCallback((patient: Patient) => {
+    // When multiple visits exist for the same person, prefer the "waiting" planning card
+    // (fromForm=true, status=planning, not completed, no useful time set).
+    // This allows the doctor to find a pre-prepared next visit via search.
+    const samePersonVisits = patients.filter((p) => isSamePerson(p, patient));
+    const waitingCard = samePersonVisits.find(
+      (p) => p.fromForm && p.status === "planning" && !p.completed && !p.noShow && (!p.time || p.time === "")
+    );
+    const target = waitingCard || patient;
+
     const donor = patients
-      .filter((p) => p.id !== patient.id && isSamePerson(p, patient))
+      .filter((p) => p.id !== target.id && isSamePerson(p, target))
       .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
-    const hydrated = hydrateMissingProfile(patient, donor);
+    const hydrated = hydrateMissingProfile(target, donor);
     setSelectedPatient(enrichPatientWithVisitHistory(hydrated, patients));
   }, [patients]);
 
@@ -1091,23 +1124,29 @@ export default function Index() {
 
   // Called when PatientDetailView reschedules a completed visit.
   // Creates a NEW visit record in Supabase so the old completed record stays as archive.
-  const handleCreateNewVisit = useCallback((newVisitData: { date: string; time: string }) => {
+  const handleCreateNewVisit = useCallback((newVisitData: { date: string; time?: string }) => {
     const donor = selectedPatientRef.current;
     if (!donor) return;
 
     const newId = `new-${Date.now()}`;
     const newPatient: Patient = {
       id: newId,
+      patientDbId: donor.patientDbId,
       name: donor.name,
       patronymic: donor.patronymic,
       phone: donor.phone || '',
       birthDate: donor.birthDate,
       allergies: donor.allergies,
-      // Per .cursorrules rule #2: new visit opens with empty fields — doctor uses
-      // the "Скопіювати" button to manually transfer data from the old visit.
+      // Hard reset of all visit-specific fields per .cursorrules rule #2:
+      // New visit opens sterile — doctor fills in fresh data for this appointment.
       diagnosis: undefined,
       notes: undefined,
-      time: newVisitData.time,
+      primaryNotes: undefined,
+      protocol: undefined,
+      files: [],
+      procedureHistory: donor.procedureHistory, // keep history (read-only reference)
+      protocolHistory: undefined,               // no protocol history for brand-new visit
+      time: newVisitData.time ?? "",
       date: newVisitData.date,
       procedure: donor.procedure,
       status: "planning",
@@ -1126,7 +1165,7 @@ export default function Index() {
     void createNewVisitForExistingPatient(donor.id, {
       id: newId,
       visit_date: newVisitData.date,
-      visit_time: newVisitData.time,
+      ...(newVisitData.time ? { visit_time: newVisitData.time } : {}),
       procedure: donor.procedure,
       status: 'planning',
       from_form: true,
@@ -1394,7 +1433,33 @@ export default function Index() {
               const y = date.getFullYear();
               const m = String(date.getMonth() + 1).padStart(2, "0");
               const d = String(date.getDate()).padStart(2, "0");
-              openNewEntry(`${y}-${m}-${d}`, hour);
+              const dateStr = `${y}-${m}-${d}`;
+              const timeStr = `${String(hour).padStart(2, "0")}:00`;
+
+              // If a prepared "waiting" planning card is open (no time set) — assign date+time to it
+              // instead of opening the new-entry form.
+              const openCard = selectedPatientRef.current;
+              if (
+                openCard &&
+                openCard.fromForm &&
+                openCard.status === "planning" &&
+                !openCard.completed &&
+                !openCard.noShow &&
+                (!openCard.time || openCard.time === "")
+              ) {
+                const updates = { date: dateStr, time: timeStr };
+                setPatients((prev) =>
+                  prev.map((p) => (p.id === openCard.id ? { ...p, ...updates } : p))
+                );
+                setSelectedPatient((prev) => prev ? { ...prev, ...updates } : prev);
+                void updatePatientInSupabase(openCard.id, updates).then(() =>
+                  refreshPatientsFromSupabase("assignDate")
+                );
+                toast.success(`Дату призначено: ${String(d).padStart(2, "0")}.${m}.${y} о ${timeStr}`);
+                return;
+              }
+
+              openNewEntry(dateStr, hour);
             }}
             onPatientClick={(p) => {
               const incomingKey = personKey({ name: p.name, patronymic: p.patronymic });

@@ -7,7 +7,7 @@ import { hasConfirmedAllergen, parseAllergyState } from "@/lib/allergyState";
 
 interface CalendarSlot {
   hour: number;
-  patient?: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string };
+  patient?: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; allergies?: string; completed?: boolean; noShow?: boolean };
 }
 
 interface CalendarViewProps {
@@ -147,8 +147,9 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
 
   const shiftMonth = (delta: number) => {
     setCurrentDate((d) => {
-      const next = new Date(d);
-      next.setMonth(next.getMonth() + delta);
+      // Navigate to the 1st of the target month so the week grid shows the beginning
+      // of that month rather than the same day-of-month in the new month.
+      const next = new Date(d.getFullYear(), d.getMonth() + delta, 1);
       return next;
     });
   };
@@ -184,8 +185,9 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
       {/* Date header */}
       <div className="flex items-center justify-between">
         <button
-          onClick={() => (viewMode === "week" ? shiftWeek(-1) : shiftDay(-1))}
+          onClick={() => (viewMode === "week" ? shiftMonth(-1) : shiftDay(-1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
+          title={viewMode === "week" ? "Попередній місяць" : "Попередній день"}
         >
           <ChevronLeft size={20} />
         </button>
@@ -195,11 +197,12 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         >
           {viewMode === "day"
             ? currentDate.toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })
-            : monthLabel}
+            : currentDate.toLocaleDateString("uk-UA", { month: "long", year: "numeric" })}
         </button>
         <button
-          onClick={() => (viewMode === "week" ? shiftWeek(1) : shiftDay(1))}
+          onClick={() => (viewMode === "week" ? shiftMonth(1) : shiftDay(1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
+          title={viewMode === "week" ? "Наступний місяць" : "Наступний день"}
         >
           <ChevronRight size={20} />
         </button>
@@ -262,6 +265,7 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
             setCurrentDate(d);
             setViewMode("day");
           }}
+          onShiftWeek={shiftWeek}
         />
       ) : (
         <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} selectedSlot={selectedSlot} realPatients={realPatients} />
@@ -359,6 +363,7 @@ function WeekGrid({
   searchQuery = "",
   selectedSlot,
   realPatients,
+  onShiftWeek,
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
@@ -367,6 +372,7 @@ function WeekGrid({
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
+  onShiftWeek?: (delta: number) => void;
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<{ key: string; rect: DOMRect } | null>(null);
@@ -378,7 +384,7 @@ function WeekGrid({
       if (!realPatients?.length) return mock;
       return mock.map(slot => {
         const real = pickPatientForSlot(realPatients, dateStr, slot.hour);
-        if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
+        if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies, completed: !!real.completed, noShow: !!real.noShow } };
         return slot;
       });
     });
@@ -392,6 +398,27 @@ function WeekGrid({
 
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
+      {/* Week navigation row — shift week without touching month header */}
+      <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-[hsl(204,100%,97%)]">
+        <button
+          onClick={() => onShiftWeek?.(-1)}
+          className="p-1 rounded hover:bg-accent active:scale-[0.93] transition-all"
+          title="Попередній тиждень"
+        >
+          <ChevronLeft size={15} />
+        </button>
+        <span className="text-[11px] font-semibold text-muted-foreground">
+          {weekDates[0] ? `${weekDates[0].getDate()} – ${weekDates[6]?.getDate()} ${weekDates[6]?.toLocaleDateString("uk-UA", { month: "short" })}` : ""}
+        </span>
+        <button
+          onClick={() => onShiftWeek?.(1)}
+          className="p-1 rounded hover:bg-accent active:scale-[0.93] transition-all"
+          title="Наступний тиждень"
+        >
+          <ChevronRight size={15} />
+        </button>
+      </div>
+
       {/* Header row */}
       <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-border">
         <div className="border-r border-border bg-[hsl(204,100%,97%)]" />
@@ -451,6 +478,10 @@ function WeekGrid({
               const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
 
               const isToday = isSameDay(d, today);
+              // A slot is "frozen" when the visit is completed (regardless of date) or
+              // it is a past no-show. Frozen slots show stripes + icon and block clicks.
+              const isFrozen = !!slot?.patient?.completed || (past && slot?.patient?.status === "ready");
+              const isNoShow = !!slot?.patient?.noShow || (past && !slot?.patient?.completed && slot?.patient?.status === "risk");
               return (
                 <div
                   key={di}
@@ -465,6 +496,11 @@ function WeekGrid({
                 >
                   <button
                     onClick={(e) => {
+                      if (isFrozen || isNoShow) {
+                        // Completed and no-show visits are frozen — clicking does nothing
+                        e.stopPropagation();
+                        return;
+                      }
                       if (slot?.patient) {
                         const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                         setActivePopover(activePopover?.key === popoverKey ? null : { key: popoverKey, rect });
@@ -475,16 +511,17 @@ function WeekGrid({
                     }}
                     className={cn(
                       "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
-                      "active:scale-[0.90]",
+                      !isFrozen && !isNoShow && "active:scale-[0.90]",
+                      isFrozen || isNoShow ? "cursor-default" : "",
                       isSearchMatch
                         ? "bg-primary/40 border-2 border-primary"
                         : isSelected
                           ? "bg-sky-200 border border-sky-500/60"
                           : statusBg
-                          ? cn(statusBg, "hover:opacity-85")
+                          ? cn(statusBg, !isFrozen && !isNoShow && "hover:opacity-85")
                           : "bg-transparent",
                     )}
-                    style={past && slot?.patient ? { backgroundImage: "repeating-linear-gradient(60deg, transparent, transparent 4px, rgba(255,255,255,0.55) 4px, rgba(255,255,255,0.55) 5.5px)" } : undefined}
+                    style={(isFrozen || isNoShow) && slot?.patient ? { backgroundImage: "repeating-linear-gradient(60deg, transparent, transparent 4px, rgba(255,255,255,0.55) 4px, rgba(255,255,255,0.55) 5.5px)" } : undefined}
                   >
                     {isSelected && selectedSlot?.name && (
                       <span className="text-[8px] font-bold text-primary truncate px-0.5 leading-none">
@@ -493,9 +530,9 @@ function WeekGrid({
                     )}
                     {!isSelected && slot?.patient && (
                       <div className="flex items-center gap-0.5">
-                        {past && slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
-                        {past && slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
-                        {hasConfirmedAllergen(slot.patient.allergies) && (
+                        {isFrozen && <Check size={12} className="text-status-ready" strokeWidth={3} />}
+                        {isNoShow && !isFrozen && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
+                        {!isFrozen && !isNoShow && hasConfirmedAllergen(slot.patient.allergies) && (
                           <AllergyShield size={11} style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }} className="shrink-0" />
                         )}
                       </div>

@@ -54,6 +54,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
   const p = visit.patients;
   return {
     id: visit.id,
+    patientDbId: p.id,
     name: p.name,
     patronymic: p.patronymic,
     phone: p.phone,
@@ -279,8 +280,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('date' in updates) visitUpdate.visit_date = updates.date;
   if ('time' in updates) visitUpdate.visit_time = updates.time;
   if ('files' in updates) visitUpdate.files = updates.files;
-  // protocol_history is written only after migration_add_protocol_history.sql is applied in Supabase
-  // if ('protocolHistory' in updates) visitUpdate.protocol_history = updates.protocolHistory;
+  if ('protocolHistory' in updates) visitUpdate.protocol_history = updates.protocolHistory;
 
   if (Object.keys(visitUpdate).length > 0) {
     console.log("📝 Updating visit:", visitUpdate);

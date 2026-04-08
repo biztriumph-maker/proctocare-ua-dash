@@ -35,7 +35,7 @@ interface PatientDetailViewProps {
   onUpdatePatient?: (updates: Partial<Patient>) => void;
   onDelete?: (patientId: string) => Promise<void> | void;
   /** Called when a completed visit is rescheduled — creates a fresh visit record instead of mutating the old one */
-  onCreateNewVisit?: (newVisit: { date: string; time: string }) => void;
+  onCreateNewVisit?: (newVisit: { date: string; time?: string }) => void;
 }
 
 const statusLabel: Record<PatientStatus, string> = {
@@ -557,16 +557,15 @@ function getServiceCategory(services: string[]): { label: string; color: string;
 function getMockProfile(patient: Patient) {
   const birthDateStr = patient.birthDate || "";
   const { ageStr } = calcAge(birthDateStr);
-  const fallbackAllergy = patient.fromForm ? "" : "Пеніцилін";
-  const normalizedAllergy = patient.allergies !== undefined ? patient.allergies : fallbackAllergy;
+  const normalizedAllergy = patient.allergies ?? "";
   return {
     birthDate: birthDateStr,
     age: ageStr,
-    phone: patient.phone || (patient.fromForm ? "" : "+380 67 123 45 67"),
+    phone: patient.phone || "",
     allergies: normalizedAllergy,
-    diagnosis: patient.diagnosis || (patient.fromForm ? "" : "Поліп сигмовидної кишки (K63.5)"),
-    lastVisit: patient.lastVisit || (patient.fromForm ? "" : "12.01.2026"),
-    notes: patient.notes || patient.primaryNotes || (patient.fromForm ? "" : "Хронічний гастрит. Приймає омепразол 20мг."),
+    diagnosis: patient.diagnosis || "",
+    lastVisit: patient.lastVisit || "",
+    notes: patient.notes || patient.primaryNotes || "",
   };
 }
 
@@ -645,20 +644,28 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const activeVisitDisplayDate = isoToDisplay(activeVisitIso);
 
   const relatedVisits = useMemo(() => {
-    const normalize = (v: Pick<Patient, "name" | "patronymic">) => {
-      const compactName = (v.name || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const parts = compactName.split(" ").filter(Boolean);
-      const surname = parts[0] || "";
-      const firstName = parts[1] || "";
-      const explicitPatronymic = (v.patronymic || "").replace(/\s+/g, " ").trim().toLowerCase();
-      const parsedPatronymic = parts.length > 2 ? parts.slice(2).join(" ") : "";
-      const patronymic = explicitPatronymic || parsedPatronymic;
-      return `${surname}|${firstName}|${patronymic}`;
-    };
+    // Primary filter: by stable patientDbId (Supabase patients.id) — prevents phantom
+    // data from same-name patients who were deleted and recreated.
+    // Fallback to name-matching for local/non-Supabase mode.
+    const filterFn = patient.patientDbId
+      ? (p: Patient) => p.patientDbId === patient.patientDbId
+      : (() => {
+          const normalize = (v: Pick<Patient, "name" | "patronymic">) => {
+            const compactName = (v.name || "").replace(/\s+/g, " ").trim().toLowerCase();
+            const parts = compactName.split(" ").filter(Boolean);
+            const surname = parts[0] || "";
+            const firstName = parts[1] || "";
+            const explicitPatronymic = (v.patronymic || "").replace(/\s+/g, " ").trim().toLowerCase();
+            const parsedPatronymic = parts.length > 2 ? parts.slice(2).join(" ") : "";
+            const patronymic = explicitPatronymic || parsedPatronymic;
+            return `${surname}|${firstName}|${patronymic}`;
+          };
+          const key = normalize(patient);
+          return (p: Patient) => normalize(p) === key;
+        })();
 
-    const key = normalize(patient);
     return allPatients
-      .filter((p) => normalize(p) === key)
+      .filter(filterFn)
       .filter((p) => !!p.date)
       .slice()
       .sort((a, b) => `${a.date || ""}${a.time || ""}`.localeCompare(`${b.date || ""}${b.time || ""}`));
@@ -731,11 +738,15 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const initialServices = shouldClearVisitFields
     ? []
     : (patient.procedure ? patient.procedure.split(", ") : []);
+  // Diagnosis: cleared for completed/no-show past visits AND for fresh planning visits
+  // (diagnosis belongs to the examination that hasn't happened yet — starts empty, doctor fills in).
+  // This prevents the diagnosis from a previous completed visit from pre-populating a new card.
+  const initialDiagnosis = (shouldClearVisitFields || patient.status === "planning") ? "" : profile.diagnosis;
 
   const [fields, setFields] = useState({
     phone: initialPhone,
     allergies: profile.allergies, // CRITICAL: allergies belong to patient, never cleared
-    diagnosis: shouldClearVisitFields ? "" : profile.diagnosis,
+    diagnosis: initialDiagnosis,
     notes: initialNotes,
     protocol: initialProtocol,
     birthDate: profile.birthDate,
@@ -920,12 +931,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         updates.procedure = "";
       }
 
-      // Reset allergies to "unknown" and diagnosis to empty so the card is clean for the next visit.
-      // Current values are already saved to their _History arrays by the autosave cycle.
-      const unknownAllergyEncoded = encodeAllergyState("unknown", "");
-      setFields((prev) => ({ ...prev, allergies: unknownAllergyEncoded, diagnosis: "" }));
-      updates.allergies = unknownAllergyEncoded;
-      updates.diagnosis = "";
+      // Reset only diagnosis — allergies MUST NEVER be cleared (they belong to the patient profile).
+      if (fields.diagnosis?.trim()) {
+        setFields((prev) => ({ ...prev, diagnosis: "" }));
+        updates.diagnosis = "";
+      }
 
       if (Object.keys(updates).length > 0) {
         onUpdatePatient?.(updates as Partial<Patient>);
@@ -940,20 +950,29 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   // For new visits created by reschedule (fromForm=true, empty protocolHistory), pull in
   // protocol texts from related completed visits so the "Скопіювати" button can appear.
   const relatedCompletedProtocols: Array<{ value: string; timestamp: string; date: string }> = [];
-  if (patient.fromForm) {
-    for (const v of relatedVisits) {
-      if (v.id === patient.id) continue;
-      if (!v.completed && v.status !== "ready") continue;
+  const relatedCompletedFiles: FileItem[] = [];
+  // Always collect files and protocols from related completed visits so they appear
+  // in the archive section — regardless of fromForm status (enrichPatientWithVisitHistory
+  // can override fromForm to false even for newly created future visits).
+  for (const v of relatedVisits) {
+    if (v.id === patient.id) continue;
+    if (!v.completed && v.status !== "ready") continue;
+    if (patient.fromForm || !patient.files?.length) {
       if (v.protocolHistory?.length) {
         relatedCompletedProtocols.push(...v.protocolHistory);
       } else if (v.protocol?.trim() && v.date) {
         relatedCompletedProtocols.push({ value: v.protocol.trim(), timestamp: isoToDisplay(v.date), date: v.date });
       }
     }
+    // Collect files from related completed visits for archive display
+    if (v.files?.length) {
+      relatedCompletedFiles.push(...v.files);
+    }
   }
-  const mergedProtocolHistory = patient.fromForm
-    ? mergeUniqueHistoryEntries([...(patient.protocolHistory || []), ...relatedCompletedProtocols], seededProtocolHistory)
-    : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
+  const mergedProtocolHistory = mergeUniqueHistoryEntries(
+    [...(patient.protocolHistory || []), ...relatedCompletedProtocols],
+    seededProtocolHistory
+  );
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
   const initialFiles = patient.files || [];
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
@@ -966,11 +985,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const nextNoShowPast = !!patient.noShow
       && (!patient.date || patient.date <= getTodayIsoKyiv());
     const nextShouldClear = nextCompletedPast || nextNoShowPast;
-    const nextNotes = nextShouldClear ? "" : (patient.notes ?? patient.primaryNotes ?? nextProfile.notes);
+    const nextNotes = nextShouldClear ? "" : (patient.notes ?? patient.primaryNotes ?? "");
     // Completed/no-show past visits: keep active protocol field empty (or preserve if doctor already
     // typed/copied into it). Never auto-fill from DB. Sync only when not protected by user.
     const nextProtocol = nextShouldClear ? "" : getInitialActiveProtocol(patient, activeVisitIso);
-    const nextPhone = patient.phone || nextProfile.phone;
+    const nextPhone = patient.phone || "";
     const nextAllergies = nextProfile.allergies; // CRITICAL: allergies belong to patient, never cleared
     const nextDiagnosis = nextShouldClear ? "" : nextProfile.diagnosis;
     const nextServices = nextShouldClear
@@ -987,7 +1006,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       allergies: protectedField === "allergies" ? prev.allergies : nextAllergies,
       diagnosis: protectedField === "diagnosis" ? prev.diagnosis : nextDiagnosis,
       notes: protectedField === "notes" ? prev.notes : nextNotes,
-      protocol: protectedField === "protocol" ? prev.protocol : nextProtocol,
+      // Preserve existing protocol when rescheduling a planning visit to a future date.
+      // getInitialActiveProtocol returns "" for future dates (visit hasn't happened yet),
+      // but if the doctor already typed protocol, wiping it would be data loss.
+      protocol: protectedField === "protocol" ? prev.protocol
+        : (nextProtocol === "" && prev.protocol.trim() !== "" && activeVisitIso > getTodayIsoKyiv()) ? prev.protocol
+        : nextProtocol,
       birthDate: protectedField === "birthDate" ? prev.birthDate : nextProfile.birthDate,
     }));
     setLocalServices(nextServices);
@@ -1268,7 +1292,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     fields.protocol !== initialProtocol || 
     fields.phone !== initialPhone ||
     fields.allergies !== profile.allergies ||
-    fields.diagnosis !== profile.diagnosis ||
+    fields.diagnosis !== initialDiagnosis ||
     fields.birthDate !== profile.birthDate ||
     localServices.join(", ") !== (patient.procedure || "") ||
     JSON.stringify(localFiles) !== JSON.stringify(initialFiles);
@@ -1459,54 +1483,18 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       return;
     }
 
-    // — Planning visit: just move the appointment date on the same record
+    // — Planning visit: just move the appointment date on the same record.
+    // Per .cursorrules Rule 1: reschedule is NOT completion. No archiving, no
+    // protocolHistory entries, no clearing of doctor_conclusion or any other field.
     if (!onUpdatePatient) return;
 
-    const hasProtocolInCurrentBlock = !!fields.protocol.trim();
-    const hasFilesInCurrentBlock = localFiles.some((file) => (file.date || activeVisitDisplayDate) === previousVisitDisplay);
-    const hasDataToFreeze = hasProtocolInCurrentBlock || hasFilesInCurrentBlock;
-
-    if (!hasDataToFreeze) {
-      // Silent reschedule: nothing was documented yet for the current block.
-      const markerEntry = {
-        value: `${RESCHEDULED_MARKER}${rescheduleDate}`,
-        timestamp: previousVisitDisplay,
-        date: previousVisitIso,
-      };
-      onUpdatePatient({
-        date: rescheduleDate,
-        time: rescheduleTime,
-        completed: false,
-        noShow: false,
-        status: "planning",
-        protocolHistory: [...(patient.protocolHistory || []), markerEntry],
-      });
-      setShowReschedulePicker(false);
-      toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
-      return;
-    }
-
-    // Freeze old active block into archive and create a fresh active block for the new date.
-    const frozenProtocolHistory = hasProtocolInCurrentBlock
-      ? [...(patient.protocolHistory || []), { value: fields.protocol.trim(), timestamp: previousVisitDisplay, date: previousVisitIso }]
-      : patient.protocolHistory;
-    const freezeReasonEntry = {
-      value: `${RESCHEDULED_MARKER}${rescheduleDate}`,
-      timestamp: previousVisitDisplay,
-      date: previousVisitIso,
-    };
-
+    // Prevent the sync useEffect (triggered by patient.date change) from firing
+    // an auto-save that could wipe or mis-date protocol text.
+    skipNextAutoSave.current = true;
     onUpdatePatient({
       date: rescheduleDate,
       time: rescheduleTime,
-      protocol: "",
-      completed: false,
-      noShow: false,
-      protocolHistory: [...(frozenProtocolHistory || []), freezeReasonEntry],
-      status: "planning",
     });
-
-    setFields((prev) => ({ ...prev, protocol: "" }));
     setShowReschedulePicker(false);
     toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
   };
@@ -1585,7 +1573,13 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       }
       if (getStorablePhone(fields.phone) !== (patient.phone || "")) updates.phone = getStorablePhone(fields.phone);
       if (fields.allergies !== (patient.allergies || "")) updates.allergies = fields.allergies;
-      if (fields.diagnosis !== (patient.diagnosis || "")) updates.diagnosis = fields.diagnosis;
+      if (fields.diagnosis !== (patient.diagnosis || "")) {
+        // For planning visits diagnosis starts empty for UX but we must NOT write "" to DB
+        // unless it was explicitly cleared (shouldClearVisitFields) or doctor typed something.
+        if (shouldClearVisitFields || fields.diagnosis.trim() !== "") {
+          updates.diagnosis = fields.diagnosis;
+        }
+      }
       if (fields.birthDate !== (patient.birthDate || "")) updates.birthDate = fields.birthDate;
       if (procedureValue !== (patient.procedure || "")) updates.procedure = procedureValue;
       if (stringified(localFiles) !== stringified(patient.files || [])) updates.files = localFiles;
@@ -1651,7 +1645,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                   {isRepeatPatient ? "Повторний" : "Новий"}
                 </span>
-                {!(patient.completed || patient.status === "ready") && (
+                {!(patient.completed || patient.status === "ready") && localServices.length > 0 && (
                   <span
                     className="text-xs font-medium px-2 py-0.5 rounded-full"
                     style={{ backgroundColor: serviceCategory.bgColor, color: serviceCategory.color }}
@@ -1677,6 +1671,15 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               >
                 <Pencil size={11} className="text-muted-foreground" />
               </button>
+              {(patient.completed || patient.status === "ready") && onCreateNewVisit && (
+                <button
+                  onClick={() => onCreateNewVisit({ date: getTodayIsoKyiv(), time: "" })}
+                  title="Підготувати наступний прийом без дати"
+                  className="ml-1 px-2 py-0.5 text-xs font-bold text-primary border border-primary/30 rounded-lg hover:bg-primary/5 active:scale-[0.97] transition-all"
+                >
+                  + Наступний
+                </button>
+              )}
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
               <span className="font-bold text-foreground">{(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv()) ? "—" : (patient.time || "—")}</span>
@@ -1790,6 +1793,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                         setFields((prev) => ({ ...prev, protocol: value }));
                       }}
                       visitId={patient.id}
+                      relatedFiles={relatedCompletedFiles}
                     />
                   </ContentBlock>
                 </div>
@@ -1886,6 +1890,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                     setFields((prev) => ({ ...prev, protocol: value }));
                   }}
                   visitId={patient.id}
+                  relatedFiles={relatedCompletedFiles}
                 />
               </ContentBlock>
             </div>
@@ -2038,7 +2043,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             <div className="flex-1 overflow-y-auto p-4">
               <CalendarView
                 onSlotClick={(selectedDate, hour) => {
-                  setRescheduleDate(selectedDate.toISOString().slice(0, 10));
+                  // Use local date components — toISOString() shifts to UTC and causes
+                  // an off-by-one day for timezones ahead of UTC (e.g. Kyiv UTC+3).
+                  const y = selectedDate.getFullYear();
+                  const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
+                  const d = String(selectedDate.getDate()).padStart(2, "0");
+                  setRescheduleDate(`${y}-${m}-${d}`);
                   setRescheduleTime(`${String(hour).padStart(2, "0")}:00`);
                 }}
                 selectedSlot={rescheduleDate && rescheduleTime ? {
@@ -2046,6 +2056,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   hour: parseInt(rescheduleTime, 10),
                   name: patient.name,
                 } : undefined}
+                realPatients={allPatients}
               />
             </div>
           </div>
@@ -3005,7 +3016,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, archivedProtocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, archivedProtocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId, relatedFiles }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -3021,6 +3032,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   activeVisitDate: string;
   onProtocolPrefill: (value: string) => void;
   visitId?: string;
+  /** Read-only files from related past visits — shown in archive section only, never saved to current visit. */
+  relatedFiles?: FileItem[];
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
@@ -3034,16 +3047,17 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
-  // Group files by their date field
+  // Group files by their date field.
+  // relatedFiles are read-only (from other visits) and only appear in the archive.
   const filesByDate = useMemo(() => {
     const map = new Map<string, FileItem[]>();
-    for (const f of files) {
+    for (const f of [...files, ...(relatedFiles || [])]) {
       const d = f.date || activeDate;
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(f);
     }
     return map;
-  }, [files, activeDate]);
+  }, [files, relatedFiles, activeDate]);
 
   // Set of dates that belong to definitively closed past visits.
   // Only dates in this set can trigger archiving of files.
@@ -3119,7 +3133,14 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       const activeIso = displayToIso(activeDate);
       const hasEntryForActive = entries.some((e) => e.date === activeIso);
       if (!hasEntryForActive) {
-        return { value: archiveSource, date: activeDate };
+        // Find the actual date of this protocol text in full history (don't use activeDate
+        // blindly — it could be a future reschedule date that doesn't match the source text).
+        const allNonMarkers = (protocolHistory || [])
+          .filter((h) => !h.value.startsWith(RESCHEDULED_MARKER))
+          .sort((a, b) => b.date.localeCompare(a.date));
+        const matchingEntry = allNonMarkers.find((e) => e.value.trim() === archiveSource.trim());
+        const fallbackDate = matchingEntry ? isoToDisplay(matchingEntry.date) : activeDate;
+        return { value: archiveSource, date: fallbackDate };
       }
     }
 
@@ -3149,8 +3170,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
     const dates = new Set<string>();
     // Only add a file's date to history if it's a known past closed visit date
     for (const d of filesByDate.keys()) if (d !== activeDate && pastVisitDateSet.has(d)) dates.add(d);
-    for (const d of protocolByDate.keys()) if (d !== activeDate) dates.add(d);
-    for (const d of procedureByDate.keys()) if (d !== activeDate) dates.add(d);
+    for (const d of protocolByDate.keys()) if (d !== activeDate && pastVisitDateSet.has(d)) dates.add(d);
+    for (const d of procedureByDate.keys()) if (d !== activeDate && pastVisitDateSet.has(d)) dates.add(d);
     for (const d of rescheduledToByDate.keys()) if (d !== activeDate) dates.add(d);
     for (const d of (historicalVisitDates || [])) if (d !== activeDate) dates.add(d);
     for (const d of Object.keys(visitOutcomeByDate || {})) if (d !== activeDate) dates.add(d);
@@ -3187,7 +3208,6 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   // Include all files NOT belonging to a definitively closed past visit,
   // regardless of whether their date matches activeDate (handles rescheduled visits).
   const activeFiles = currentVisitOutcome ? [] : files.filter(f => !pastVisitDateSet.has(f.date || activeDate));
-  const hasTimeline = historicalDates.length > 0;
 
   const getFileExtension = (name: string): string => {
     const parts = name.toLowerCase().trim().split(".");
@@ -3507,11 +3527,6 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
       {/* Timeline */}
       <div className="relative px-4">
-        {/* Vertical thread connecting dots */}
-        {hasTimeline && (
-          <div className="absolute left-[27px] top-5 bottom-3 w-px bg-border/50" />
-        )}
-
         {/* ── Current Visit (active work zone — always visible, content empty when completed) ── */}
         <div className={cn("relative mb-4", currentVisitOutcome ? "pt-1" : "pl-8")}>
           {!currentVisitOutcome && (
