@@ -787,8 +787,13 @@ export default function Index() {
             const safe = (prev.notes && enriched.notes == null)
               ? { ...enriched, notes: prev.notes }
               : enriched;
-            if (arePatientsEquivalentForView(prev, safe)) return prev;
-            return safe;
+            // CRITICAL: preserve allergies from local state if DB returned empty/null
+            // (can happen when old code corrupted the value, or before Supabase confirms the write)
+            const withAllergies = (prev.allergies && !safe.allergies)
+              ? { ...safe, allergies: prev.allergies }
+              : safe;
+            if (arePatientsEquivalentForView(prev, withAllergies)) return prev;
+            return withAllergies;
           });
         }
       }
@@ -893,8 +898,12 @@ export default function Index() {
     const safe = (selectedPatient.notes && enriched.notes == null)
       ? { ...enriched, notes: selectedPatient.notes }
       : enriched;
-    if (!arePatientsEquivalentForView(selectedPatient, safe)) {
-      setSelectedPatient(safe);
+    // CRITICAL: preserve allergies from local state if DB returned empty/null
+    const withAllergies = (selectedPatient.allergies && !safe.allergies)
+      ? { ...safe, allergies: selectedPatient.allergies }
+      : safe;
+    if (!arePatientsEquivalentForView(selectedPatient, withAllergies)) {
+      setSelectedPatient(withAllergies);
     }
   }, [patients, selectedPatient]);
 
@@ -1094,8 +1103,10 @@ export default function Index() {
       phone: donor.phone || '',
       birthDate: donor.birthDate,
       allergies: donor.allergies,
-      diagnosis: donor.diagnosis,
-      notes: donor.notes,
+      // Per .cursorrules rule #2: new visit opens with empty fields — doctor uses
+      // the "Скопіювати" button to manually transfer data from the old visit.
+      diagnosis: undefined,
+      notes: undefined,
       time: newVisitData.time,
       date: newVisitData.date,
       procedure: donor.procedure,
@@ -1111,6 +1122,7 @@ export default function Index() {
     setSelectedPatient(newPatient);
 
     // Persist in Supabase (look up patient_id from old visit, insert new visit row)
+    // Also pass donor allergies so the patient record is repaired if it was corrupted previously
     void createNewVisitForExistingPatient(donor.id, {
       id: newId,
       visit_date: newVisitData.date,
@@ -1118,7 +1130,7 @@ export default function Index() {
       procedure: donor.procedure,
       status: 'planning',
       from_form: true,
-    }).then(() => refreshPatientsFromSupabase("createNewVisit"));
+    }, donor.allergies ? { allergies: donor.allergies } : undefined).then(() => refreshPatientsFromSupabase("createNewVisit"));
   }, [refreshPatientsFromSupabase]);
 
   const tomorrowDate = new Date();

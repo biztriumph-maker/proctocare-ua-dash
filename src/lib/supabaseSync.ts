@@ -320,7 +320,8 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
 // Used when rescheduling a completed visit: the old record stays as archive, a new one is created.
 export async function createNewVisitForExistingPatient(
   oldVisitId: string,
-  newVisit: Omit<VisitRow, 'patient_id'>
+  newVisit: Omit<VisitRow, 'patient_id'>,
+  patientUpdates?: Partial<PatientRow>
 ): Promise<boolean> {
   if (!USE_SUPABASE) {
     // Non-Supabase (dev sync server): use upsert with a minimal payload
@@ -330,7 +331,8 @@ export async function createNewVisitForExistingPatient(
       body: JSON.stringify({
         patient: {
           id: newVisit.id,
-          name: '__DERIVED__',  // sync server will keep existing name if it knows the id
+          name: '__DERIVED__',
+          ...(patientUpdates || {}),
         },
         visit: newVisit,
       }),
@@ -356,6 +358,19 @@ export async function createNewVisitForExistingPatient(
   if (error) {
     console.error('❌ createNewVisitForExistingPatient: insert failed', error);
     return false;
+  }
+
+  // If patientUpdates provided (e.g. allergies), repair the patient profile record
+  if (patientUpdates && Object.keys(patientUpdates).length > 0) {
+    const { error: patErr } = await supabase
+      .from('patients')
+      .update(patientUpdates)
+      .eq('id', oldVisit.patient_id);
+    if (patErr) {
+      console.warn('⚠️ createNewVisitForExistingPatient: patient profile update failed', patErr);
+    } else {
+      console.log('✅ Patient profile repaired for patient_id', oldVisit.patient_id);
+    }
   }
 
   console.log('✅ New visit created for patient_id', oldVisit.patient_id, 'visit_id', newVisit.id);

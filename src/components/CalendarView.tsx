@@ -491,10 +491,13 @@ function WeekGrid({
                         {selectedSlot.name}
                       </span>
                     )}
-                    {!isSelected && past && slot?.patient && (
+                    {!isSelected && slot?.patient && (
                       <div className="flex items-center gap-0.5">
-                        {slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
-                        {slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
+                        {past && slot.patient.status === "ready" && <Check size={12} className="text-status-ready" strokeWidth={3} />}
+                        {past && slot.patient.status === "risk" && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
+                        {hasConfirmedAllergen(slot.patient.allergies) && (
+                          <AllergyShield size={11} style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }} className="shrink-0" />
+                        )}
                       </div>
                     )}
                   </button>

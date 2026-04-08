@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import imageCompression from 'browser-image-compression';
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw, Loader2, FileImage, Link, Play } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Upload, Eye, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw, Loader2, FileImage, Link, Play, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -114,6 +114,13 @@ function displayToIso(displayDate?: string): string {
 }
 
 const RESCHEDULED_MARKER = "__RESCHEDULED_TO__:";
+
+/** Переміщує курсор у самий кінець тексту у input або textarea. */
+function focusAtEnd(el: HTMLInputElement | HTMLTextAreaElement) {
+  const len = el.value.length;
+  el.selectionStart = len;
+  el.selectionEnd = len;
+}
 
 function formatDateUkrainian(ddmmyyyy: string): string {
   const months = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
@@ -706,26 +713,29 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return map;
   }, [relatedVisits, activeVisitIso]);
   
-  // A completed visit whose date is today or in the past means the card is in "archive mode" —
-  // the active fields (notes, allergies, diagnosis, protocol) must be empty so they are ready
-  // for the NEXT visit, not pre-filled with data from the old completed one.
+  // A completed or no-show visit in the past means the card is in "archive mode" —
+  // visit-specific fields (notes, diagnosis, services, protocol) must be empty so they are
+  // ready for the NEXT visit. Allergies are ALWAYS preserved — they belong to the patient.
   const isCompletedPastVisit = (patient.completed || patient.status === "ready")
     && (!patient.date || patient.date <= getTodayIsoKyiv());
+  const isNoShowPast = !!patient.noShow
+    && (!patient.date || patient.date <= getTodayIsoKyiv());
+  const shouldClearVisitFields = isCompletedPastVisit || isNoShowPast;
 
-  const initialNotes = isCompletedPastVisit ? "" : (patient.notes ?? patient.primaryNotes ?? profile.notes);
-  // Completed past visits: active protocol field starts EMPTY so doctor types a fresh
+  const initialNotes = shouldClearVisitFields ? "" : (patient.notes ?? patient.primaryNotes ?? profile.notes);
+  // Completed/no-show past visits: active protocol field starts EMPTY so doctor types a fresh
   // conclusion for the next visit. The saved text lives in archivedProtocolText (patient.protocol)
   // and is only transferred to this field when the doctor clicks "Скопіювати".
-  const initialProtocol = isCompletedPastVisit ? "" : getInitialActiveProtocol(patient, activeVisitIso);
+  const initialProtocol = shouldClearVisitFields ? "" : getInitialActiveProtocol(patient, activeVisitIso);
   const initialPhone = patient.phone || profile.phone;
-  const initialServices = (patient.completed || patient.status === "ready" || patient.noShow)
+  const initialServices = shouldClearVisitFields
     ? []
     : (patient.procedure ? patient.procedure.split(", ") : []);
 
   const [fields, setFields] = useState({
     phone: initialPhone,
-    allergies: isCompletedPastVisit ? encodeAllergyState("unknown", "") : profile.allergies,
-    diagnosis: isCompletedPastVisit ? "" : profile.diagnosis,
+    allergies: profile.allergies, // CRITICAL: allergies belong to patient, never cleared
+    diagnosis: shouldClearVisitFields ? "" : profile.diagnosis,
     notes: initialNotes,
     protocol: initialProtocol,
     birthDate: profile.birthDate,
@@ -927,8 +937,22 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   const seededProtocolHistory = getSeededMockProtocolHistory(patient);
   const seededProcedureHistory = getSeededMockProcedureHistory(patient);
+  // For new visits created by reschedule (fromForm=true, empty protocolHistory), pull in
+  // protocol texts from related completed visits so the "Скопіювати" button can appear.
+  const relatedCompletedProtocols: Array<{ value: string; timestamp: string; date: string }> = [];
+  if (patient.fromForm) {
+    for (const v of relatedVisits) {
+      if (v.id === patient.id) continue;
+      if (!v.completed && v.status !== "ready") continue;
+      if (v.protocolHistory?.length) {
+        relatedCompletedProtocols.push(...v.protocolHistory);
+      } else if (v.protocol?.trim() && v.date) {
+        relatedCompletedProtocols.push({ value: v.protocol.trim(), timestamp: isoToDisplay(v.date), date: v.date });
+      }
+    }
+  }
   const mergedProtocolHistory = patient.fromForm
-    ? mergeUniqueHistoryEntries(patient.protocolHistory, seededProtocolHistory)
+    ? mergeUniqueHistoryEntries([...(patient.protocolHistory || []), ...relatedCompletedProtocols], seededProtocolHistory)
     : mergeUniqueHistoryEntries([...MOCK_PROTOCOL_HISTORY, ...(patient.protocolHistory || [])], seededProtocolHistory);
   const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
   const initialFiles = patient.files || [];
@@ -939,14 +963,17 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const nextProfile = getMockProfile(patient);
     const nextCompletedPast = (patient.completed || patient.status === "ready")
       && (!patient.date || patient.date <= getTodayIsoKyiv());
-    const nextNotes = nextCompletedPast ? "" : (patient.notes ?? patient.primaryNotes ?? nextProfile.notes);
-    // Completed past visits: keep active protocol field empty (or preserve if doctor already
+    const nextNoShowPast = !!patient.noShow
+      && (!patient.date || patient.date <= getTodayIsoKyiv());
+    const nextShouldClear = nextCompletedPast || nextNoShowPast;
+    const nextNotes = nextShouldClear ? "" : (patient.notes ?? patient.primaryNotes ?? nextProfile.notes);
+    // Completed/no-show past visits: keep active protocol field empty (or preserve if doctor already
     // typed/copied into it). Never auto-fill from DB. Sync only when not protected by user.
-    const nextProtocol = nextCompletedPast ? "" : getInitialActiveProtocol(patient, activeVisitIso);
+    const nextProtocol = nextShouldClear ? "" : getInitialActiveProtocol(patient, activeVisitIso);
     const nextPhone = patient.phone || nextProfile.phone;
-    const nextAllergies = nextCompletedPast ? encodeAllergyState("unknown", "") : nextProfile.allergies;
-    const nextDiagnosis = nextCompletedPast ? "" : nextProfile.diagnosis;
-    const nextServices = (patient.completed || patient.status === "ready" || patient.noShow)
+    const nextAllergies = nextProfile.allergies; // CRITICAL: allergies belong to patient, never cleared
+    const nextDiagnosis = nextShouldClear ? "" : nextProfile.diagnosis;
+    const nextServices = nextShouldClear
       ? []
       : (patient.procedure ? patient.procedure.split(", ") : []);
     const nextInitialFiles = patient.files || [];
@@ -1604,6 +1631,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                     autoFocus
                     type="text"
                     defaultValue={localFullName}
+                    onFocus={(e) => focusAtEnd(e.currentTarget)}
                     onBlur={handleNameBlur}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setEditingName(false); } }}
                     className="text-base sm:text-lg font-bold text-foreground leading-tight bg-transparent border-b border-primary outline-none w-full min-w-0"
@@ -1915,6 +1943,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             value={focusField.value}
             history={focusField.history}
             patientName={patient.name}
+            patientDate={patient.date ? isoToDisplay(patient.date) : undefined}
+            patientTime={patient.time}
+            patientProcedure={patient.procedure}
             allergies={currentAllergy.status === "allergen" ? currentAllergy.allergen : ""}
             onSave={handleFocusSave}
             onCancel={handleFocusCancel}
@@ -2028,11 +2059,14 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 }
 
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, history, patientName, allergies, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, patientName, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
   field: string;
   value?: string | null;
   history?: HistoryEntry[];
   patientName: string;
+  patientDate?: string;
+  patientTime?: string;
+  patientProcedure?: string;
   allergies: string;
   onSave: (value: string) => void;
   onCancel: () => void;
@@ -2071,94 +2105,109 @@ function FocusOverlay({ field, value, history, patientName, allergies, onSave, o
   };
 
   return (
-    <div className="absolute inset-0 z-60 flex flex-col animate-fade-in">
-      {/* Blurred backdrop */}
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-
-      {/* Content */}
-      <div className="relative flex flex-col h-full">
-        {/* Pinned patient safety header */}
-        <div className="shrink-0 px-5 py-3 bg-card border-b border-border/60 shadow-sm">
-          <div className="flex items-center gap-3">
-            <User size={16} className="text-muted-foreground shrink-0" />
-            <div>
-              <p className="text-sm font-bold text-foreground">{patientName}</p>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center animate-fade-in bg-[hsl(204,85%,93%)]">
+      {/* Card — 90% screen with breathing room around */}
+      <div
+        className="relative flex flex-col bg-white rounded-2xl overflow-hidden"
+        style={{
+          width: "90vw",
+          maxWidth: "1200px",
+          height: "90vh",
+          boxShadow: "0 20px 60px 0 hsl(204 70% 45% / 0.25), 0 4px 16px 0 hsl(204 70% 45% / 0.12)",
+        }}
+      >
+        {/* Header — patient context */}
+        <div className="shrink-0 px-8 pt-7 pb-5 bg-[hsl(204,100%,96%)] border-b border-sky-100 flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-base font-bold text-foreground">{patientName}</span>
               {allergies && (
-                <p className="text-xs font-bold text-status-risk bg-status-risk-bg px-2 py-0.5 rounded-md inline-flex items-center gap-1 mt-0.5">
-                  <AllergyShield size={11} />
-                  Алергія: {allergies}
-                </p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                  <AllergyShield size={10} />
+                  {allergies}
+                </span>
               )}
             </div>
+            {(patientDate || patientTime || patientProcedure) && (
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                {[patientDate, patientTime, patientProcedure].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            <p className="text-xs font-semibold text-sky-700 mt-1">{fieldLabels[field] || field}</p>
           </div>
+          {/* Згорнути — white circle, clear top-right */}
+          <button
+            onClick={onCancel}
+            className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full bg-white border-2 border-sky-200 shadow-md hover:bg-sky-50 hover:border-sky-300 active:scale-[0.9] transition-all"
+            title="Згорнути"
+          >
+            <Minimize2 size={15} className="text-sky-600" />
+          </button>
         </div>
 
-        {/* Centered editing area — 70-80% of workspace */}
-        <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
-          <div className="w-full max-w-3xl bg-card rounded-2xl shadow-2xl border border-border/40 overflow-hidden" style={{ maxHeight: "75vh" }}>
-            <div className="px-5 py-3 border-b border-border/40 bg-[hsl(204,100%,97%)]">
-              <h3 className="text-sm font-bold text-foreground">
-                {fieldLabels[field] || field}
-              </h3>
-            </div>
-            <div className="p-5">
-              {field === "phone" ? (
-                <CountryPhoneInput
-                  value={text}
-                  onChange={setText}
-                  autoFocus
-                  buttonClassName="py-3"
-                  inputClassName="py-3"
-                />
-              ) : field === "birthDate" ? (
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={text}
-                  onChange={(e) => setText(formatBirthDateInput(e.target.value))}
-                  placeholder="ДД.ММ.РРРР"
-                  maxLength={10}
-                  className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30"
-                  autoFocus
-                />
-              ) : (
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                  style={{ minHeight: "200px", maxHeight: "50vh" }}
-                  autoFocus
-                />
-              )}
-            </div>
-            {visibleHistory.length > 0 && (
-              <div className="px-5 pb-3 border-t border-border/40 pt-3">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">Історія змін</p>
-                <div className="space-y-1 max-h-28 overflow-y-auto">
-                  {visibleHistory.slice().reverse().map((entry, i) => (
-                    <div key={i} className="flex items-baseline gap-2 text-xs text-muted-foreground">
-                      <span className="font-semibold shrink-0">{isoToDisplay(entry.date, entry.timestamp)}</span>
-                      <span className="truncate">{entry.value}</span>
-                    </div>
-                  ))}
+        {/* Body */}
+        <div className="flex-1 min-h-0 px-8 py-6 flex flex-col gap-4 bg-white overflow-hidden">
+          {field === "phone" ? (
+            <CountryPhoneInput
+              value={text}
+              onChange={setText}
+              autoFocus
+              buttonClassName="py-3"
+              inputClassName="py-3"
+            />
+          ) : field === "birthDate" ? (
+            <input
+              type="text"
+              inputMode="numeric"
+              value={text}
+              onChange={(e) => setText(formatBirthDateInput(e.target.value))}
+              onFocus={(e) => focusAtEnd(e.currentTarget)}
+              placeholder="ДД.ММ.РРРР"
+              maxLength={10}
+              className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300/50"
+              autoFocus
+            />
+          ) : (
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onFocus={(e) => focusAtEnd(e.currentTarget)}
+              className="flex-1 w-full text-sm leading-[1.85] text-foreground bg-[hsl(204,100%,98%)] border border-sky-200 rounded-xl pl-7 pr-5 py-5 outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400/60 resize-none overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-sky-400/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-sky-500/70"
+              style={{ minHeight: "120px", scrollbarWidth: "thin", scrollbarColor: "hsl(204 70% 60% / 0.5) transparent" }}
+              autoFocus
+            />
+          )}
+        </div>
+
+        {/* History */}
+        {visibleHistory.length > 0 && (
+          <div className="px-8 pb-4 border-t border-sky-100 pt-4 bg-white">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">Історія змін</p>
+            <div className="space-y-1 max-h-28 overflow-y-auto">
+              {visibleHistory.slice().reverse().map((entry, i) => (
+                <div key={i} className="flex items-baseline gap-2 text-xs text-muted-foreground">
+                  <span className="font-semibold shrink-0">{isoToDisplay(entry.date, entry.timestamp)}</span>
+                  <span className="truncate">{entry.value}</span>
                 </div>
-              </div>
-            )}
-            <div className="px-5 py-3 border-t border-border/40 flex items-center justify-end gap-3">
-              <button
-                onClick={onCancel}
-                className="px-5 py-2 text-sm font-bold text-muted-foreground bg-transparent border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
-              >
-                Скасувати
-              </button>
-              <button
-                onClick={() => onSave(text)}
-                className="px-5 py-2 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
-              >
-                Зберегти
-              </button>
+              ))}
             </div>
           </div>
+        )}
+
+        {/* Footer */}
+        <div className="shrink-0 px-8 pt-5 pb-7 bg-[hsl(204,100%,96%)] border-t border-sky-100 flex items-center justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-6 py-2.5 text-sm font-bold text-muted-foreground bg-transparent border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+          >
+            Скасувати
+          </button>
+          <button
+            onClick={() => onSave(text)}
+            className="px-6 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
+          >
+            Зберегти
+          </button>
         </div>
       </div>
     </div>
@@ -2204,6 +2253,7 @@ function AllergyStatusModal({
             type="text"
             value={allergenText}
             onChange={(e) => onAllergenTextChange(e.target.value)}
+            onFocus={(e) => focusAtEnd(e.currentTarget)}
             placeholder="Наприклад: Пеніцилін"
             className="w-full rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700 outline-none focus:ring-2 focus:ring-red-200"
             autoFocus
@@ -2980,6 +3030,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   const [showVideoInput, setShowVideoInput] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoName, setVideoName] = useState('');
+  const [expandedProtocols, setExpandedProtocols] = useState<Set<string>>(new Set());
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
@@ -3471,12 +3522,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
           {!currentVisitOutcome && (
             <div className="flex items-center gap-2 mb-2.5">
               <span className="text-[11px] font-bold text-primary">{formatDateUkrainian(activeDate)}</span>
-              {displayToIso(activeDate) < getTodayIsoKyiv() ? (
+              {displayToIso(activeDate) < getTodayIsoKyiv() && (
                 <span className="ml-auto text-[8px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">⚠ Незавершений прийом</span>
-              ) : displayToIso(activeDate) > getTodayIsoKyiv() ? (
-                <span className="ml-auto text-[8px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">📅 Заплановано</span>
-              ) : (
-                <span className="ml-auto text-[8px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">✓ Активний</span>
               )}
             </div>
           )}
@@ -3517,7 +3564,12 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               </div>
             </div>
             {activeProtocolText ? (
-              <p className="text-sm leading-relaxed text-foreground" style={{ whiteSpace: 'pre-wrap' }}>{activeProtocolText}</p>
+              <button
+                onClick={() => onFocusEdit("protocol", activeProtocolText)}
+                className="w-full text-left text-sm leading-relaxed text-foreground line-clamp-3 hover:opacity-75 transition-opacity cursor-pointer"
+              >
+                {activeProtocolText}
+              </button>
             ) : (
               <div className="space-y-2">
                 <button
@@ -3654,7 +3706,24 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                   {dateProtocol && (
                     <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Висновок лікаря</p>
-                      <p className="text-xs leading-relaxed text-foreground/80" style={{ whiteSpace: 'pre-wrap' }}>{dateProtocol}</p>
+                      <p className={cn(
+                        "text-xs leading-relaxed text-foreground/80",
+                        !expandedProtocols.has(date) && "line-clamp-3"
+                      )}>
+                        {dateProtocol}
+                      </p>
+                      {(dateProtocol.split('\n').length > 3 || dateProtocol.length > 200) && (
+                        <button
+                          onClick={() => setExpandedProtocols(prev => {
+                            const next = new Set(prev);
+                            if (next.has(date)) next.delete(date); else next.add(date);
+                            return next;
+                          })}
+                          className="mt-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:underline transition-colors"
+                        >
+                          {expandedProtocols.has(date) ? "Згорнути" : "Читати далі..."}
+                        </button>
+                      )}
                     </div>
                   )}
                   {dateFiles.map(file => (
