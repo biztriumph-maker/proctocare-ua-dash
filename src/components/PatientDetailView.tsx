@@ -36,6 +36,8 @@ interface PatientDetailViewProps {
   onDelete?: (patientId: string) => Promise<void> | void;
   /** Called when a completed visit is rescheduled — creates a fresh visit record instead of mutating the old one */
   onCreateNewVisit?: (newVisit: { date: string; time?: string }) => void;
+  /** Called when doctor clicks "open" on an archived visit — switches to that visit's card */
+  onOpenVisit?: (visitId: string) => void;
 }
 
 const statusLabel: Record<PatientStatus, string> = {
@@ -625,7 +627,7 @@ function getPreparationProgress(patient: Patient, services?: string[]): { percen
   return { percent, steps };
 }
 
-export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete, onCreateNewVisit }: PatientDetailViewProps) {
+export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete, onCreateNewVisit, onOpenVisit }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
@@ -1334,6 +1336,13 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     setAllergyModalOpen(true);
   };
 
+  // Відкриває картку конкретного архівного візиту по відображуваній даті
+  const handleOpenVisitByDate = (displayDate: string) => {
+    const iso = displayToIso(displayDate);
+    const target = relatedVisits.find((v) => v.date === iso);
+    if (target) onOpenVisit?.(target.id);
+  };
+
   const handleSaveAllergyModal = () => {
     const storedValue = encodeAllergyState(allergyDraftStatus, allergyDraftText);
     setFields((prev) => ({ ...prev, allergies: storedValue }));
@@ -1794,6 +1803,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       }}
                       visitId={patient.id}
                       relatedFiles={relatedCompletedFiles}
+                      onDateClick={onOpenVisit ? handleOpenVisitByDate : undefined}
                     />
                   </ContentBlock>
                 </div>
@@ -1891,6 +1901,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   }}
                   visitId={patient.id}
                   relatedFiles={relatedCompletedFiles}
+                  onDateClick={onOpenVisit ? handleOpenVisitByDate : undefined}
                 />
               </ContentBlock>
             </div>
@@ -2057,6 +2068,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   name: patient.name,
                 } : undefined}
                 realPatients={allPatients}
+                initialFocusDate={patient.date || undefined}
               />
             </div>
           </div>
@@ -3016,7 +3028,7 @@ function UnsupportedPreviewModal({ name, message, onClose }: { name: string; mes
 }
 
 // ── Clinical Timeline: groups documents & files by appointment date ──
-function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, archivedProtocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId, relatedFiles }: {
+function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, archivedProtocolText, protocolHistory, procedureHistory, historicalVisitDates, visitOutcomeByDate, currentVisitOutcome, activeVisitDate, onProtocolPrefill, visitId, relatedFiles, onDateClick }: {
   files: FileItem[];
   onFilesChange: (files: FileItem[]) => void;
   onFocusEdit: (field: string, value: string) => void;
@@ -3034,6 +3046,8 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
   visitId?: string;
   /** Read-only files from related past visits — shown in archive section only, never saved to current visit. */
   relatedFiles?: FileItem[];
+  /** If provided, historical visit date headers become clickable links to open that visit's card */
+  onDateClick?: (displayDate: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<string | null>(null);
@@ -3685,17 +3699,28 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
               <div className="absolute left-0 top-[3px] w-3.5 h-3.5 rounded-full bg-muted-foreground/25 border-2 border-white" />
 
               {/* Collapsible header */}
-              <button onClick={() => toggleDate(date)}
-                className="w-full flex items-center gap-1.5 text-left mb-1 group">
-                <span className="text-[11px] font-semibold text-muted-foreground">{formatDateUkrainian(date)}</span>
-                {isFrozen && (
-                  <span className="text-[9px] font-bold text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Перенесено</span>
+              <div className="flex items-center gap-1.5 mb-1">
+                <button onClick={() => toggleDate(date)}
+                  className="flex-1 flex items-center gap-1.5 text-left group min-w-0">
+                  <span className="text-[11px] font-semibold text-muted-foreground truncate">{formatDateUkrainian(date)}</span>
+                  {isFrozen && (
+                    <span className="text-[9px] font-bold text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">Перенесено</span>
+                  )}
+                  <ChevronDown size={11} className={cn(
+                    "ml-auto text-muted-foreground/50 transition-transform duration-200 shrink-0",
+                    !isCollapsed && "rotate-180"
+                  )} />
+                </button>
+                {onDateClick && (
+                  <button
+                    onClick={() => onDateClick(date)}
+                    title="Відкрити картку цього візиту"
+                    className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-accent transition-colors"
+                  >
+                    <ChevronRight size={12} className="text-muted-foreground/60 hover:text-primary transition-colors" />
+                  </button>
                 )}
-                <ChevronDown size={11} className={cn(
-                  "ml-auto text-muted-foreground/50 transition-transform duration-200 shrink-0",
-                  !isCollapsed && "rotate-180"
-                )} />
-              </button>
+              </div>
 
               {/* Expanded content — read-only archive */}
               {!isCollapsed && (

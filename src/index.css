@@ -156,6 +156,16 @@
   animation: reveal-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both, new-slot-pulse 1s ease-in-out 0.6s 3;
 }
 
+@keyframes flash-yellow {
+  0%   { background-color: rgba(253, 224, 71, 0.75); box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.55); }
+  60%  { background-color: rgba(253, 224, 71, 0.35); box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2); }
+  100% { background-color: transparent; box-shadow: none; }
+}
+
+.animate-flash-yellow {
+  animation: flash-yellow 2s ease-out forwards;
+}
+
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

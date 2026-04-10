@@ -544,18 +544,21 @@ function pickFocusDateForSearch(patients: Patient[], query: string, todayIso: st
   const matches = patients.filter((p) => p.name.toLowerCase().includes(q) && !!p.date);
   if (matches.length === 0) return undefined;
 
+  // 1. Active today — patient is physically present right now
   const activeToday = matches.find((p) => p.date === todayIso && !p.noShow && !p.completed);
   if (activeToday?.date) return activeToday.date;
 
+  // 2. Future active visit — takes priority over a stale completed-today record
+  const futureActive = matches
+    .filter((p) => (p.date || "") > todayIso && !p.noShow && !p.completed)
+    .sort((a, b) => scheduleSortValue(a) - scheduleSortValue(b))[0];
+  if (futureActive?.date) return futureActive.date;
+
+  // 3. Any today record (completed / noshow — fallback for reference)
   const todayAny = matches.find((p) => p.date === todayIso);
   if (todayAny?.date) return todayAny.date;
 
-  const upcomingActive = matches
-    .filter((p) => (p.date || "") >= todayIso)
-    .filter((p) => !p.noShow && !p.completed)
-    .sort((a, b) => scheduleSortValue(a) - scheduleSortValue(b))[0];
-  if (upcomingActive?.date) return upcomingActive.date;
-
+  // 4. Latest visit overall
   const latest = matches.slice().sort((a, b) => scheduleSortValue(b) - scheduleSortValue(a))[0];
   return latest?.date;
 }
@@ -778,6 +781,14 @@ export default function Index() {
 
         const base = byId || byVisitAndPerson || byPerson;
         if (base) {
+          // Guard: if the selected card is a freshly-created optimistic record not yet
+          // persisted in DB (byId=null, byVisitAndPerson=null), the only match is byPerson
+          // which may be a DIFFERENT record (e.g. the old completed v7 for same person).
+          // Don't replace an optimistic card with a stale DB record — wait for the next
+          // poll cycle when the new visit has actually been saved.
+          if (!byId && !byVisitAndPerson && base.id !== activeSelected.id) {
+            return;
+          }
           const donor = normalized
             .filter((p) => p.id !== base.id && isSamePerson(p, base))
             .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
@@ -863,6 +874,8 @@ export default function Index() {
   const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const doctorPhoneForQuickReply = useMemo(() => getDoctorPhoneForQuickReply(), []);
+  const pendingUnclosedReopenRef = useRef(false);
+  const [unclosedModalReopenTrigger, setUnclosedModalReopenTrigger] = useState(0);
 
   useEffect(() => {
     selectedPatientRef.current = selectedPatient;
@@ -931,7 +944,21 @@ export default function Index() {
     }
   }, [patients, selectedPatient]);
 
-  const todayPatients = useMemo(() => patients.filter(p => !p.date || p.date === todayIso), [patients, todayIso]);
+  const todayPatients = useMemo(() => {
+    const raw = patients.filter(p => !p.date || p.date === todayIso);
+    // Hide no-date phantom records when the same person already has a real scheduled visit
+    return raw.filter(p => {
+      if (p.date === todayIso) return true; // explicit today date — always show
+      // No-date record: hide if same person has another visit with a concrete date
+      return !patients.some(other =>
+        other.id !== p.id &&
+        isSamePerson(other, p) &&
+        !!other.date &&
+        !other.completed &&
+        !other.noShow
+      );
+    });
+  }, [patients, todayIso]);
   const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowIso), [patients, tomorrowIso]);
 
   const counts = useMemo(() => ({
@@ -972,9 +999,12 @@ export default function Index() {
   }, []);
 
   const handleSaveEntry = useCallback((entry: NewEntryData) => {
+    // Clear search so the saved record is not confused with search results
+    setSearchQuery("");
     const newId = `new-${Date.now()}`;
     const newPatient: Patient = {
       id: newId,
+      patientDbId: entry.existingPatientDbId || undefined,
       name: entry.name,
       patronymic: entry.patronymic,
       time: entry.time,
@@ -986,10 +1016,15 @@ export default function Index() {
       primaryNotes: entry.notes,
       date: entry.date,
       fromForm: true,
+      // Чистий лист: diagnosis та notes/protocol порожні для нового візиту
+      diagnosis: undefined,
+      notes: undefined,
+      protocol: undefined,
     };
       void savePatientToSupabase(
   { id: newId, name: entry.name, patronymic: entry.patronymic, phone: entry.phone, birth_date: entry.birthDate },
-  { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined }
+  { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined },
+  entry.existingPatientDbId || undefined
 );
     setSkeletonPatient(newPatient);
     setShowForm(false);
@@ -1049,14 +1084,19 @@ export default function Index() {
   }, [assistantAlerts]);
 
   const handlePatientClick = useCallback((patient: Patient) => {
-    // When multiple visits exist for the same person, prefer the "waiting" planning card
-    // (fromForm=true, status=planning, not completed, no useful time set).
-    // This allows the doctor to find a pre-prepared next visit via search.
+    // Priority order for which card to open when same person has multiple records:
+    // 1. Active future visit (date in future, not completed, not noShow)
+    // 2. Waiting planning card (fromForm, planning, no time, today or no date)
+    // 3. The patient card as clicked
+    const todayIsoNow = getCurrentScheduleDates().todayIso;
     const samePersonVisits = patients.filter((p) => isSamePerson(p, patient));
-    const waitingCard = samePersonVisits.find(
+    const activeFuture = samePersonVisits.find(
+      (p) => !p.completed && !p.noShow && p.date && p.date > todayIsoNow
+    );
+    const waitingCard = !activeFuture && samePersonVisits.find(
       (p) => p.fromForm && p.status === "planning" && !p.completed && !p.noShow && (!p.time || p.time === "")
     );
-    const target = waitingCard || patient;
+    const target = activeFuture || waitingCard || patient;
 
     const donor = patients
       .filter((p) => p.id !== target.id && isSamePerson(p, target))
@@ -1067,14 +1107,19 @@ export default function Index() {
   }, [patients]);
 
   const handleNoShow = useCallback((patientId: string) => {
+    const current = patientsRef.current.find((p) => p.id === patientId);
+    const existingProtocol = current?.protocol?.trim() || "";
+    const annotatedProtocol = existingProtocol
+      ? `🚫 Прийом аннульовано (неявка пацієнта)\n\n${existingProtocol}`
+      : "🚫 Прийом аннульовано (неявка пацієнта)";
     setPatients((prev) =>
       prev.map((p) =>
         p.id === patientId
-          ? { ...p, noShow: true, completed: false, status: "risk" as PatientStatus }
+          ? { ...p, noShow: true, completed: false, status: "risk" as PatientStatus, protocol: annotatedProtocol }
           : p
       )
     );
-    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk" })
+    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk", protocol: annotatedProtocol })
       .then(() => refreshPatientsFromSupabase("noShow"));
     toast("Пацієнта позначено як «Не з'явився»");
   }, [refreshPatientsFromSupabase]);
@@ -1091,6 +1136,19 @@ export default function Index() {
       .then(() => refreshPatientsFromSupabase("complete"));
     toast.success("Процедуру позначено як виконану");
   }, [refreshPatientsFromSupabase]);
+
+  const handleAfterComplete = useCallback((completedId: string) => {
+    const pats = patientsRef.current;
+    const next = pats.find(
+      (p) => p.id !== completedId && (!p.date || p.date === todayIso) && !p.completed && !p.noShow
+    );
+    if (next) {
+      handlePatientClick(next);
+    } else {
+      setSelectedPatient(null);
+      toast.success("Всі прийоми опрацьовано! 🎉");
+    }
+  }, [todayIso, handlePatientClick]);
 
   const handleDeletePatient = useCallback(async (patientId: string) => {
     // Resolve the actual record (by id or by identity match)
@@ -1123,10 +1181,40 @@ export default function Index() {
   }, []);
 
   // Called when PatientDetailView reschedules a completed visit.
-  // Creates a NEW visit record in Supabase so the old completed record stays as archive.
+  // Reuses an existing blank/no-date record for the same person if one exists (UPDATE),
+  //// Clear search bar — save logic must be fully isolated from search state
+    setSearchQuery("");
+     otherwise creates a NEW visit record in Supabase so the old completed record stays as archive.
   const handleCreateNewVisit = useCallback((newVisitData: { date: string; time?: string }) => {
     const donor = selectedPatientRef.current;
     if (!donor) return;
+
+    // Try to find an existing blank/no-date planning record for the same person
+    const existingBlank = patientsRef.current.find(p =>
+      p.id !== donor.id &&
+      !p.completed &&
+      !p.noShow &&
+      !p.date &&
+      isSamePerson(p, donor)
+    );
+
+    if (existingBlank) {
+      // UPDATE the blank record — no duplicate inserted in DB
+      const updated: Patient = {
+        ...existingBlank,
+        date: newVisitData.date,
+        time: newVisitData.time ?? "",
+        status: "planning" as PatientStatus,
+      };
+      setPatients(prev => prev.map(p => p.id === existingBlank.id ? updated : p));
+      setSelectedPatient(enrichPatientWithVisitHistory(updated, patientsRef.current));
+      void updatePatientInSupabase(existingBlank.id, {
+        date: newVisitData.date,
+        ...(newVisitData.time ? { time: newVisitData.time } : {}),
+        status: "planning",
+      }).then(() => refreshPatientsFromSupabase("rescheduleBlank"));
+      return;
+    }
 
     const newId = `new-${Date.now()}`;
     const newPatient: Patient = {
@@ -1186,6 +1274,12 @@ export default function Index() {
     return pickFocusDateForSearch(allCalendarPatients, searchQuery, todayIso);
   }, [allCalendarPatients, searchQuery, todayIso]);
 
+  // Search ALWAYS redirects to Calendar tab — Operational view is excluded from search flow
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    setView("calendar");
+  }, [searchQuery]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -1214,7 +1308,11 @@ export default function Index() {
         </div>
 
         <div className="max-w-7xl mx-auto space-y-1.5 sm:space-y-2.5">
-          <ViewToggle activeView={view} onViewChange={setView} />
+          <ViewToggle
+            activeView={view}
+            onViewChange={setView}
+            disabledOperational={!!searchQuery.trim()}
+          />
           {view === "operational" && (
             <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
           )}
@@ -1282,6 +1380,14 @@ export default function Index() {
                 onSendReply={handleSendDashboardReply}
                 doctorPhone={doctorPhoneForQuickReply}
                 onVisitClosed={() => void refreshPatientsFromSupabase("visitClosed")}
+                reopenTrigger={unclosedModalReopenTrigger}
+                onOpenVisit={(visitId) => {
+                  const target = allCalendarPatients.find((p) => p.id === visitId);
+                  if (target) {
+                    pendingUnclosedReopenRef.current = true;
+                    handlePatientClick(enrichPatientWithVisitHistory(target, allCalendarPatients));
+                  }
+                }}
               />
 
               {/* Tomorrow card — same size as AI alerts */}
@@ -1398,19 +1504,19 @@ export default function Index() {
                       const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
                       if (!isDesktop) {
                         return filtered.map((patient, i) => (
-                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
+                          <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} onAfterComplete={() => handleAfterComplete(patient.id)} />
                         ));
                       }
                       return (
                         <>
                           <div className="space-y-2 sm:space-y-3">
                             {morning.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
+                              <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} onAfterComplete={() => handleAfterComplete(patient.id)} />
                             ))}
                           </div>
                           <div className="space-y-2 sm:space-y-3">
                             {afternoon.map((patient, i) => (
-                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} />
+                              <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} onAfterComplete={() => handleAfterComplete(patient.id)} />
                             ))}
                           </div>
                         </>
@@ -1541,7 +1647,13 @@ export default function Index() {
         <PatientDetailView
           patient={selectedPatient}
           allPatients={allCalendarPatients}
-          onClose={() => setSelectedPatient(null)}
+          onClose={() => {
+            if (pendingUnclosedReopenRef.current) {
+              pendingUnclosedReopenRef.current = false;
+              setUnclosedModalReopenTrigger((n) => n + 1);
+            }
+            setSelectedPatient(null);
+          }}
           onDelete={handleDeletePatient}
           onUpdatePatient={(updates) => {
             setPatients((prev) => {
@@ -1578,6 +1690,10 @@ export default function Index() {
             void updatePatientInSupabase(selectedPatient.id, updates);
           }}
           onCreateNewVisit={handleCreateNewVisit}
+          onOpenVisit={(visitId) => {
+            const target = allCalendarPatients.find((p) => p.id === visitId);
+            if (target) setSelectedPatient(enrichPatientWithVisitHistory(target, allCalendarPatients));
+          }}
         />
       )}
 

@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
-import { Clock, Check, X } from "lucide-react";
+import { Clock, Check, X, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { hasConfirmedAllergen } from "@/lib/allergyState";
+import { supabase } from "@/lib/supabaseClient";
 
 /** Red Shield allergy icon — white "!" on red shield background */
 export function AllergyShield({ size = 14, className, style }: { size?: number; className?: string; style?: React.CSSProperties }) {
@@ -61,6 +62,7 @@ interface PatientCardProps {
   isNew?: boolean;
   onNoShow?: (patientId: string) => void;
   onComplete?: (patientId: string) => void;
+  onAfterComplete?: () => void;
 }
 
 const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string; bgHex: string; textHex: string }> = {
@@ -98,9 +100,47 @@ export function computePatientStatus(patient: Patient): PatientStatus {
   return "progress";
 }
 
-export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComplete }: PatientCardProps) {
+export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComplete, onAfterComplete }: PatientCardProps) {
   const config = statusConfig[patient.status];
-  const [confirmAction, setConfirmAction] = useState<"complete" | "noshow" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"complete-empty" | "noshow" | null>(null);
+  const [checkingProtocol, setCheckingProtocol] = useState(false);
+
+  const doComplete = () => {
+    onComplete?.(patient.id);
+    onAfterComplete?.();
+    setConfirmAction(null);
+  };
+
+  // Fresh DB check — ignores local cache of patient.protocol
+  const handleCompleteClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCheckingProtocol(true);
+    try {
+      const { data } = await supabase
+        .from("visits")
+        .select("protocol")
+        .eq("id", patient.id)
+        .single();
+      const filled = !!(data?.protocol?.trim());
+      if (filled) {
+        // Protocol exists → complete immediately, no modal
+        onComplete?.(patient.id);
+        onAfterComplete?.();
+      } else {
+        setConfirmAction("complete-empty");
+      }
+    } catch {
+      // Fallback to local value if DB unreachable
+      if (patient.protocol?.trim()) {
+        onComplete?.(patient.id);
+        onAfterComplete?.();
+      } else {
+        setConfirmAction("complete-empty");
+      }
+    } finally {
+      setCheckingProtocol(false);
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -108,35 +148,75 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmAction(null)}>
           <div className="bg-surface-raised rounded-xl shadow-elevated p-5 w-[calc(100%-2rem)] max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-foreground mb-1">
-              Підтвердити дію: {confirmAction === "complete" ? "Прийом завершено" : "Не з'явився"}?
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              {patient.name} · {patient.time} · {patient.procedure}
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setConfirmAction(null)}
-                className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
-              >
-                Скасувати
-              </button>
-              <button
-                onClick={() => {
-                  if (confirmAction === "complete") onComplete?.(patient.id);
-                  else onNoShow?.(patient.id);
-                  setConfirmAction(null);
-                }}
-                className={cn(
-                  "flex-1 py-2.5 text-sm font-bold rounded-lg transition-colors active:scale-[0.97]",
-                  confirmAction === "complete"
-                    ? "bg-status-ready text-white"
-                    : "bg-status-risk text-white"
-                )}
-              >
-                Підтвердити
-              </button>
-            </div>
+
+            {/* ── COMPLETE: protocol empty ── */}
+            {confirmAction === "complete-empty" && (
+              <>
+                <div className="flex items-start justify-between mb-1">
+                  <h3 className="text-sm font-bold text-status-risk">
+                    Увага! Протокол не заповнено
+                  </h3>
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="ml-2 shrink-0 p-0.5 rounded hover:bg-muted/50 text-muted-foreground transition-colors"
+                    aria-label="Закрити"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mb-1">{patient.name} · {patient.time}</p>
+                <p className="text-sm font-medium text-foreground/80 leading-snug mb-4">
+                  Ви не залишили медичного висновку за результатами прийому. Це критично для історії хвороби!
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => { onClick?.(patient); setConfirmAction(null); }}
+                    className="w-full py-2.5 text-sm font-bold bg-status-ready text-white rounded-lg hover:opacity-90 transition-opacity active:scale-[0.97]"
+                  >
+                    Заповнити висновок
+                  </button>
+                  <button
+                    onClick={doComplete}
+                    className="w-full py-2.5 text-sm font-semibold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+                  >
+                    Завершити без запису
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── NOSHOW ── */}
+            {confirmAction === "noshow" && (
+              <>
+                <div className="flex items-start justify-between mb-0.5">
+                  <h3 className="text-sm font-bold text-foreground">Пацієнт не з'явився?</h3>
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="ml-2 shrink-0 p-0.5 rounded hover:bg-muted/50 text-muted-foreground transition-colors"
+                    aria-label="Закрити"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {patient.name} · {patient.time} · {patient.procedure}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 py-2.5 text-sm font-bold text-muted-foreground border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
+                  >
+                    Скасувати
+                  </button>
+                  <button
+                    onClick={() => { onNoShow?.(patient.id); setConfirmAction(null); }}
+                    className="flex-1 py-2.5 text-sm font-bold bg-status-risk text-white rounded-lg hover:opacity-90 transition-opacity active:scale-[0.97]"
+                  >
+                    Неявка підтверджена
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -205,17 +285,15 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
 
       <div className={cn(
         "flex items-center gap-2 mt-2",
-        (patient.noShow || patient.completed) && "invisible pointer-events-none"
+        patient.completed && "invisible pointer-events-none"
       )}>
           {onComplete && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmAction("complete");
-              }}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-ready hover:border-status-ready/60 hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-ready border border-border"
+              onClick={handleCompleteClick}
+              disabled={checkingProtocol}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-ready hover:border-status-ready/60 hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-ready border border-border disabled:opacity-60 disabled:pointer-events-none"
             >
-              <Check size={12} strokeWidth={3} />
+              {checkingProtocol ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
               Прийом завершено
             </button>
           )}

@@ -17,6 +17,7 @@ interface CalendarViewProps {
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
   focusDate?: string;
+  initialFocusDate?: string;
 }
 
 const statusDot: Record<PatientStatus, string> = {
@@ -83,20 +84,40 @@ function pickPatientForSlot(realPatients: Patient[] | undefined, dateStr: string
 
   const sameDate = realPatients.filter((p) => p.date === dateStr);
   const exact = sameDate.find((p) => p.time === `${String(hour).padStart(2, "0")}:00`);
-  if (exact) return exact;
-
-  const sameHour = sameDate
+  const candidate = exact ?? sameDate
     .filter((p) => getHourFromTime(p.time) === hour)
-    .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+    .sort((a, b) => (a.time || "").localeCompare(b.time || ""))[0];
 
-  return sameHour[0];
+  if (!candidate) return undefined;
+
+  // If the found record is completed/archived, check whether the same patient already
+  // has a newer active visit on a different date. If so, hide the archived slot in the
+  // day/week grid to prevent "duplicate" appearances.
+  if (candidate.completed) {
+    const hasFutureActiveVisit = realPatients.some((p) => {
+      if (p.id === candidate.id) return false;
+      if (p.date === dateStr) return false;
+      if (p.completed || p.noShow) return false;
+      if (candidate.patientDbId && p.patientDbId) return p.patientDbId === candidate.patientDbId;
+      return p.name === candidate.name && (p.patronymic || "") === (candidate.patronymic || "");
+    });
+    if (hasFutureActiveVisit) return undefined;
+  }
+
+  return candidate;
 }
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients, focusDate }: CalendarViewProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients, focusDate, initialFocusDate }: CalendarViewProps) {
+  const [currentDate, setCurrentDate] = useState(() => {
+    if (initialFocusDate) {
+      const [y, mo, d] = initialFocusDate.split("-").map(Number);
+      if (y && mo && d) return new Date(y, mo - 1, d);
+    }
+    return new Date();
+  });
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
 
@@ -397,7 +418,7 @@ function WeekGrid({
   };
 
   return (
-    <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
+    <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)] w-full">
       {/* Week navigation row — shift week without touching month header */}
       <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-[hsl(204,100%,97%)]">
         <button
@@ -420,7 +441,7 @@ function WeekGrid({
       </div>
 
       {/* Header row */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)] border-b border-border">
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] sm:grid-cols-[48px_repeat(7,1fr)] border-b border-border w-full">
         <div className="border-r border-border bg-[hsl(204,100%,97%)]" />
         {weekDates.map((d, i) => {
           const isToday = isSameDay(d, today);
@@ -457,11 +478,11 @@ function WeekGrid({
       </div>
 
       {/* Grid body */}
-      <div className="grid grid-cols-[48px_repeat(7,1fr)]">
+      <div className="grid grid-cols-[36px_repeat(7,1fr)] sm:grid-cols-[48px_repeat(7,1fr)] w-full">
         {HOURS.map((hour, hi) => (
           <div key={hour} className="contents">
             <div className={cn(
-              "flex items-center justify-end pr-2 text-xs text-foreground font-bold tabular-nums h-11 bg-[hsl(204,100%,97%)]",
+              "flex items-center justify-end pr-1 sm:pr-2 text-[9px] sm:text-xs text-foreground font-bold tabular-nums h-11 bg-[hsl(204,100%,97%)] min-w-0",
               "border-r border-border",
               hi < HOURS.length - 1 && "border-b border-border"
             )}>
@@ -486,7 +507,7 @@ function WeekGrid({
                 <div
                   key={di}
                   className={cn(
-                    "relative p-[5px]",
+                    "relative p-[2px] sm:p-[5px] min-w-0 overflow-hidden",
                     isSearchMatch
                       ? "bg-primary/20 ring-2 ring-inset ring-primary/70 z-[5]"
                       : isSelected ? "bg-sky-100/80" : "bg-white",
@@ -494,6 +515,9 @@ function WeekGrid({
                     di < 6 && "border-r border-border"
                   )}
                 >
+                  {isSearchMatch && (
+                    <span key={searchQuery} className="absolute inset-0 animate-flash-yellow pointer-events-none z-[6]" />
+                  )}
                   <button
                     onClick={(e) => {
                       if (isFrozen || isNoShow) {
@@ -523,17 +547,32 @@ function WeekGrid({
                     )}
                     style={(isFrozen || isNoShow) && slot?.patient ? { backgroundImage: "repeating-linear-gradient(60deg, transparent, transparent 4px, rgba(255,255,255,0.55) 4px, rgba(255,255,255,0.55) 5.5px)" } : undefined}
                   >
-                    {isSelected && selectedSlot?.name && (
-                      <span className="text-[8px] font-bold text-primary truncate px-0.5 leading-none">
-                        {selectedSlot.name}
-                      </span>
+                    {isSelected && (
+                      <>
+                        {/* Mobile: compact square dot */}
+                        <span className="block sm:hidden w-3 h-3 rounded-sm bg-primary/80 mx-auto" />
+                        {/* Desktop: name text */}
+                        {selectedSlot?.name && (
+                          <span className="hidden sm:block text-[8px] font-bold text-primary truncate px-0.5 leading-none">
+                            {selectedSlot.name}
+                          </span>
+                        )}
+                      </>
                     )}
                     {!isSelected && slot?.patient && (
-                      <div className="flex items-center gap-0.5">
+                      <div className="flex items-center justify-center gap-0.5">
                         {isFrozen && <Check size={12} className="text-status-ready" strokeWidth={3} />}
-                        {isNoShow && !isFrozen && <span className="text-[9px] font-extrabold text-status-risk">Н/З</span>}
+                        {isNoShow && !isFrozen && (
+                          <>
+                            <span className="hidden sm:inline text-[9px] font-extrabold text-status-risk">Н/З</span>
+                            <span className="block sm:hidden w-2.5 h-2.5 rounded-sm bg-status-risk/70" />
+                          </>
+                        )}
                         {!isFrozen && !isNoShow && hasConfirmedAllergen(slot.patient.allergies) && (
                           <AllergyShield size={11} style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }} className="shrink-0" />
+                        )}
+                        {!isFrozen && !isNoShow && !hasConfirmedAllergen(slot.patient.allergies) && (
+                          <span className="block sm:hidden w-2.5 h-2.5 rounded-sm opacity-80" />
                         )}
                       </div>
                     )}
@@ -580,7 +619,7 @@ function DayGrid({
     if (!realPatients?.length) return mock;
     return mock.map(slot => {
       const real = pickPatientForSlot(realPatients, dateStr, slot.hour);
-      if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies } };
+      if (real) return { hour: slot.hour, patient: { id: real.id, name: real.name, patronymic: real.patronymic, status: computePatientStatus(real), procedure: real.procedure, allergies: real.allergies, completed: !!real.completed, noShow: !!real.noShow } };
       return slot;
     });
   }, [date, realPatients]);
@@ -612,7 +651,10 @@ function DayGrid({
         const isSearchMatch = !!(searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
         const isSelected = !slot.patient && !!selectedSlot && dateToStr(date) === selectedSlot.dateStr && slot.hour === selectedSlot.hour;
         return (
-          <div key={slot.hour} className="relative" ref={isSearchMatch ? matchRef : undefined}>
+          <div key={slot.hour} className={cn("relative", isSearchMatch && "rounded-lg overflow-hidden")} ref={isSearchMatch ? matchRef : undefined}>
+            {isSearchMatch && (
+              <span key={searchQuery} className="absolute inset-0 animate-flash-yellow rounded-lg pointer-events-none z-[1]" />
+            )}
             <button
               onClick={() => {
                 if (slot.patient) {
@@ -621,7 +663,7 @@ function DayGrid({
                   onSlotClick(date, slot.hour);
                 }
               }}
-              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}\nПідготовка: ${Math.floor(Math.random() * 100)}% виконано${hasConfirmedAllergen(slot.patient.allergies) ? `\n⚠️ АЛЕРГІЯ: ${parseAllergyState(slot.patient.allergies).allergen}` : ""}\nОстанній контакт: ${new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}` : undefined}
+              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}${hasConfirmedAllergen(slot.patient.allergies) ? `\n⚠️ АЛЕРГІЯ: ${parseAllergyState(slot.patient.allergies).allergen}` : ""}` : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
                 "active:scale-[0.98] animate-reveal-up",

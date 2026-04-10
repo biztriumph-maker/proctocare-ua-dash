@@ -149,10 +149,15 @@ export function subscribeToPatientsRealtime(onChange: () => void): () => void {
   };
 }
 
-// Зберегти нового пацієнта
+// Зберегти нового пацієнта.
+// Перед INSERT виконується lookup по name+phone щоб уникнути дублікатів.
+// Якщо пацієнт знайдений — використовується його реальний UUID, додається лише новий візит.
+// Якщо не знайдений — створюються нові записи з реальними UUID (не new-{timestamp}).
+// existingPatientDbId: якщо відомий заздалегідь (обраний зі списку) — пропускаємо lookup.
 export async function savePatientToSupabase(
   patient: PatientRow,
-  visit: Omit<VisitRow, 'patient_id'>
+  visit: Omit<VisitRow, 'patient_id'>,
+  existingPatientDbId?: string
 ) {
   if (!USE_SUPABASE) {
     const payload = {
@@ -184,9 +189,62 @@ export async function savePatientToSupabase(
     return true;
   }
 
+  // --- Якщо patientDbId відомий заздалегідь (обрано зі списку) — пропускаємо lookup ---
+  if (existingPatientDbId) {
+    const visitUuid = visit.id.startsWith('new-') ? crypto.randomUUID() : visit.id;
+    console.log(`✅ existingPatientDbId надано: ${existingPatientDbId}, створюємо візит ${visitUuid}`);
+    const { error: visitError } = await supabase
+      .from('visits')
+      .insert({ ...visit, id: visitUuid, patient_id: existingPatientDbId });
+    if (visitError) {
+      console.error('Помилка збереження візиту для відомого пацієнта:', visitError);
+      return false;
+    }
+    return true;
+  }
+
+  // --- Lookup: шукаємо існуючого пацієнта по ФИО + телефон ---
+  const normalizedName = patient.name.trim();
+  const normalizedPhone = patient.phone?.trim() ?? '';
+
+  let lookupQuery = supabase
+    .from('patients')
+    .select('id')
+    .ilike('name', normalizedName);
+
+  if (normalizedPhone) {
+    lookupQuery = lookupQuery.eq('phone', normalizedPhone) as typeof lookupQuery;
+  } else if (patient.patronymic?.trim()) {
+    lookupQuery = lookupQuery.ilike('patronymic', patient.patronymic.trim()) as typeof lookupQuery;
+  }
+
+  const { data: existingList } = await lookupQuery.limit(1);
+  const existingPatientId: string | null = (existingList as Array<{ id: string }> | null)?.[0]?.id ?? null;
+
+  if (existingPatientId) {
+    // Пацієнт вже є в базі — створюємо тільки новий візит
+    const visitUuid = crypto.randomUUID();
+    console.log(`✅ Lookup: знайдено існуючого пацієнта ${existingPatientId}, створюємо візит ${visitUuid}`);
+
+    const { error: visitError } = await supabase
+      .from('visits')
+      .insert({ ...visit, id: visitUuid, patient_id: existingPatientId });
+
+    if (visitError) {
+      console.error('Помилка збереження візиту для існуючого пацієнта:', visitError);
+      return false;
+    }
+    return true;
+  }
+
+  // Пацієнт не знайдений — створюємо обидва записи з реальними UUID
+  const patientUuid = patient.id.startsWith('new-') ? crypto.randomUUID() : patient.id;
+  const visitUuid = visit.id.startsWith('new-') ? crypto.randomUUID() : visit.id;
+  console.log(`🆕 Lookup: пацієнт не знайдений, створюємо пацієнта ${patientUuid} і візит ${visitUuid}`);
+
   const { error: patientError } = await supabase
     .from('patients')
-    .upsert({ ...patient }, { onConflict: 'id' });
+    .insert({ ...patient, id: patientUuid });
 
   if (patientError) {
     console.error('Помилка збереження пацієнта:', patientError);
@@ -195,7 +253,7 @@ export async function savePatientToSupabase(
 
   const { error: visitError } = await supabase
     .from('visits')
-    .upsert({ ...visit, patient_id: patient.id }, { onConflict: 'id' });
+    .insert({ ...visit, id: visitUuid, patient_id: patientUuid });
 
   if (visitError) {
     console.error('Помилка збереження візиту:', visitError);

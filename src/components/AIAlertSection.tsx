@@ -23,6 +23,8 @@ interface AIAlertSectionProps {
   onSendReply: (id: string, message: string) => void;
   doctorPhone?: string;
   onVisitClosed?: () => void;
+  onOpenVisit?: (visitId: string) => void;
+  reopenTrigger?: number;
 }
 
 function getDateBadge(date: Date): { label: string; className: string } {
@@ -41,7 +43,7 @@ function getDateBadge(date: Date): { label: string; className: string } {
   return { label: formatted, className: "text-muted-foreground bg-muted font-bold" };
 }
 
-export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed }: AIAlertSectionProps) {
+export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed, onOpenVisit, reopenTrigger }: AIAlertSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -49,6 +51,12 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
   const [showDeferred, setShowDeferred] = useState(false);
   const [unclosedVisits, setUnclosedVisits] = useState<any[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (reopenTrigger !== undefined && reopenTrigger > 0) {
+      setModalOpen(true);
+    }
+  }, [reopenTrigger]);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -365,7 +373,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
             <div style={{ fontSize: 13, color: '#5a7184', marginBottom: 16, lineHeight: 1.5 }}>
               Підтвердіть статус прийому. Система зафіксує дату прийому і дату підтвердження окремо.
             </div>
-            <div style={{ background: '#f5f8fc', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+            <div style={{ background: '#f5f8fc', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2b3c', marginBottom: 8 }}>
                 {unclosedVisits[0].patients?.full_name || unclosedVisits[0].patients?.name || '—'}
               </div>
@@ -375,24 +383,51 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
                 Процедура: {unclosedVisits[0].procedure ?? '—'}
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => closeVisit('completed')} style={{
-                width: '100%', padding: 14, border: 'none',
-                borderRadius: 10, fontSize: 15, fontWeight: 600,
-                cursor: 'pointer', background: '#1fa866', color: '#ffffff',
-              }}>✓  Прийом відбувся</button>
-              <button onClick={() => closeVisit('no_show')} style={{
-                width: '100%', padding: 14, border: 'none',
-                borderRadius: 10, fontSize: 15, fontWeight: 600,
-                cursor: 'pointer', background: '#d94040', color: '#ffffff',
-              }}>✗  Пацієнт не з'явився</button>
-              <button onClick={() => setModalOpen(false)} style={{
-                width: '100%', padding: 14,
-                border: '1.5px solid #c8d4de',
-                borderRadius: 10, fontSize: 15, fontWeight: 400,
-                cursor: 'pointer', background: '#e4eaf0', color: '#3d5166',
-              }}>Скасувати</button>
-            </div>
+            {(() => {
+              const protocol = (unclosedVisits[0].protocol || '').trim();
+              const diagnosis = (unclosedVisits[0].patients?.diagnosis || '').trim();
+              const hasContent = !!(protocol || diagnosis);
+              const preview = (protocol || diagnosis).slice(0, 120);
+              return (
+                <>
+                  {hasContent ? (
+                    <div style={{ fontSize: 12, color: '#3d5166', background: '#f0f4f8', borderRadius: 8, padding: '8px 12px', marginBottom: 16, lineHeight: 1.6 }}>
+                      {preview}{(protocol || diagnosis).length > 120 ? '…' : ''}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#9baab8', fontStyle: 'italic', background: '#f5f8fc', borderRadius: 8, padding: '8px 12px', marginBottom: 16 }}>
+                      Протокол не заповнено
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {!hasContent && (
+                      <button onClick={() => { onOpenVisit?.(unclosedVisits[0].id); setModalOpen(false); }} style={{
+                        width: '100%', padding: 14, border: 'none',
+                        borderRadius: 10, fontSize: 15, fontWeight: 600,
+                        cursor: 'pointer', background: '#2563eb', color: '#ffffff',
+                      }}>✏️  Заповнити протокол</button>
+                    )}
+                    {hasContent && (
+                      <button onClick={() => closeVisit('completed')} style={{
+                        width: '100%', padding: 14, border: 'none',
+                        borderRadius: 10, fontSize: 15, fontWeight: 600,
+                        cursor: 'pointer', background: '#1fa866', color: '#ffffff',
+                      }}>✓  Прийом відбувся</button>
+                    )}
+                    <button onClick={() => closeVisit('no_show')} style={{
+                      width: '100%', padding: 14, border: 'none',
+                      borderRadius: 10, fontSize: 15, fontWeight: 600,
+                      cursor: 'pointer', background: '#d94040', color: '#ffffff',
+                    }}>✗  Пацієнт не з'явився</button>
+                    <button onClick={() => setModalOpen(false)} style={{
+                      width: '100%', padding: 10, border: 'none',
+                      borderRadius: 10, fontSize: 13, fontWeight: 400,
+                      cursor: 'pointer', background: 'transparent', color: '#7a90a4',
+                    }}>← Повернутися</button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       , document.body)}

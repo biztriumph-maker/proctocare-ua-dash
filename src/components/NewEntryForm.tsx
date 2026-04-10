@@ -18,6 +18,8 @@ export interface NewEntryData {
   time: string;
   notes: string;
   aiPrep: boolean;
+  /** Якщо пацієнт обраний з існуючих — його стабільний patients.id з Supabase */
+  existingPatientDbId?: string;
 }
 
 interface NewEntryFormProps {
@@ -29,17 +31,7 @@ interface NewEntryFormProps {
 }
 
 
-const PATIENT_SUGGESTIONS = [
-  "Коваленко Олена Василівна",
-  "Мельник Ігор Петрович",
-  "Шевченко Тарас Олексійович",
-  "Бондаренко Вікторія Іванівна",
-  "Ткаченко Наталія Миколаївна",
-  "Лисенко Андрій Сергійович",
-  "Гриценко Марія Олексіївна",
-  "Петренко Олег Андрійович",
-  "Сидоренко Ірина Василівна",
-];
+// Static suggestions removed — real patients are used from realPatients prop
 
 export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, onSave }: NewEntryFormProps) {
   const [name, setName] = useState("");
@@ -55,6 +47,8 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showPlanningPicker, setShowPlanningPicker] = useState(false);
   const nameRef = useRef<HTMLTextAreaElement>(null);
+  // Якщо користувач обрав існуючого пацієнта зі списку — зберігаємо його patientDbId
+  const [existingPatientDbId, setExistingPatientDbId] = useState<string | null>(null);
 
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -64,8 +58,23 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
     };
   }, []);
 
-  const filteredSuggestions = name.length > 0
-    ? PATIENT_SUGGESTIONS.filter((p) => p.toLowerCase().includes(name.toLowerCase()))
+  // Дедуплікованний список реальних пацієнтів (по patientDbId або ПІБ)
+  const uniqueRealPatients = (() => {
+    if (!realPatients?.length) return [];
+    const seen = new Set<string>();
+    return realPatients.filter((p) => {
+      const key = p.patientDbId || `${p.name}|${p.patronymic || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+
+  const filteredSuggestions = name.length >= 1
+    ? uniqueRealPatients.filter((p) => {
+        const full = `${p.name}${p.patronymic ? ' ' + p.patronymic : ''}`;
+        return full.toLowerCase().includes(name.toLowerCase());
+      }).slice(0, 5)
     : [];
 
   const handleSave = () => {
@@ -73,7 +82,7 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
     const words = name.trim().split(/\s+/);
     const parsedName = words.slice(0, 2).join(" ");
     const patronymic = words.slice(2).join(" ");
-    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep });
+    onSave({ name: parsedName, patronymic, birthDate, phone, procedure: procedures[0], procedures, date, time, notes, aiPrep, existingPatientDbId: existingPatientDbId || undefined });
   };
 
   const formattedDate = (() => {
@@ -116,6 +125,8 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
               onChange={(e) => {
                 setName(e.target.value);
                 setShowSuggestions(true);
+                // Якщо користувач вручну змінює ім'я — знімаємо прив'язку до існуючого пацієнта
+                setExistingPatientDbId(null);
                 e.target.style.height = "auto";
                 e.target.style.height = e.target.scrollHeight + "px";
               }}
@@ -142,24 +153,33 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
             />
             {showSuggestions && filteredSuggestions.length > 0 && (
               <div className="absolute z-[55] bottom-full left-0 right-0 mb-1 bg-popover border rounded-lg shadow-elevated overflow-hidden">
-                {filteredSuggestions.slice(0, 4).map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onPointerDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setName(suggestion);
-                      setShowSuggestions(false);
-                      // resize textarea
-                      if (nameRef.current) {
-                        nameRef.current.style.height = "auto";
-                        nameRef.current.style.height = nameRef.current.scrollHeight + "px";
-                      }
-                    }}
-                    className="w-full text-left px-3 py-2 text-[13px] text-foreground hover:bg-accent/60 transition-colors"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+                {filteredSuggestions.map((patient) => {
+                  const fullName = `${patient.name}${patient.patronymic ? ' ' + patient.patronymic : ''}`;
+                  return (
+                    <button
+                      key={patient.patientDbId || patient.id}
+                      onPointerDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        // Автозаповнення з профілю існуючого пацієнта
+                        setName(fullName);
+                        setExistingPatientDbId(patient.patientDbId || null);
+                        if (patient.phone) setPhone(patient.phone);
+                        if (patient.birthDate) setBirthDate(patient.birthDate);
+                        setShowSuggestions(false);
+                        if (nameRef.current) {
+                          nameRef.current.style.height = "auto";
+                          nameRef.current.style.height = nameRef.current.scrollHeight + "px";
+                        }
+                      }}
+                      className="w-full text-left px-3 py-2 text-[13px] text-foreground hover:bg-accent/60 transition-colors"
+                    >
+                      <span className="font-medium">{fullName}</span>
+                      {patient.phone && (
+                        <span className="ml-2 text-muted-foreground text-[11px]">{patient.phone}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
