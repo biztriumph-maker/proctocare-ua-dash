@@ -35,7 +35,7 @@ interface PatientDetailViewProps {
   onUpdatePatient?: (updates: Partial<Patient>) => void;
   onDelete?: (patientId: string) => Promise<void> | void;
   /** Called when a completed visit is rescheduled — creates a fresh visit record instead of mutating the old one */
-  onCreateNewVisit?: (newVisit: { date: string; time?: string }) => void;
+  onCreateNewVisit?: (newVisit: { date: string; time?: string }) => Promise<void> | void;
   /** Called when doctor clicks "open" on an archived visit — switches to that visit's card */
   onOpenVisit?: (visitId: string) => void;
 }
@@ -129,10 +129,6 @@ function formatDateUkrainian(ddmmyyyy: string): string {
   const [d, m, y] = ddmmyyyy.split(".");
   if (!d || !m || !y) return ddmmyyyy;
   return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1] ?? ""} ${y}`;
-}
-
-function isPetushkovMockPatient(patient: Patient): boolean {
-  return patient.name.toLowerCase().includes("петушков");
 }
 
 function mergeUniqueHistoryEntries(
@@ -947,8 +943,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   const serviceCategory = getServiceCategory(localServices);
 
-  const seededProtocolHistory = getSeededMockProtocolHistory(patient);
-  const seededProcedureHistory = getSeededMockProcedureHistory(patient);
   // For new visits created by reschedule (fromForm=true, empty protocolHistory), pull in
   // protocol texts from related completed visits so the "Скопіювати" button can appear.
   const relatedCompletedProtocols: Array<{ value: string; timestamp: string; date: string }> = [];
@@ -973,9 +967,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   }
   const mergedProtocolHistory = mergeUniqueHistoryEntries(
     [...(patient.protocolHistory || []), ...relatedCompletedProtocols],
-    seededProtocolHistory
+    []
   );
-  const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, seededProcedureHistory);
+  const mergedProcedureHistory = mergeUniqueHistoryEntries(patient.procedureHistory, []);
   const initialFiles = patient.files || [];
   const [localFiles, setLocalFiles] = useState<FileItem[]>(initialFiles);
   const lastFocusSaveMeta = useRef<{ field: string; at: number } | null>(null);
@@ -1000,7 +994,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const nextInitialFiles = patient.files || [];
 
     const savedMeta = lastFocusSaveMeta.current;
-    const protectedField = savedMeta && Date.now() - savedMeta.at < 30000 ? savedMeta.field : null;
+    // 2s window — just enough for the async PATCH to complete and the realtime echo to arrive.
+    // A longer window blocks cross-device sync: if mobile deletes a field, desktop keeps stale
+    // data for the full duration. 2s covers save latency (<1s) plus a small safety margin.
+    const protectedField = savedMeta && Date.now() - savedMeta.at < 2000 ? savedMeta.field : null;
 
     setLocalFullName(correctNameSpelling(`${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`));
     setFields((prev) => ({
@@ -1467,7 +1464,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     };
   }, []);
 
-  const handleApplyReschedule = () => {
+  const handleApplyReschedule = async () => {
     if (!rescheduleDate || !rescheduleTime) return;
     if (!onUpdatePatient && !onCreateNewVisit) return;
 
@@ -1485,9 +1482,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (fields.protocol.trim() && onUpdatePatient) {
         onUpdatePatient({ protocol: fields.protocol.trim() });
       }
-      onCreateNewVisit({ date: rescheduleDate, time: rescheduleTime });
-      setFields((prev) => ({ ...prev, protocol: "" }));
+      // Close picker immediately for responsive UX; toast fires only after DB save + refresh
       setShowReschedulePicker(false);
+      await onCreateNewVisit({ date: rescheduleDate, time: rescheduleTime });
+      setFields((prev) => ({ ...prev, protocol: "" }));
       toast.success(`Прийом перенесено: ${formatted} · ${rescheduleTime}`);
       return;
     }
@@ -1680,15 +1678,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               >
                 <Pencil size={11} className="text-muted-foreground" />
               </button>
-              {(patient.completed || patient.status === "ready") && onCreateNewVisit && (
-                <button
-                  onClick={() => onCreateNewVisit({ date: getTodayIsoKyiv(), time: "" })}
-                  title="Підготувати наступний прийом без дати"
-                  className="ml-1 px-2 py-0.5 text-xs font-bold text-primary border border-primary/30 rounded-lg hover:bg-primary/5 active:scale-[0.97] transition-all"
-                >
-                  + Наступний
-                </button>
-              )}
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
               <span className="font-bold text-foreground">{(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv()) ? "—" : (patient.time || "—")}</span>
@@ -1800,6 +1789,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       onProtocolPrefill={(value) => {
                         lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
                         setFields((prev) => ({ ...prev, protocol: value }));
+                        onUpdatePatient?.({ protocol: value });
                       }}
                       visitId={patient.id}
                       relatedFiles={relatedCompletedFiles}
@@ -1898,6 +1888,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   onProtocolPrefill={(value) => {
                     lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
                     setFields((prev) => ({ ...prev, protocol: value }));
+                    onUpdatePatient?.({ protocol: value });
                   }}
                   visitId={patient.id}
                   relatedFiles={relatedCompletedFiles}
@@ -2657,32 +2648,6 @@ async function deleteBlobFromStorage(key: string): Promise<void> {
   db.close();
 }
 
-function getSeededMockProtocolHistory(patient: Patient): Array<{ value: string; timestamp: string; date: string }> {
-  if (!isPetushkovMockPatient(patient)) return [];
-  return [
-    {
-      value: "Архівний діагностичний запис для емулятора. Проведено гастроскопію, рекомендовано планове спостереження.",
-      timestamp: "15.05.2025",
-      date: "2025-05-15",
-    },
-  ];
-}
-
-function getSeededMockProcedureHistory(patient: Patient): Array<{ value: string; timestamp: string; date: string }> {
-  if (!isPetushkovMockPatient(patient)) return [];
-  return [
-    {
-      value: "Гастроскопія",
-      timestamp: "15.05.2025",
-      date: "2025-05-15",
-    },
-  ];
-}
-
-const MOCK_PROTOCOL_HISTORY: Array<{ value: string; timestamp: string; date: string }> = [
-  { value: "Гастроскопія: патологій не виявлено. Слизова шлунка та дванадцятипалої кишки в нормі.", timestamp: "20.05.2025", date: "2025-05-20" },
-];
-
 // ── Helper: pick icon by file type ──
 function FileTypeIcon({ file }: { file: FileItem }) {
   if (file.kind === 'video-link') {
@@ -3122,20 +3087,19 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
 
   const latestArchivedProtocol = useMemo(() => {
     const isCompleted = !!currentVisitOutcome;
-    // If there is no real active visit date (patient.date empty), skip the "same-day" filter
-    // so history entries from today are still surfaced for "no-visit" repeated patient cards.
-    const hasRealActiveVisit = !!activeVisitDate;
     const entries = (protocolHistory || [])
       .filter((h) => !h.value.startsWith(RESCHEDULED_MARKER))
       .filter((h) => {
         const parts = h.date?.split("-");
         if (parts?.length !== 3) return false;
         const dd = `${parts[2]}.${parts[1]}.${parts[0]}`;
-        // When the current visit is completed, its own entries also count as archived
-        if (isCompleted) return true;
-        // No real active visit → show all history (don't filter by date)
-        if (!hasRealActiveVisit) return true;
-        return dd !== activeDate;
+        // ONLY include entries from definitively closed visits (completed or no-show).
+        // Planning/scheduled visits — even if their date is in the future — are excluded.
+        // visitOutcomeByDate contains exactly those closed past dates.
+        if ((visitOutcomeByDate || {})[dd] !== undefined) return true;
+        // When the current open card is itself a completed/no-show visit, include its entries too.
+        if (isCompleted && dd === activeDate) return true;
+        return false;
       })
       .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -3164,7 +3128,7 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
       value: latest.value,
       date: isoToDisplay(latest.date),
     };
-  }, [protocolHistory, activeDate, currentVisitOutcome, protocolText]);
+  }, [protocolHistory, activeDate, currentVisitOutcome, protocolText, visitOutcomeByDate]);
 
   const procedureByDate = useMemo(() => {
     const map = new Map<string, string>();

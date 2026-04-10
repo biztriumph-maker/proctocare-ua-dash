@@ -458,6 +458,9 @@ function rebuildPetushkovRecord(patients: Patient[]): Patient[] {
     if (!p.fromForm) score += 25;
     if (p.status !== "planning") score += 5;
     if (p.date && rescheduleTargets.has(p.date)) score += 1000;
+    // A fresh planning visit (reschedule target) must always outrank a completed archive record
+    // so it is never erased from the UI after rebuildPetushkovRecord collapses duplicates.
+    if (!p.completed && !p.noShow && p.status === "planning" && p.date) score += 3000;
     return score;
   };
 
@@ -663,6 +666,11 @@ function sanitizePatientsAssistantNotes(patients: Patient[]): Patient[] {
 }
 
 function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string): Patient[] | null {
+  // Patients now live exclusively in Supabase. Immediately wipe the old
+  // localStorage cache so it can never pollute the initial render state.
+  localStorage.removeItem("proctocare_all_patients");
+  return null;
+  // eslint-disable-next-line no-unreachable
   const saved = localStorage.getItem("proctocare_all_patients");
   if (!saved) return null;
 
@@ -742,6 +750,10 @@ export default function Index() {
   useEffect(() => {
     readAssistantStoreWithCleanup();
     cleanupTemporaryChatLogs();
+    // Clear stale patient cache from old localStorage-based version.
+    // Patients now live exclusively in Supabase; this key is no longer written
+    // and any cached data it contains may include outdated history/protocol entries.
+    localStorage.removeItem("proctocare_all_patients");
   }, []);
 
   const lastFetchRef = useRef<string | null>(null);
@@ -871,7 +883,6 @@ export default function Index() {
   const [assistantAlerts, setAssistantAlerts] = useState<DashboardAssistantAlert[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
-  const [skeletonPatient, setSkeletonPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const doctorPhoneForQuickReply = useMemo(() => getDoctorPhoneForQuickReply(), []);
   const pendingUnclosedReopenRef = useRef(false);
@@ -1026,18 +1037,14 @@ export default function Index() {
   { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined },
   entry.existingPatientDbId || undefined
 );
-    setSkeletonPatient(newPatient);
     setShowForm(false);
+    setPatients((prev) => [...prev, newPatient]);
+    setSelectedPatient(newPatient);
     setNewlyCreatedId(newId);
-    setTimeout(() => {
-      setSkeletonPatient(null);
-      setPatients((prev) => [...prev, newPatient]);
-      setSelectedPatient(newPatient);
-      toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
-        description: entry.aiPrep ? "Асистент розпочав підготовку" : undefined,
-      });
-      logTraining(`Нова навчальна запис: ${entry.name} ${entry.date} ${entry.time}`);
-    }, 1500);
+    toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
+      description: entry.aiPrep ? "Асистент розпочав підготовку" : undefined,
+    });
+    logTraining(`Нова навчальна запис: ${entry.name} ${entry.date} ${entry.time}`);
     setTimeout(() => setNewlyCreatedId(null), 4500);
   }, [logTraining]);
 
@@ -1182,12 +1189,25 @@ export default function Index() {
 
   // Called when PatientDetailView reschedules a completed visit.
   // Reuses an existing blank/no-date record for the same person if one exists (UPDATE),
-  //// Clear search bar — save logic must be fully isolated from search state
+  // otherwise creates a NEW visit record in Supabase so the old completed record stays as archive.
+  const handleCreateNewVisit = useCallback(async (newVisitData: { date: string; time?: string }): Promise<void> => {
+    // Clear search bar — save logic must be fully isolated from search state
     setSearchQuery("");
-     otherwise creates a NEW visit record in Supabase so the old completed record stays as archive.
-  const handleCreateNewVisit = useCallback((newVisitData: { date: string; time?: string }) => {
     const donor = selectedPatientRef.current;
     if (!donor) return;
+
+    // Write __RESCHEDULED_TO__ marker to the completed visit's protocolHistory.
+    // This lets rebuildPetushkovRecord identify the active target date both in
+    // local state (immediate) and after the next DB refresh (persistent).
+    const markerEntry = {
+      value: `__RESCHEDULED_TO__:${newVisitData.date}`,
+      date: donor.date || todayIso,
+      timestamp: new Date().toISOString(),
+    };
+    const donorHistoryWithMarker = [...(donor.protocolHistory || []), markerEntry];
+    // Apply marker to donor in local state immediately so rebuildPetushkovRecord
+    // already sees the correct explicitTarget on this render cycle.
+    setPatients(prev => prev.map(p => p.id === donor.id ? { ...p, protocolHistory: donorHistoryWithMarker } : p));
 
     // Try to find an existing blank/no-date planning record for the same person
     const existingBlank = patientsRef.current.find(p =>
@@ -1208,11 +1228,15 @@ export default function Index() {
       };
       setPatients(prev => prev.map(p => p.id === existingBlank.id ? updated : p));
       setSelectedPatient(enrichPatientWithVisitHistory(updated, patientsRef.current));
-      void updatePatientInSupabase(existingBlank.id, {
-        date: newVisitData.date,
-        ...(newVisitData.time ? { time: newVisitData.time } : {}),
-        status: "planning",
-      }).then(() => refreshPatientsFromSupabase("rescheduleBlank"));
+      await Promise.all([
+        updatePatientInSupabase(donor.id, { protocolHistory: donorHistoryWithMarker }),
+        updatePatientInSupabase(existingBlank.id, {
+          date: newVisitData.date,
+          ...(newVisitData.time ? { time: newVisitData.time } : {}),
+          status: "planning",
+        }),
+      ]);
+      await refreshPatientsFromSupabase("rescheduleBlank");
       return;
     }
 
@@ -1244,21 +1268,25 @@ export default function Index() {
       noShow: false,
     };
 
-    // Optimistically add to list and open card
+    // Optimistically add to list and open card (marker already applied to donor above)
     setPatients((prev) => [...prev, newPatient]);
     setSelectedPatient(newPatient);
 
-    // Persist in Supabase (look up patient_id from old visit, insert new visit row)
-    // Also pass donor allergies so the patient record is repaired if it was corrupted previously
-    void createNewVisitForExistingPatient(donor.id, {
-      id: newId,
-      visit_date: newVisitData.date,
-      ...(newVisitData.time ? { visit_time: newVisitData.time } : {}),
-      procedure: donor.procedure,
-      status: 'planning',
-      from_form: true,
-    }, donor.allergies ? { allergies: donor.allergies } : undefined).then(() => refreshPatientsFromSupabase("createNewVisit"));
-  }, [refreshPatientsFromSupabase]);
+    // Persist in Supabase: save marker on old visit + create new visit row in parallel,
+    // then force a fresh refresh so Calendar and Card reflect the real saved state.
+    await Promise.all([
+      updatePatientInSupabase(donor.id, { protocolHistory: donorHistoryWithMarker }),
+      createNewVisitForExistingPatient(donor.id, {
+        id: newId,
+        visit_date: newVisitData.date,
+        ...(newVisitData.time ? { visit_time: newVisitData.time } : {}),
+        procedure: donor.procedure,
+        status: 'planning',
+        from_form: true,
+      }, donor.allergies ? { allergies: donor.allergies } : undefined),
+    ]);
+    await refreshPatientsFromSupabase("createNewVisit");
+  }, [refreshPatientsFromSupabase, todayIso]);
 
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -1522,9 +1550,8 @@ export default function Index() {
                         </>
                       );
                     })()}
-                    {skeletonPatient && <SkeletonCard patient={skeletonPatient} />}
                   </div>
-                  {filtered.length === 0 && !skeletonPatient && (
+                  {filtered.length === 0 && (
                     <div className="text-center py-12 text-muted-foreground text-sm animate-fade-in">
                       Немає пацієнтів з таким статусом
                     </div>
@@ -1641,6 +1668,17 @@ export default function Index() {
           realPatients={allCalendarPatients}
           onClose={() => setShowForm(false)}
           onSave={handleSaveEntry}
+          onOpenExistingPatient={(patient) => {
+            setShowForm(false);
+            const enriched = enrichPatientWithVisitHistory(
+              hydrateMissingProfile(patient,
+                allCalendarPatients.filter((p) => p.id !== patient.id && isSamePerson(p, patient))
+                  .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0]
+              ),
+              allCalendarPatients
+            );
+            setSelectedPatient(enriched);
+          }}
         />
       )}
       {selectedPatient && (
@@ -1687,7 +1725,11 @@ export default function Index() {
               if (!prev) return prev;
               return { ...prev, ...updates };
             });
-            void updatePatientInSupabase(selectedPatient.id, updates);
+            // Point 4: after saving, immediately re-fetch DB state to surface any
+            // concurrent changes from another device and avoid overwriting newer data.
+            void updatePatientInSupabase(selectedPatient.id, updates).then(() => {
+              void refreshPatientsFromSupabase("post-save");
+            });
           }}
           onCreateNewVisit={handleCreateNewVisit}
           onOpenVisit={(visitId) => {
@@ -1697,29 +1739,6 @@ export default function Index() {
         />
       )}
 
-    </div>
-  );
-}
-
-function SkeletonCard({ patient }: { patient: Patient }) {
-  return (
-    <div className="w-full bg-surface-raised rounded-xl border-l-4 border-l-status-progress px-4 py-3 border border-border/50 shadow-card animate-pulse">
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-muted animate-pulse" />
-          <div className="h-3.5 w-14 bg-muted rounded animate-pulse" />
-          <div className="h-3.5 w-24 bg-muted rounded-full animate-pulse" />
-        </div>
-        <div className="h-4.5 w-36 bg-muted rounded animate-pulse" />
-        <div className="flex items-center gap-2">
-          <div className="h-3.5 w-24 bg-muted rounded animate-pulse" />
-          <div className="h-3.5 w-44 bg-primary/10 rounded animate-pulse" />
-        </div>
-      </div>
-      <p className="text-xs text-primary font-medium mt-2 flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-        Створення запису для {patient.name}...
-      </p>
     </div>
   );
 }

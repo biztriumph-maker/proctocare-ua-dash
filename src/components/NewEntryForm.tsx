@@ -1,5 +1,5 @@
-import { X, Phone, CalendarDays, ChevronRight } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
+import { X, Phone, CalendarDays, ChevronRight, AlertTriangle, ArrowRight } from "lucide-react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import { ProcedureSelector } from "./ProcedureSelector";
@@ -28,12 +28,14 @@ interface NewEntryFormProps {
   realPatients?: Patient[];
   onClose: () => void;
   onSave: (entry: NewEntryData) => void;
+  /** Called when doctor clicks "Так, відкрити" on the duplicate-patient warning */
+  onOpenExistingPatient?: (patient: Patient) => void;
 }
 
 
 // Static suggestions removed — real patients are used from realPatients prop
 
-export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, onSave }: NewEntryFormProps) {
+export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, onSave, onOpenExistingPatient }: NewEntryFormProps) {
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
@@ -76,6 +78,34 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
         return full.toLowerCase().includes(name.toLowerCase());
       }).slice(0, 5)
     : [];
+
+  // ── Duplicate detection ──
+  // Triggered as soon as all 6 parameters are filled:
+  // Прізвище + Ім'я + По батькові (3 parts in the name field) + full DD.MM.YYYY birth date.
+  const duplicatePatient = useMemo<Patient | null>(() => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    const formSurname = parts[0]?.toLowerCase() || "";
+    const formFirstName = parts[1]?.toLowerCase() || "";
+    const formPatronymic = parts.slice(2).join(" ").toLowerCase();
+    // All three name parts required
+    if (!formSurname || !formFirstName || !formPatronymic) return null;
+    // Full birth date required (8 digits = DD.MM.YYYY)
+    if (birthDate.replace(/\D/g, "").length !== 8) return null;
+    const formBirthDate = birthDate.trim();
+    return uniqueRealPatients.find((p) => {
+      const pParts = (p.name || "").trim().split(/\s+/).filter(Boolean);
+      const pSurname = pParts[0]?.toLowerCase() || "";
+      const pFirstName = pParts[1]?.toLowerCase() || "";
+      const pPatronymic = (p.patronymic || "").trim().toLowerCase();
+      const pBirthDate = (p.birthDate || "").trim();
+      return (
+        pSurname === formSurname &&
+        pFirstName === formFirstName &&
+        pPatronymic === formPatronymic &&
+        pBirthDate === formBirthDate
+      );
+    }) ?? null;
+  }, [name, birthDate, uniqueRealPatients]);
 
   const handleSave = () => {
     if (!name || !date || !time || procedures.length === 0 || !isPhoneValid) return;
@@ -359,10 +389,36 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
           {/* AI Prep toggle removed — moved to patient card */}
         </div>
 
+        {/* Duplicate patient warning */}
+        {duplicatePatient && (
+          <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3.5 space-y-2.5 animate-fade-in">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-amber-900 leading-snug">
+                  Цей пацієнт уже зафіксований у системі (Архів).
+                </p>
+                <p className="text-[12px] text-amber-700 mt-0.5">
+                  Бажаєте відкрити його історію та створити новий візит?
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                onOpenExistingPatient?.(duplicatePatient);
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[13px] font-bold transition-colors active:scale-[0.97]"
+            >
+              Так, відкрити
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
+
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!name.trim() || !date || !time || procedures.length === 0 || !isPhoneValid || birthDate.replace(/\D/g, "").length !== 8}
+          disabled={!!duplicatePatient || !name.trim() || !date || !time || procedures.length === 0 || !isPhoneValid || birthDate.replace(/\D/g, "").length !== 8}
           className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-bold text-sm transition-all duration-200 hover:shadow-card-hover active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
         >
           Зберегти запис
