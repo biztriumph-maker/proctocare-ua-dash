@@ -711,12 +711,24 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         map[displayDate] = "no-show";
         continue;
       }
-      if (visit.completed || visit.status === "ready") {
+      if (visit.completed || visit.status === "ready" || visit.status === "completed") {
         if (!map[displayDate]) map[displayDate] = "completed";
       }
     }
     return map;
   }, [relatedVisits, activeVisitIso]);
+
+  const currentVisitOutcome: "completed" | "no-show" | undefined =
+    (patient.noShow && (!patient.date || patient.date <= getTodayIsoKyiv()))
+      ? "no-show"
+      : (((patient.completed || patient.status === "ready" || patient.status === "completed") && (!patient.date || patient.date <= getTodayIsoKyiv()))
+        ? "completed"
+        : undefined);
+
+  useEffect(() => {
+    // Closed visits should not keep focus overlays mounted in DOM.
+    if (currentVisitOutcome && focusField) setFocusField(null);
+  }, [currentVisitOutcome, focusField]);
   
   // A completed or no-show visit in the past means the card is in "archive mode" —
   // visit-specific fields (notes, diagnosis, services, protocol) must be empty so they are
@@ -1228,16 +1240,19 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   // Derive lastVisit from the latest valid archived date: completed visit from schedule
   // or archived protocol/procedure date (excluding no-show/incomplete visits when known).
-  const derivedLastVisit = (() => {
+  const derivedLastVisitInfo = (() => {
     const currentDate = patient.date || "9999-99-99";
     const latestCompletedIso = lastCompletedVisitFromAll?.date;
     // Only count as "closed" if the visit date is today or in the past — future visits with stale
     // completed=true in DB must not pollute lastVisit or archive logic.
     const closedCurrentVisitIso = patient.date
       && patient.date <= getTodayIsoKyiv()
-      && (patient.completed || patient.status === "ready" || patient.noShow)
+      && (patient.completed || patient.status === "ready" || patient.status === "completed" || patient.noShow)
       ? patient.date
       : undefined;
+    const closedCurrentVisitOutcome: "completed" | "no-show" | undefined = patient.noShow
+      ? "no-show"
+      : ((patient.completed || patient.status === "ready" || patient.status === "completed") ? "completed" : undefined);
 
     const visitByIso = new Map<string, Patient>();
     for (const visit of relatedVisits) {
@@ -1248,8 +1263,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         continue;
       }
 
-      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready") ? 2 : 0);
-      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready") ? 2 : 0);
+      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready" || existing.status === "completed") ? 2 : 0);
+      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready" || visit.status === "completed") ? 2 : 0);
       if (currentRank >= existingRank) visitByIso.set(visit.date, visit);
     }
 
@@ -1260,7 +1275,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready") continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready" && linkedVisit.status !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1269,7 +1284,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready") continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready" && linkedVisit.status !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1280,9 +1295,22 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       .sort()
       .reverse()[0];
 
-    return bestIso ? isoToDisplay(bestIso) : "";
+    const bestDisplay = bestIso ? isoToDisplay(bestIso) : "";
+    const outcomeFromBestIso: "completed" | "no-show" | undefined =
+      bestIso
+        ? (bestIso === closedCurrentVisitIso
+            ? closedCurrentVisitOutcome
+            : (visitByIso.get(bestIso)?.noShow
+                ? "no-show"
+                : ((visitByIso.get(bestIso)?.completed || visitByIso.get(bestIso)?.status === "ready" || visitByIso.get(bestIso)?.status === "completed")
+                  ? "completed"
+                  : undefined)))
+        : undefined;
+
+    return { lastVisit: bestDisplay, outcome: outcomeFromBestIso };
   })();
-  const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisit || profile.lastVisit };
+  const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisitInfo.lastVisit || profile.lastVisit };
+  const isLastVisitNoShow = derivedLastVisitInfo.outcome === "no-show";
   // A visit that has been completed counts as a past visit — so the patient is always "repeat" after first visit
   const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 || !!(patient.completed || patient.status === "ready");
 
@@ -1418,6 +1446,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   };
 
   const handleCloseRequest = () => {
+    setFocusField(null);
+    setAllergyModalOpen(false);
+    setShowReschedulePicker(false);
+    setHistoryModalOpen(false);
     try {
       handleSaveChanges(true);
     } catch (e) {
@@ -1665,11 +1697,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             <div className="flex items-center gap-1.5 text-xs flex-wrap mt-2 sm:mt-2.5">
               <span className="text-muted-foreground font-normal">Дата:</span>
               <span className="font-bold text-foreground">
-                {(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())
-                  ? "—"
-                  : (patient.date
-                    ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
-                    : "—")}
+                {(currentVisitOutcome
+                  ? "__.__.____"
+                  : patient.date
+                  ? (() => { const d = new Date(patient.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })()
+                  : "—")}
               </span>
               <button
                 onClick={() => setShowReschedulePicker(true)}
@@ -1680,8 +1712,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               </button>
               <span className="text-muted-foreground">|</span>
               <span className="text-muted-foreground font-normal">Час:</span>
-              <span className="font-bold text-foreground">{(patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv()) ? "—" : (patient.time || "—")}</span>
-              {!((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) && getPrimaryService(localServices) && (
+              <span className="font-bold text-foreground">{currentVisitOutcome ? "__:__" : (patient.time || "—")}</span>
+              {!currentVisitOutcome && getPrimaryService(localServices) && (
                 <>
                   <span className="text-muted-foreground">|</span>
                   <span className="font-bold text-foreground">{getPrimaryService(localServices)}</span>
@@ -1743,6 +1775,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                     <ProfilePane
                       profile={mergedProfile}
+                      lastVisitIsNoShow={isLastVisitNoShow}
                       onFocusEdit={handleFocusOpen}
                       onAllergyEdit={handleOpenAllergyModal}
                       onBirthDateChange={(value) => {
@@ -1780,11 +1813,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       procedureHistory={mergedProcedureHistory}
                       historicalVisitDates={completedPastVisitDates}
                       visitOutcomeByDate={archivedVisitOutcomeByDate}
-                      currentVisitOutcome={
-                        (patient.noShow && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "no-show" :
-                        ((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "completed" :
-                        undefined
-                      }
+                      currentVisitOutcome={currentVisitOutcome}
                       activeVisitDate={patient.date ? activeVisitDisplayDate : ""}
                       onProtocolPrefill={(value) => {
                         lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
@@ -1845,6 +1874,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               <ContentBlock title="Профіль пацієнта" icon={<User size={13} />}>
                 <ProfilePane
                   profile={mergedProfile}
+                  lastVisitIsNoShow={isLastVisitNoShow}
                   onFocusEdit={handleFocusOpen}
                   onAllergyEdit={handleOpenAllergyModal}
                   onBirthDateChange={(value) => {
@@ -1879,11 +1909,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   procedureHistory={mergedProcedureHistory}
                   historicalVisitDates={completedPastVisitDates}
                   visitOutcomeByDate={archivedVisitOutcomeByDate}
-                  currentVisitOutcome={
-                    (patient.noShow && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "no-show" :
-                    ((patient.completed || patient.status === "ready") && (!patient.date || patient.date <= getTodayIsoKyiv())) ? "completed" :
-                    undefined
-                  }
+                  currentVisitOutcome={currentVisitOutcome}
                   activeVisitDate={patient.date ? activeVisitDisplayDate : ""}
                   onProtocolPrefill={(value) => {
                     lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
@@ -2338,8 +2364,9 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
 }
 
 // ── Profile Pane with editable fields ──
-function ProfilePane({ profile, onFocusEdit, onAllergyEdit, onBirthDateChange, onPhoneChange, histories }: {
+function ProfilePane({ profile, lastVisitIsNoShow = false, onFocusEdit, onAllergyEdit, onBirthDateChange, onPhoneChange, histories }: {
   profile: ReturnType<typeof getMockProfile>;
+  lastVisitIsNoShow?: boolean;
   onFocusEdit: (field: string, value: string, history?: HistoryEntry[]) => void;
   onAllergyEdit: () => void;
   onBirthDateChange: (value: string) => void;
@@ -2481,10 +2508,12 @@ function ProfilePane({ profile, onFocusEdit, onAllergyEdit, onBirthDateChange, o
       </div>
 
       {/* Row 5: Останній візит */}
-      <div className="bg-background rounded-xl border border-border/60 px-3 py-2.5">
+      <div className={cn("rounded-xl border px-3 py-2.5", lastVisitIsNoShow ? "bg-status-risk-bg border-status-risk/45" : "bg-background border-border/60")}>
         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Останній візит</p>
-        <span className={cn("text-sm font-bold", profile.lastVisit ? "text-foreground" : "text-muted-foreground/40 italic")}>
-          {profile.lastVisit || "Перший прийом"}
+        <span className={cn("text-sm font-bold", profile.lastVisit ? (lastVisitIsNoShow ? "text-status-risk" : "text-foreground") : "text-muted-foreground/40 italic")}>
+          {profile.lastVisit
+            ? (lastVisitIsNoShow ? `${profile.lastVisit} (Не з'явився)` : profile.lastVisit)
+            : "Перший прийом"}
         </span>
         
       </div>
@@ -3699,6 +3728,12 @@ function FilesPane({ files, onFilesChange, onFocusEdit, fromForm, protocolText, 
                     <div className="rounded-lg p-2.5 border border-status-risk/35 bg-status-risk-bg">
                       <p className="text-[10px] font-bold text-status-risk uppercase tracking-wide mb-1">Статус</p>
                       <p className="text-xs font-semibold text-status-risk">Не з'явився на прийом</p>
+                    </div>
+                  )}
+                  {dateOutcome === "completed" && !isFrozen && (
+                    <div className="rounded-lg p-2.5 border border-emerald-200 bg-emerald-50">
+                      <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide mb-1">Статус</p>
+                      <p className="text-xs font-semibold text-emerald-800">Процедуру завершено</p>
                     </div>
                   )}
                   {dateProcedure && (

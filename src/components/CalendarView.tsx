@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Patient, PatientStatus } from "./PatientCard";
 import { computePatientStatus, AllergyShield } from "./PatientCard";
-import { hasConfirmedAllergen, parseAllergyState } from "@/lib/allergyState";
+import { hasConfirmedAllergen } from "@/lib/allergyState";
 
 interface CalendarSlot {
   hour: number;
@@ -18,6 +18,7 @@ interface CalendarViewProps {
   realPatients?: Patient[];
   focusDate?: string;
   initialFocusDate?: string;
+  suppressTransientOverlays?: boolean;
 }
 
 const statusDot: Record<PatientStatus, string> = {
@@ -110,7 +111,7 @@ function pickPatientForSlot(realPatients: Patient[] | undefined, dateStr: string
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients, focusDate, initialFocusDate }: CalendarViewProps) {
+export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", selectedSlot, realPatients, focusDate, initialFocusDate, suppressTransientOverlays = false }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(() => {
     if (initialFocusDate) {
       const [y, mo, d] = initialFocusDate.split("-").map(Number);
@@ -135,19 +136,16 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
     }
   }, [focusDate]);
 
+  useEffect(() => {
+    if (!suppressTransientOverlays) return;
+    setShowMonthPicker(false);
+  }, [suppressTransientOverlays]);
+
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
 
   const monthLabel = useMemo(() => {
     return currentDate.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
   }, [currentDate]);
-
-  const shiftWeek = (delta: number) => {
-    setCurrentDate((d) => {
-      const next = new Date(d);
-      next.setDate(next.getDate() + delta * 7);
-      return next;
-    });
-  };
 
   const shiftDay = (delta: number) => {
     setCurrentDate((d) => {
@@ -176,16 +174,16 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
   };
 
   return (
-    <div className="space-y-3 animate-fade-in">
+    <div className="space-y-4 animate-fade-in box-border border-0">
       {/* View mode toggle */}
-      <div className="flex rounded-xl bg-[hsl(199,89%,86%)] p-1 gap-1">
+      <div className="flex h-[50px] gap-2 bg-transparent border-0">
         <button
           onClick={() => setViewMode("day")}
           className={cn(
-            "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
+            "flex h-full flex-1 items-center justify-center rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200 active:scale-[0.97]",
             viewMode === "day"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
-              : "font-medium text-foreground/60 hover:text-foreground/80"
+              ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)]"
+              : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3]"
           )}
         >
           День
@@ -193,10 +191,10 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         <button
           onClick={() => setViewMode("week")}
           className={cn(
-            "flex-1 py-2 rounded-lg text-sm transition-all duration-200 active:scale-[0.97]",
+            "flex h-full flex-1 items-center justify-center rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200 active:scale-[0.97]",
             viewMode === "week"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
-              : "font-medium text-foreground/60 hover:text-foreground/80"
+              ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)]"
+              : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3]"
           )}
         >
           Тиждень
@@ -208,7 +206,6 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         <button
           onClick={() => (viewMode === "week" ? shiftMonth(-1) : shiftDay(-1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
-          title={viewMode === "week" ? "Попередній місяць" : "Попередній день"}
         >
           <ChevronLeft size={20} />
         </button>
@@ -223,7 +220,6 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         <button
           onClick={() => (viewMode === "week" ? shiftMonth(1) : shiftDay(1))}
           className="p-2 rounded-md hover:bg-accent active:scale-[0.95] transition-all"
-          title={viewMode === "week" ? "Наступний місяць" : "Наступний день"}
         >
           <ChevronRight size={20} />
         </button>
@@ -232,14 +228,8 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
       {/* Month picker overlay */}
       {showMonthPicker && (
         <div className="border-2 border-muted-foreground/40 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-white p-3 space-y-2 animate-reveal-up">
-          <div className="flex items-center justify-between">
-            <button onClick={() => shiftMonth(-1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
-              <ChevronLeft size={16} />
-            </button>
+          <div className="flex items-center justify-center">
             <span className="text-sm font-semibold capitalize">{monthLabel}</span>
-            <button onClick={() => shiftMonth(1)} className="p-1 hover:bg-accent rounded active:scale-[0.95] transition-all">
-              <ChevronRight size={16} />
-            </button>
           </div>
           <div className="grid grid-cols-7 gap-0 text-center">
             {DAY_LABELS.map((d) => (
@@ -282,11 +272,11 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
           searchQuery={searchQuery}
           selectedSlot={selectedSlot}
           realPatients={realPatients}
+          suppressTransientOverlays={suppressTransientOverlays}
           onSelectDay={(d) => {
             setCurrentDate(d);
             setViewMode("day");
           }}
-          onShiftWeek={shiftWeek}
         />
       ) : (
         <DayGrid date={currentDate} onSlotClick={onSlotClick} onPatientClick={onPatientClick} searchQuery={searchQuery} selectedSlot={selectedSlot} realPatients={realPatients} />
@@ -311,67 +301,85 @@ function SlotPopover({
   onPatientClick?: (patient: { id?: string; name: string; patronymic?: string; status: PatientStatus; procedure: string; time: string; date?: string; allergies?: string }) => void;
   anchorRect: DOMRect;
 }) {
-  const POPOVER_WIDTH = 200;
-  const POPOVER_HEIGHT = 80;
-  const GAP = 6;
+  const GAP = 8;
   const MARGIN = 8;
+  const POPOVER_HEIGHT = 78;
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const popoverWidth = Math.min(220, vw - MARGIN * 2);
 
-  // Vertical: prefer below, flip to above if no space
-  const spaceBelow = vh - anchorRect.bottom;
-  const top = spaceBelow >= POPOVER_HEIGHT + GAP
-    ? anchorRect.bottom + GAP
-    : anchorRect.top - POPOVER_HEIGHT - GAP;
+  // Horizontal: prefer right of slot; if it overflows, place to the left; then clamp.
+  let left = anchorRect.right + GAP;
+  if (left + popoverWidth > vw - MARGIN) {
+    left = anchorRect.left - popoverWidth - GAP;
+  }
+  left = Math.max(MARGIN, Math.min(left, vw - popoverWidth - MARGIN));
 
-  // Horizontal: center on anchor, clamp within viewport
-  let left = anchorRect.left + anchorRect.width / 2 - POPOVER_WIDTH / 2;
-  left = Math.max(MARGIN, Math.min(left, vw - POPOVER_WIDTH - MARGIN));
+  // Vertical: prefer below slot; if it overflows, place above; then clamp.
+  let top = anchorRect.bottom + GAP;
+  if (top + POPOVER_HEIGHT > vh - MARGIN) {
+    top = anchorRect.top - POPOVER_HEIGHT - GAP;
+  }
+  top = Math.max(MARGIN, Math.min(top, vh - POPOVER_HEIGHT - MARGIN));
+
+  const compactName = useMemo(() => {
+    const parts = slot.name.trim().split(/\s+/).filter(Boolean);
+    const lastName = parts[0] || "";
+    const firstName = parts[1] || "";
+    const middleNameFromName = parts.slice(2).join(" ");
+    const middleName = (slot.patronymic || middleNameFromName || "").trim();
+    return [
+      lastName,
+      firstName ? `${firstName[0]}.` : "",
+      middleName ? `${middleName[0]}.` : "",
+    ].filter(Boolean).join(" ");
+  }, [slot.name, slot.patronymic]);
 
   return (
-    <div
-      className="fixed z-[200] bg-popover border rounded-lg shadow-elevated p-3 space-y-1.5 animate-reveal-up"
-      style={{
-        width: POPOVER_WIDTH,
-        top,
-        left,
-      }}
-    >
-      <div className="flex items-center justify-between">
+    <>
+      <div className="fixed inset-0 z-[190]" onClick={onClose} aria-hidden="true" />
+      <div
+        className="fixed z-[200] bg-white border border-[#D1D5DB] rounded-md p-2.5 space-y-1 animate-reveal-up"
+        style={{
+          width: popoverWidth,
+          top,
+          left,
+          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+        }}
+      >
+        <div className="flex items-start justify-between gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+              onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00`, date: dateStr });
+            }}
+            className="flex items-start gap-1 min-w-0 text-left hover:underline"
+          >
+            <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1", statusDot[slot.status])} />
+            {hasConfirmedAllergen(slot.allergies) && (
+              <AllergyShield size={11} style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.65))" }} className="shrink-0 mt-0.5" />
+            )}
+            <span className="block text-[13px] leading-4 font-bold text-black truncate">{compactName}</span>
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all shrink-0 mt-[-1px]">
+            <X size={10} className="text-muted-foreground" />
+          </button>
+        </div>
         <button
           onClick={(e) => {
             e.stopPropagation();
+            onClose();
             onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00`, date: dateStr });
           }}
-          className="flex items-center gap-1.5 min-w-0 hover:underline"
+            className="block w-full text-left text-[12px] leading-4 font-normal hover:text-primary hover:underline transition-colors cursor-pointer truncate"
+            style={{ color: "#6B7280" }}
         >
-          <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDot[slot.status])} />
-          {hasConfirmedAllergen(slot.allergies) && (
-            <AllergyShield size={13} style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.65))" }} className="shrink-0" />
-          )}
-          <span className="text-xs font-semibold text-foreground truncate">{(() => {
-            const parts = slot.name.split(" ");
-            const surname = parts[0] || "";
-            const firstInit = parts[1]?.[0] ? parts[1][0] + "." : "";
-            const patronymicInit = slot.patronymic?.[0] ? slot.patronymic[0] + "." : "";
-            return `${surname} ${firstInit}${patronymicInit}`.trim();
-          })()}</span>
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-0.5 rounded hover:bg-accent active:scale-[0.9] transition-all shrink-0">
-          <X size={12} className="text-muted-foreground" />
+          {slot.procedure}
         </button>
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onPatientClick?.({ ...slot, time: `${String(hour).padStart(2, "0")}:00`, date: dateStr });
-        }}
-        className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors cursor-pointer"
-      >
-        {slot.procedure}
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -384,7 +392,7 @@ function WeekGrid({
   searchQuery = "",
   selectedSlot,
   realPatients,
-  onShiftWeek,
+  suppressTransientOverlays = false,
 }: {
   weekDates: Date[];
   onSlotClick: (date: Date, hour: number) => void;
@@ -393,10 +401,23 @@ function WeekGrid({
   searchQuery?: string;
   selectedSlot?: { dateStr: string; hour: number; name?: string };
   realPatients?: Patient[];
-  onShiftWeek?: (delta: number) => void;
+  suppressTransientOverlays?: boolean;
 }) {
   const today = new Date();
   const [activePopover, setActivePopover] = useState<{ key: string; rect: DOMRect } | null>(null);
+
+  useEffect(() => {
+    if (!suppressTransientOverlays) return;
+    setActivePopover(null);
+  }, [suppressTransientOverlays]);
+
+  useEffect(() => {
+    setActivePopover(null);
+  }, [realPatients, weekDates]);
+
+  useEffect(() => {
+    setActivePopover(null);
+  }, [searchQuery, selectedSlot]);
 
   const slotsPerDay = useMemo(() => {
     return weekDates.map((d) => {
@@ -419,27 +440,6 @@ function WeekGrid({
 
   return (
     <div className="border-2 border-muted-foreground/40 rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)] w-full">
-      {/* Week navigation row — shift week without touching month header */}
-      <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-[hsl(204,100%,97%)]">
-        <button
-          onClick={() => onShiftWeek?.(-1)}
-          className="p-1 rounded hover:bg-accent active:scale-[0.93] transition-all"
-          title="Попередній тиждень"
-        >
-          <ChevronLeft size={15} />
-        </button>
-        <span className="text-[11px] font-semibold text-muted-foreground">
-          {weekDates[0] ? `${weekDates[0].getDate()} – ${weekDates[6]?.getDate()} ${weekDates[6]?.toLocaleDateString("uk-UA", { month: "short" })}` : ""}
-        </span>
-        <button
-          onClick={() => onShiftWeek?.(1)}
-          className="p-1 rounded hover:bg-accent active:scale-[0.93] transition-all"
-          title="Наступний тиждень"
-        >
-          <ChevronRight size={15} />
-        </button>
-      </div>
-
       {/* Header row */}
       <div className="grid grid-cols-[36px_repeat(7,1fr)] sm:grid-cols-[48px_repeat(7,1fr)] border-b border-border w-full">
         <div className="border-r border-border bg-[hsl(204,100%,97%)]" />
@@ -499,10 +499,11 @@ function WeekGrid({
               const isSelected = !slot?.patient && !!selectedSlot && dateToStr(d) === selectedSlot.dateStr && hour === selectedSlot.hour;
 
               const isToday = isSameDay(d, today);
-              // A slot is "frozen" when the visit is completed (regardless of date) or
-              // it is a past no-show. Frozen slots show stripes + icon and block clicks.
-              const isFrozen = !!slot?.patient?.completed || (past && slot?.patient?.status === "ready");
-              const isNoShow = !!slot?.patient?.noShow || (past && !slot?.patient?.completed && slot?.patient?.status === "risk");
+              const isNoShow = !!slot?.patient?.noShow || ((slot?.patient?.status as string) === "no_show");
+              // A slot is "frozen" when the visit is completed and is not a no-show.
+              const isFrozen = !isNoShow && (!!slot?.patient?.completed || (past && slot?.patient?.status === "ready"));
+              // Completed visits always use the archived hatched style.
+              const isFrozenCompleted = isFrozen;
               return (
                 <div
                   key={di}
@@ -520,32 +521,49 @@ function WeekGrid({
                   )}
                   <button
                     onClick={(e) => {
-                      if (isFrozen || isNoShow) {
-                        // Completed and no-show visits are frozen — clicking does nothing
-                        e.stopPropagation();
-                        return;
-                      }
                       if (slot?.patient) {
                         const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                         setActivePopover(activePopover?.key === popoverKey ? null : { key: popoverKey, rect });
-                      } else {
-                        setActivePopover(null);
-                        onSlotClick(d, hour);
+                        e.stopPropagation();
+                        return;
                       }
+                      if (isFrozen || isNoShow) {
+                        // Frozen empty cell — do nothing
+                        e.stopPropagation();
+                        return;
+                      }
+                      setActivePopover(null);
+                      onSlotClick(d, hour);
                     }}
                     className={cn(
                       "w-full h-[28px] rounded transition-all duration-150 flex items-center justify-center",
                       !isFrozen && !isNoShow && "active:scale-[0.90]",
-                      isFrozen || isNoShow ? "cursor-default" : "",
+                      slot?.patient ? "cursor-pointer" : isFrozen || isNoShow ? "cursor-default" : "",
                       isSearchMatch
                         ? "bg-primary/40 border-2 border-primary"
                         : isSelected
                           ? "bg-sky-200 border border-sky-500/60"
-                          : statusBg
-                          ? cn(statusBg, !isFrozen && !isNoShow && "hover:opacity-85")
+                          : !isFrozen && !isNoShow && statusBg
+                          ? cn(statusBg, "hover:opacity-85")
                           : "bg-transparent",
                     )}
-                    style={(isFrozen || isNoShow) && slot?.patient ? { backgroundImage: "repeating-linear-gradient(60deg, transparent, transparent 4px, rgba(255,255,255,0.55) 4px, rgba(255,255,255,0.55) 5.5px)" } : undefined}
+                    style={
+                      isFrozenCompleted && slot?.patient
+                        ? {
+                            // Completed visits: pastel green + white diagonal stripes
+                            backgroundColor: '#E8F5E9',
+                            border: '1px solid #A5D6A7',
+                            backgroundImage: 'repeating-linear-gradient(60deg, rgba(255,255,255,0.65) 0px, rgba(255,255,255,0.65) 2px, transparent 2px, transparent 7px)',
+                          }
+                        : isNoShow && slot?.patient
+                        ? {
+                            // No-show: light gray + diagonal hatching.
+                            backgroundColor: '#ececef',
+                            border: '1px solid #b5b5bd',
+                            backgroundImage: 'repeating-linear-gradient(60deg, rgba(120,120,128,0.5) 0px, rgba(120,120,128,0.5) 1px, transparent 1px, transparent 7px)',
+                          }
+                        : undefined
+                    }
                   >
                     {isSelected && (
                       <>
@@ -561,8 +579,7 @@ function WeekGrid({
                     )}
                     {!isSelected && slot?.patient && (
                       <div className="flex items-center justify-center gap-0.5">
-                        {isFrozen && <Check size={12} className="text-status-ready" strokeWidth={3} />}
-                        {isNoShow && !isFrozen && (
+                        {isNoShow && (
                           <>
                             <span className="hidden sm:inline text-[9px] font-extrabold text-status-risk">Н/З</span>
                             <span className="block sm:hidden w-2.5 h-2.5 rounded-sm bg-status-risk/70" />
@@ -639,6 +656,12 @@ function DayGrid({
   };
 
   const matchRef = useRef<HTMLDivElement | null>(null);
+  const [activePopover, setActivePopover] = useState<{ key: string; rect: DOMRect } | null>(null);
+
+  useEffect(() => {
+    setActivePopover(null);
+  }, [date, searchQuery, selectedSlot, realPatients]);
+
   useEffect(() => {
     if (searchQuery.trim() && matchRef.current) {
       matchRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -650,54 +673,105 @@ function DayGrid({
       {slots.map((slot, i) => {
         const isSearchMatch = !!(searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
         const isSelected = !slot.patient && !!selectedSlot && dateToStr(date) === selectedSlot.dateStr && slot.hour === selectedSlot.hour;
+        const isNoShow = !!slot.patient?.noShow || ((slot.patient?.status as string) === "no_show");
+        const popoverKey = `${slot.hour}`;
+        const todayAtStart = new Date();
+        todayAtStart.setHours(0, 0, 0, 0);
+        const dateAtStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const isPastDate = dateAtStart < todayAtStart;
+        const isCompletedVisit = !isNoShow && (!!slot.patient?.completed || (isPastDate && slot.patient?.status === "ready"));
         return (
           <div key={slot.hour} className={cn("relative", isSearchMatch && "rounded-lg overflow-hidden")} ref={isSearchMatch ? matchRef : undefined}>
             {isSearchMatch && (
               <span key={searchQuery} className="absolute inset-0 animate-flash-yellow rounded-lg pointer-events-none z-[1]" />
             )}
             <button
-              onClick={() => {
+              onClick={(e) => {
                 if (slot.patient) {
-                  onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00`, date: dateToStr(date) });
+                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                  setActivePopover(activePopover?.key === popoverKey ? null : { key: popoverKey, rect });
                 } else {
+                  setActivePopover(null);
                   onSlotClick(date, slot.hour);
                 }
               }}
-              title={slot.patient ? `${slot.patient.name}${slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}\n${slot.patient.procedure}\nСтатус: ${statusLabel[slot.patient.status]}${hasConfirmedAllergen(slot.patient.allergies) ? `\n⚠️ АЛЕРГІЯ: ${parseAllergyState(slot.patient.allergies).allergen}` : ""}` : undefined}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
+                "w-full h-[50px] flex items-stretch rounded-lg text-left transition-all duration-200",
                 "active:scale-[0.98] animate-reveal-up",
-                isSelected
-                  ? "bg-primary/15 border border-primary/50"
-                  : slot.patient
-                    ? cn("border-l-2", statusColor[slot.patient.status])
-                    : "hover:bg-accent/60 border border-transparent hover:border-border",
                 isSearchMatch && "ring-2 ring-primary ring-offset-1"
               )}
-              style={{ animationDelay: `${i * 40}ms` }}
+              style={{
+                animationDelay: `${i * 40}ms`,
+              }}
             >
-              <span className="text-sm font-bold text-foreground tabular-nums w-12 shrink-0">
+              <span className="flex w-14 shrink-0 items-center pr-3 text-[16px] font-[500] text-foreground tabular-nums">
                 {String(slot.hour).padStart(2, "0")}:00
               </span>
+              <span className="my-2 w-px shrink-0 bg-[#E5E7EB]" aria-hidden="true" />
               {slot.patient ? (
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[slot.patient.status])} />
+                <div
+                  className={cn(
+                    "ml-3 flex min-w-0 flex-1 items-center gap-2 rounded-[10px] px-3",
+                    isCompletedVisit
+                      ? "border border-[#A5D6A7] bg-[#E8F5E9]"
+                      : isNoShow
+                      ? "border border-[#b5b5bd] bg-[#ececef]"
+                      : cn("border-l-2 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)]", statusColor[slot.patient.status]),
+                    isSelected && "ring-2 ring-primary/40"
+                  )}
+                  style={
+                    isCompletedVisit
+                      ? {
+                          backgroundImage: 'repeating-linear-gradient(60deg, rgba(255,255,255,0.65) 0px, rgba(255,255,255,0.65) 2px, transparent 2px, transparent 7px)',
+                          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
+                        }
+                      : isNoShow
+                      ? {
+                          backgroundImage: 'repeating-linear-gradient(60deg, rgba(120,120,128,0.5) 0px, rgba(120,120,128,0.5) 1px, transparent 1px, transparent 7px)',
+                          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
+                        }
+                      : undefined
+                  }
+                >
+                  <span className={cn("w-2 h-2 rounded-full shrink-0", isNoShow ? "bg-status-risk" : statusDot[slot.patient.status])} />
                   {hasConfirmedAllergen(slot.patient.allergies) && (
                     <AllergyShield size={15} style={{ filter: "drop-shadow(0 0 5px rgba(239,68,68,0.7))" }} className="shrink-0" />
                   )}
-                  <span className="text-[15px] font-semibold text-foreground truncate">
+                  <span className="text-[16px] font-[500] text-foreground truncate min-w-0">
                     {slot.patient.name}{slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}
                   </span>
-                  <span className="text-sm text-muted-foreground truncate ml-auto">
+                  {isNoShow && (
+                    <span className="shrink-0 text-xs font-extrabold text-status-risk">Н/З</span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[14px] text-muted-foreground/60 hidden sm:block">
                     {slot.patient.procedure}
                   </span>
                 </div>
-              ) : isSelected && selectedSlot?.name ? (
-                <span className="text-sm font-bold text-primary truncate">{selectedSlot.name}</span>
               ) : (
-                <span className="text-xs text-muted-foreground/50">— вільно —</span>
+                <div
+                  className={cn(
+                    "ml-3 flex min-w-0 flex-1 items-center rounded-[10px] border border-[#F3F4F6] bg-[#FBFBFC] px-3",
+                    isSelected && "border-primary/40 bg-primary/10"
+                  )}
+                >
+                  {isSelected && selectedSlot?.name ? (
+                    <span className="truncate text-[16px] font-[500] text-primary">{selectedSlot.name}</span>
+                  ) : (
+                    <span className="text-[16px] font-[500] text-[#9CA3AF]">вільно</span>
+                  )}
+                </div>
               )}
             </button>
+            {slot.patient && activePopover?.key === popoverKey && (
+              <SlotPopover
+                slot={slot.patient}
+                hour={slot.hour}
+                dateStr={dateToStr(date)}
+                onClose={() => setActivePopover(null)}
+                onPatientClick={onPatientClick}
+                anchorRect={activePopover.rect}
+              />
+            )}
           </div>
         );
       })}

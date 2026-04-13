@@ -8,18 +8,18 @@ interface ViewToggleProps {
 
 export function ViewToggle({ activeView, onViewChange, disabledOperational = false }: ViewToggleProps) {
   return (
-    <div className="flex rounded-xl bg-[#BAE6FD] p-1 gap-1">
+    <div className="flex h-[50px] gap-2 bg-transparent border-0">
       <button
         onClick={() => { if (!disabledOperational) onViewChange("operational"); }}
         disabled={disabledOperational}
         title={disabledOperational ? "Пошук показує майбутній запис — Оперативка недоступна" : undefined}
         className={cn(
-          "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
+          "flex h-full flex-1 items-center justify-center px-5 rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200",
           disabledOperational
-            ? "opacity-40 cursor-not-allowed"
+            ? "opacity-40 cursor-not-allowed border-[#D1D5DB] bg-[#F3F4F6] text-[#374151]"
             : activeView === "operational"
-              ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)] active:scale-[0.97]"
-              : "font-medium text-foreground/60 hover:text-foreground/80 active:scale-[0.97]"
+              ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)] active:scale-[0.97]"
+              : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3] active:scale-[0.97]"
         )}
       >
         🩺 Оперативка
@@ -27,11 +27,10 @@ export function ViewToggle({ activeView, onViewChange, disabledOperational = fal
       <button
         onClick={() => onViewChange("calendar")}
         className={cn(
-          "flex-1 py-2.5 px-4 rounded-lg text-sm transition-all duration-200",
-          "active:scale-[0.97]",
+          "flex h-full flex-1 items-center justify-center px-5 rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200 active:scale-[0.97]",
           activeView === "calendar"
-            ? "bg-white font-bold text-foreground shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
-            : "font-medium text-foreground/60 hover:text-foreground/80"
+            ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)]"
+            : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3]"
         )}
       >
         📅 Планування

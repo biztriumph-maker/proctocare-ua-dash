@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { ViewToggle } from "@/components/ViewToggle";
-import { StatusFilterBar, type FilterType } from "@/components/StatusFilterBar";
+import { type FilterType } from "@/components/StatusFilterBar";
 import { AIAlertSection } from "@/components/AIAlertSection";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
 import { PatientDetailView } from "@/components/PatientDetailView";
@@ -718,10 +718,8 @@ export default function Index() {
     const { todayIso: currentTodayIso, tomorrowIso: currentTomorrowIso } = getCurrentScheduleDates();
     const stored = loadStoredPatients(currentTodayIso, currentTomorrowIso);
     if (stored) return stored;
-    return [
-      ...MOCK_PATIENTS.map(p => ({ ...p, date: p.date || currentTodayIso })),
-      ...MOCK_TOMORROW.map(p => ({ ...p, date: p.date || currentTomorrowIso })),
-    ].map((p) => ({ ...p }));
+    // Do not pre-fill with mock data — wait for real Supabase load
+    return [];
   });
   const patientsRef = useRef<Patient[]>(patients);
   const selectedPatientRef = useRef<Patient | null>(null);
@@ -885,8 +883,11 @@ export default function Index() {
   const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const doctorPhoneForQuickReply = useMemo(() => getDoctorPhoneForQuickReply(), []);
-  const pendingUnclosedReopenRef = useRef(false);
+  const isClosingWorkflowRef = useRef(false);
+  const closingWorkflowVisitIdRef = useRef<string | null>(null);
   const [unclosedModalReopenTrigger, setUnclosedModalReopenTrigger] = useState(0);
+  const [unclosedModalReopenVisitId, setUnclosedModalReopenVisitId] = useState<string | null>(null);
+  const [visitClosureRefreshKey, setVisitClosureRefreshKey] = useState(0);
 
   useEffect(() => {
     selectedPatientRef.current = selectedPatient;
@@ -970,17 +971,23 @@ export default function Index() {
       );
     });
   }, [patients, todayIso]);
+  const activeTodayPatients = useMemo(() => {
+    return todayPatients.filter((p) => {
+      const status = p.status as string;
+      return !p.completed && !p.noShow && status !== "completed" && status !== "no_show";
+    });
+  }, [todayPatients]);
   const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowIso), [patients, tomorrowIso]);
 
   const counts = useMemo(() => ({
-    total: todayPatients.length,
-    ready: todayPatients.filter((p) => p.status === "ready").length,
-    risk: todayPatients.filter((p) => p.status === "risk").length,
-    attention: todayPatients.filter((p) => p.status === "progress" || p.status === "planning").length,
-  }), [todayPatients]);
+    total: activeTodayPatients.length,
+    ready: activeTodayPatients.filter((p) => p.status === "ready").length,
+    risk: activeTodayPatients.filter((p) => p.status === "risk").length,
+    attention: activeTodayPatients.filter((p) => p.status === "progress" || p.status === "planning").length,
+  }), [activeTodayPatients]);
 
   const filtered = useMemo(() => {
-    let list = todayPatients;
+    let list = activeTodayPatients;
     if (filter !== "all") {
       list = list.filter((p) => statusToFilter[p.status] === filter);
     }
@@ -989,7 +996,7 @@ export default function Index() {
       list = list.filter((p) => p.name.toLowerCase().includes(q));
     }
     return list;
-  }, [filter, todayPatients, searchQuery]);
+  }, [activeTodayPatients, filter, searchQuery]);
 
   const filteredTomorrow = useMemo(() => {
     let list = tomorrowPatients;
@@ -1119,19 +1126,35 @@ export default function Index() {
     const annotatedProtocol = existingProtocol
       ? `🚫 Прийом аннульовано (неявка пацієнта)\n\n${existingProtocol}`
       : "🚫 Прийом аннульовано (неявка пацієнта)";
+    isClosingWorkflowRef.current = false;
+    closingWorkflowVisitIdRef.current = null;
+    setUnclosedModalReopenVisitId(null);
+    setVisitClosureRefreshKey((n) => n + 1);
     setPatients((prev) =>
       prev.map((p) =>
         p.id === patientId
-          ? { ...p, noShow: true, completed: false, status: "risk" as PatientStatus, protocol: annotatedProtocol }
+          ? { ...p, noShow: true, completed: true, status: "risk" as PatientStatus, protocol: annotatedProtocol }
           : p
       )
     );
-    void updatePatientInSupabase(patientId, { noShow: true, completed: false, status: "risk", protocol: annotatedProtocol })
-      .then(() => refreshPatientsFromSupabase("noShow"));
+    setSelectedPatient((prev) => (
+      prev?.id === patientId
+        ? { ...prev, noShow: true, completed: true, status: "risk" as PatientStatus, protocol: annotatedProtocol }
+        : prev
+    ));
+    void updatePatientInSupabase(patientId, { noShow: true, completed: true, status: "no_show", protocol: annotatedProtocol })
+      .then(() => {
+        setVisitClosureRefreshKey((n) => n + 1);
+        return refreshPatientsFromSupabase("noShow");
+      });
     toast("Пацієнта позначено як «Не з'явився»");
   }, [refreshPatientsFromSupabase]);
 
   const handleComplete = useCallback((patientId: string) => {
+    isClosingWorkflowRef.current = false;
+    closingWorkflowVisitIdRef.current = null;
+    setUnclosedModalReopenVisitId(null);
+    setVisitClosureRefreshKey((n) => n + 1);
     setPatients((prev) =>
       prev.map((p) =>
         p.id === patientId
@@ -1139,8 +1162,16 @@ export default function Index() {
           : p
       )
     );
+    setSelectedPatient((prev) => (
+      prev?.id === patientId
+        ? { ...prev, completed: true, noShow: false, status: "ready" as PatientStatus }
+        : prev
+    ));
     void updatePatientInSupabase(patientId, { completed: true, noShow: false, status: "ready" })
-      .then(() => refreshPatientsFromSupabase("complete"));
+      .then(() => {
+        setVisitClosureRefreshKey((n) => n + 1);
+        return refreshPatientsFromSupabase("complete");
+      });
     toast.success("Процедуру позначено як виконану");
   }, [refreshPatientsFromSupabase]);
 
@@ -1311,8 +1342,8 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b-[2px] border-white px-3 sm:px-6 pt-2 pb-2 sm:pt-3 sm:pb-3 space-y-1.5 sm:space-y-2.5 shadow-[0_2px_4px_rgba(0,0,0,0.06)]">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-2 pb-0 sm:pt-3 sm:pb-0 space-y-1.5 sm:space-y-2.5">
+        <div className="flex items-center justify-between max-w-7xl mx-auto px-3 sm:px-6">
           <div>
             <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
             <p className="text-[11px] sm:text-sm text-muted-foreground">
@@ -1335,15 +1366,12 @@ export default function Index() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto space-y-1.5 sm:space-y-2.5">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 space-y-1.5 sm:space-y-2.5">
           <ViewToggle
             activeView={view}
             onViewChange={setView}
             disabledOperational={!!searchQuery.trim()}
           />
-          {view === "operational" && (
-            <StatusFilterBar activeFilter={filter} onFilterChange={setFilter} counts={counts} />
-          )}
           {trainingMode && (
             <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 text-xs text-foreground flex flex-wrap gap-2">
               <strong>Учебный режим</strong>
@@ -1398,7 +1426,7 @@ export default function Index() {
       </header>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4 pb-24">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 pb-24">
         {view === "operational" ? (
           <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-3 sm:gap-5">
             {/* Column 1: AI Alerts */}
@@ -1407,13 +1435,21 @@ export default function Index() {
                 alerts={assistantAlerts}
                 onSendReply={handleSendDashboardReply}
                 doctorPhone={doctorPhoneForQuickReply}
-                onVisitClosed={() => void refreshPatientsFromSupabase("visitClosed")}
+                onVisitClosed={() => {
+                  setVisitClosureRefreshKey((n) => n + 1);
+                  void refreshPatientsFromSupabase("visitClosed");
+                }}
                 reopenTrigger={unclosedModalReopenTrigger}
+                reopenVisitId={unclosedModalReopenVisitId}
+                refreshTrigger={visitClosureRefreshKey}
+                onStartClosingWorkflow={(visitId) => {
+                  isClosingWorkflowRef.current = true;
+                  closingWorkflowVisitIdRef.current = visitId;
+                }}
                 onOpenVisit={(visitId) => {
                   const target = allCalendarPatients.find((p) => p.id === visitId);
                   if (target) {
-                    pendingUnclosedReopenRef.current = true;
-                    handlePatientClick(enrichPatientWithVisitHistory(target, allCalendarPatients));
+                    setSelectedPatient(enrichPatientWithVisitHistory(target, allCalendarPatients));
                   }
                 }}
               />
@@ -1640,6 +1676,7 @@ export default function Index() {
             searchQuery={searchQuery}
             realPatients={allCalendarPatients}
             focusDate={calendarFocusDate}
+            suppressTransientOverlays={!!selectedPatient}
           />
         )}
       </main>
@@ -1686,10 +1723,17 @@ export default function Index() {
           patient={selectedPatient}
           allPatients={allCalendarPatients}
           onClose={() => {
-            if (pendingUnclosedReopenRef.current) {
-              pendingUnclosedReopenRef.current = false;
+            if (
+              isClosingWorkflowRef.current
+              && closingWorkflowVisitIdRef.current
+              && !selectedPatientRef.current?.completed
+              && !selectedPatientRef.current?.noShow
+            ) {
+              setUnclosedModalReopenVisitId(closingWorkflowVisitIdRef.current);
               setUnclosedModalReopenTrigger((n) => n + 1);
             }
+            isClosingWorkflowRef.current = false;
+            closingWorkflowVisitIdRef.current = null;
             setSelectedPatient(null);
           }}
           onDelete={handleDeletePatient}

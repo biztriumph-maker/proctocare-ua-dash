@@ -1,4 +1,4 @@
-import { MessageCircle, ChevronDown, AlertTriangle, Send } from "lucide-react";
+import { MessageCircle, ChevronDown, AlertTriangle, Send, X, Check } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -24,8 +24,18 @@ interface AIAlertSectionProps {
   doctorPhone?: string;
   onVisitClosed?: () => void;
   onOpenVisit?: (visitId: string) => void;
+  onStartClosingWorkflow?: (visitId: string) => void;
   reopenTrigger?: number;
+  reopenVisitId?: string | null;
+  refreshTrigger?: number;
 }
+
+type ModalVisit = {
+  id: string;
+  visit_date: string;
+  procedure?: string;
+  patients?: { full_name?: string; name?: string };
+};
 
 function getDateBadge(date: Date): { label: string; className: string } {
   const now = new Date();
@@ -43,7 +53,22 @@ function getDateBadge(date: Date): { label: string; className: string } {
   return { label: formatted, className: "text-muted-foreground bg-muted font-bold" };
 }
 
-export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed, onOpenVisit, reopenTrigger }: AIAlertSectionProps) {
+function formatDateDots(value: string | Date): string {
+  if (typeof value === "string") {
+    const parts = value.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    }
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(date.getFullYear());
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed, onOpenVisit, onStartClosingWorkflow, reopenTrigger, reopenVisitId, refreshTrigger }: AIAlertSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -51,41 +76,106 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
   const [showDeferred, setShowDeferred] = useState(false);
   const [unclosedVisits, setUnclosedVisits] = useState<any[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalVisitId, setModalVisitId] = useState<string | null>(null);
+  const [modalHasProtocol, setModalHasProtocol] = useState(false);
 
   useEffect(() => {
     if (reopenTrigger !== undefined && reopenTrigger > 0) {
+      setModalVisitId(reopenVisitId || null);
       setModalOpen(true);
     }
-  }, [reopenTrigger]);
+  }, [reopenTrigger, reopenVisitId]);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
     getUnclosedVisits().then((visits) => {
-      // Extra client-side guard: exclude today's visits (only strictly past dates are "unclosed")
-      setUnclosedVisits(visits.filter((v: any) => v.visit_date < today));
+      // Extra client-side guard: only stale, not-final visits may stay in the orange warning flow.
+      setUnclosedVisits(
+        visits.filter((v: any) => (
+          v.visit_date < today
+          && v.status !== 'no_show'
+          && v.status !== 'completed'
+          && v.status !== 'ready'
+          && !v.no_show
+          && !v.completed
+        ))
+      );
     });
-  }, []);
+  }, [refreshTrigger]);
 
-  const closeVisit = async (outcome: 'completed' | 'no_show') => {
-    const visit = unclosedVisits[0];
-    // Update the same boolean fields that handleComplete/handleNoShow use in Index.tsx
-    // so that currentVisitOutcome in PatientDetailView resolves correctly after re-fetch.
-    // NOTE: confirmed_at is NOT in the schema — keep update minimal to avoid silent failures.
-    const dbUpdate = outcome === 'completed'
-      ? { status: 'ready', completed: true, no_show: false }
-      : { status: 'risk', no_show: true, completed: false };
+  useEffect(() => {
+    if (!modalOpen) return;
+    const fallbackId = unclosedVisits[0]?.id;
+    const targetId = modalVisitId || fallbackId;
+    if (!targetId) {
+      setModalHasProtocol(false);
+      return;
+    }
 
+    let alive = true;
+
+    const loadProtocol = async () => {
+      const { data, error } = await supabase
+        .from('visits')
+        .select('protocol')
+        .eq('id', targetId)
+        .single();
+
+      if (!alive) return;
+      if (error) {
+        console.error('Помилка завантаження protocol для модалки:', error);
+        setModalHasProtocol(false);
+        return;
+      }
+
+      const protocolText = typeof data?.protocol === 'string' ? data.protocol.trim() : '';
+      setModalHasProtocol(protocolText.length > 0);
+    };
+
+    void loadProtocol();
+    const pollId = window.setInterval(() => {
+      void loadProtocol();
+    }, 1200);
+
+    return () => {
+      alive = false;
+      window.clearInterval(pollId);
+    };
+  }, [modalOpen, modalVisitId, unclosedVisits]);
+
+  const markVisitNoShow = async () => {
+    const visit = (unclosedVisits.find((v: any) => v.id === modalVisitId) || unclosedVisits[0]) as ModalVisit | undefined;
+    if (!visit?.id) return;
     await supabase
       .from('visits')
-      .update(dbUpdate)
+      .update({ status: 'no_show', no_show: true, completed: true })
       .eq('id', visit.id);
 
-    const updated = unclosedVisits.slice(1);
+    const updated = unclosedVisits.filter((v: any) => v.id !== visit.id);
     setUnclosedVisits(updated);
     if (updated.length === 0) {
       setModalOpen(false);
     }
+    setModalVisitId(null);
+    setModalHasProtocol(false);
     // Notify parent to re-fetch patients so UI reflects the new status immediately
+    onVisitClosed?.();
+  };
+
+  const completeVisit = async () => {
+    const visit = (unclosedVisits.find((v: any) => v.id === modalVisitId) || unclosedVisits[0]) as ModalVisit | undefined;
+    if (!visit?.id) return;
+
+    await supabase
+      .from('visits')
+      .update({ completed: true, status: 'completed' })
+      .eq('id', visit.id);
+
+    const updated = unclosedVisits.filter((v: any) => v.id !== visit.id);
+    setUnclosedVisits(updated);
+    setModalOpen(false);
+    setModalVisitId(null);
+    setModalHasProtocol(false);
     onVisitClosed?.();
   };
 
@@ -316,7 +406,10 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
       {/* ── Unclosed visit warning strip ── */}
       {unclosedVisits.length > 0 && (
         <div
-          onClick={() => setModalOpen(true)}
+          onClick={() => {
+            setModalVisitId(unclosedVisits[0]?.id || null);
+            setModalOpen(true);
+          }}
           style={{
             background: '#e07b00',
             borderRadius: 10,
@@ -350,7 +443,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
       )}
 
       {/* ── Unclosed visit modal ── */}
-      {modalOpen && unclosedVisits[0] && createPortal(
+      {modalOpen && (unclosedVisits.find((v: any) => v.id === modalVisitId) || unclosedVisits[0]) && createPortal(
         <div
           onClick={() => setModalOpen(false)}
           style={{
@@ -365,69 +458,93 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
             style={{
               background: '#fff', borderRadius: 16,
               padding: 22, width: '100%', maxWidth: 360,
+              position: 'relative',
             }}
           >
+            <button
+              onClick={() => setModalOpen(false)}
+              style={{
+                position: 'absolute', top: 14, right: 14,
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              aria-label="Закрити"
+            >
+              <X size={24} color="#8E8E93" />
+            </button>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#1a2b3c', marginBottom: 6 }}>
               Закрити прийом
             </div>
             <div style={{ fontSize: 13, color: '#5a7184', marginBottom: 16, lineHeight: 1.5 }}>
-              Підтвердіть статус прийому. Система зафіксує дату прийому і дату підтвердження окремо.
+              Оберіть дію для цього прийому.
             </div>
-            <div style={{ background: '#f5f8fc', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2b3c', marginBottom: 8 }}>
-                {unclosedVisits[0].patients?.full_name || unclosedVisits[0].patients?.name || '—'}
-              </div>
-              <div style={{ fontSize: 13, color: '#5a7184', lineHeight: 2 }}>
-                Дата прийому: {unclosedVisits[0].visit_date}<br />
-                Дата підтвердження: {new Date().toLocaleDateString('uk-UA')}<br />
-                Процедура: {unclosedVisits[0].procedure ?? '—'}
-              </div>
+            <div style={{ padding: '12px 0', marginBottom: 14 }}>
+              {(() => {
+                const current = (unclosedVisits.find((v: any) => v.id === modalVisitId) || unclosedVisits[0]) as ModalVisit;
+                return (
+                  <>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2b3c', marginBottom: 8 }}>
+                      {current.patients?.full_name || current.patients?.name || '—'}
+                    </div>
+                    <div style={{ fontSize: 13, color: '#5a7184', lineHeight: 2 }}>
+                      Дата прийому: {formatDateDots(current.visit_date)}<br />
+                      Дата підтвердження: {formatDateDots(new Date())}<br />
+                      {((current.procedure || '').trim()) && (
+                        <>Процедура: {current.procedure.trim()}<br /></>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
-            {(() => {
-              const protocol = (unclosedVisits[0].protocol || '').trim();
-              const diagnosis = (unclosedVisits[0].patients?.diagnosis || '').trim();
-              const hasContent = !!(protocol || diagnosis);
-              const preview = (protocol || diagnosis).slice(0, 120);
-              return (
-                <>
-                  {hasContent ? (
-                    <div style={{ fontSize: 12, color: '#3d5166', background: '#f0f4f8', borderRadius: 8, padding: '8px 12px', marginBottom: 16, lineHeight: 1.6 }}>
-                      {preview}{(protocol || diagnosis).length > 120 ? '…' : ''}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: '#9baab8', fontStyle: 'italic', background: '#f5f8fc', borderRadius: 8, padding: '8px 12px', marginBottom: 16 }}>
-                      Протокол не заповнено
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {!hasContent && (
-                      <button onClick={() => { onOpenVisit?.(unclosedVisits[0].id); setModalOpen(false); }} style={{
-                        width: '100%', padding: 14, border: 'none',
-                        borderRadius: 10, fontSize: 15, fontWeight: 600,
-                        cursor: 'pointer', background: '#2563eb', color: '#ffffff',
-                      }}>✏️  Заповнити протокол</button>
-                    )}
-                    {hasContent && (
-                      <button onClick={() => closeVisit('completed')} style={{
-                        width: '100%', padding: 14, border: 'none',
-                        borderRadius: 10, fontSize: 15, fontWeight: 600,
-                        cursor: 'pointer', background: '#1fa866', color: '#ffffff',
-                      }}>✓  Прийом відбувся</button>
-                    )}
-                    <button onClick={() => closeVisit('no_show')} style={{
-                      width: '100%', padding: 14, border: 'none',
-                      borderRadius: 10, fontSize: 15, fontWeight: 600,
-                      cursor: 'pointer', background: '#d94040', color: '#ffffff',
-                    }}>✗  Пацієнт не з'явився</button>
-                    <button onClick={() => setModalOpen(false)} style={{
-                      width: '100%', padding: 10, border: 'none',
-                      borderRadius: 10, fontSize: 13, fontWeight: 400,
-                      cursor: 'pointer', background: 'transparent', color: '#7a90a4',
-                    }}>← Повернутися</button>
-                  </div>
-                </>
-              );
-            })()}
+            {modalHasProtocol ? (
+              <div style={{ color: '#1f8f4d', fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
+                Висновок заповнено. Тепер ви можете завершити візит.
+              </div>
+            ) : (
+              <div style={{ color: '#d32f2f', fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
+                Висновок лікаря ще не заповнено!
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+              {modalHasProtocol ? (
+                <button
+                  onClick={() => completeVisit()}
+                  style={{
+                    width: '100%', padding: 14, border: 'none',
+                    borderRadius: 10, fontSize: 15, fontWeight: 700,
+                    cursor: 'pointer', background: '#16a34a', color: '#ffffff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
+                >
+                  <Check size={18} />
+                  Завершити процедуру
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const current = (unclosedVisits.find((v: any) => v.id === modalVisitId) || unclosedVisits[0]) as ModalVisit;
+                    onStartClosingWorkflow?.(current.id);
+                    setModalOpen(false);
+                    onOpenVisit?.(current.id);
+                  }}
+                  style={{
+                    width: '100%', padding: 14, border: 'none',
+                    borderRadius: 10, fontSize: 15, fontWeight: 600,
+                    cursor: 'pointer', background: '#007AFF', color: '#ffffff',
+                  }}
+                >Заповнити протокол</button>
+              )}
+              <button
+                onClick={() => markVisitNoShow()}
+                style={{
+                  width: '100%', padding: 14,
+                  border: '1.5px solid #8E8E93', borderRadius: 10,
+                  fontSize: 15, fontWeight: 600,
+                  cursor: 'pointer', background: 'transparent', color: '#8E8E93',
+                }}
+              >Пацієнт не з’явився</button>
+            </div>
           </div>
         </div>
       , document.body)}
