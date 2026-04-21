@@ -1099,18 +1099,22 @@ export default function Index() {
 
   const handlePatientClick = useCallback((patient: Patient) => {
     // Priority order for which card to open when same person has multiple records:
-    // 1. Active future visit (date in future, not completed, not noShow)
-    // 2. Waiting planning card (fromForm, planning, no time, today or no date)
-    // 3. The patient card as clicked
+    // 1. Future active visit (date > today, not completed, not noShow)
+    // 2. Today's active visit (not yet completed, not noShow)
+    // 3. Waiting planning card (no date assigned yet)
+    // 4. The patient card as clicked
     const todayIsoNow = getCurrentScheduleDates().todayIso;
     const samePersonVisits = patients.filter((p) => isSamePerson(p, patient));
     const activeFuture = samePersonVisits.find(
       (p) => !p.completed && !p.noShow && p.date && p.date > todayIsoNow
     );
-    const waitingCard = !activeFuture && samePersonVisits.find(
+    const activeTodayVisit = !activeFuture && samePersonVisits.find(
+      (p) => !p.completed && !p.noShow && p.date === todayIsoNow
+    );
+    const waitingCard = !activeFuture && !activeTodayVisit && samePersonVisits.find(
       (p) => p.fromForm && p.status === "planning" && !p.completed && !p.noShow && (!p.time || p.time === "")
     );
-    const target = activeFuture || waitingCard || patient;
+    const target = activeFuture || activeTodayVisit || waitingCard || patient;
 
     const donor = patients
       .filter((p) => p.id !== target.id && isSamePerson(p, target))
@@ -1646,12 +1650,49 @@ export default function Index() {
                 .filter((rp) => personKey(rp) === incomingKey || isSamePerson(rp, { name: p.name, patronymic: p.patronymic }))
                 .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
 
-              const real = exactById || exactByDateTimeName || byTimeAndPerson || byPerson;
-              if (real) {
+              const clicked = exactById || exactByDateTimeName || byTimeAndPerson || byPerson;
+              if (clicked) {
+                // "Single window" rule: if the clicked slot is completed/noShow, redirect to the
+                // active planning visit for the same patient instead of opening the archive card.
+                // Only open the archived record when the patient has no planning visit at all.
+                const todayIsoNow = getCurrentScheduleDates().todayIso;
+                const isArchived = !!(clicked.completed || clicked.noShow);
+
+                const samePerson = (rp: Patient) =>
+                  clicked.patientDbId && rp.patientDbId
+                    ? rp.patientDbId === clicked.patientDbId
+                    : isSamePerson(rp, clicked);
+
+                const activePlanning = isArchived
+                  ? (
+                    // 1. Future planning visit (most relevant)
+                    allCalendarPatients.find((rp) =>
+                      rp.id !== clicked.id && samePerson(rp) &&
+                      !rp.completed && !rp.noShow && !!rp.date && rp.date > todayIsoNow
+                    ) ??
+                    // 2. Today's active visit (not yet completed)
+                    allCalendarPatients.find((rp) =>
+                      rp.id !== clicked.id && samePerson(rp) &&
+                      !rp.completed && !rp.noShow && rp.date === todayIsoNow
+                    ) ??
+                    // 3. Any active visit with a date (past planning not yet closed)
+                    allCalendarPatients.find((rp) =>
+                      rp.id !== clicked.id && samePerson(rp) &&
+                      !rp.completed && !rp.noShow && !!rp.date
+                    ) ??
+                    // 4. Waiting card (no date assigned yet)
+                    allCalendarPatients.find((rp) =>
+                      rp.id !== clicked.id && samePerson(rp) &&
+                      !rp.completed && !rp.noShow && !rp.date
+                    )
+                  )
+                  : undefined;
+
+                const target = activePlanning ?? clicked;
                 const donor = allCalendarPatients
-                  .filter((rp) => rp.id !== real.id && isSamePerson(rp, real))
+                  .filter((rp) => rp.id !== target.id && isSamePerson(rp, target))
                   .sort((a, b) => profileCompleteness(b) - profileCompleteness(a))[0];
-                const hydrated = hydrateMissingProfile(real, donor);
+                const hydrated = hydrateMissingProfile(target, donor);
                 setSelectedPatient(enrichPatientWithVisitHistory(hydrated, allCalendarPatients));
                 return;
               }

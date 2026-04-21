@@ -91,20 +91,8 @@ function pickPatientForSlot(realPatients: Patient[] | undefined, dateStr: string
 
   if (!candidate) return undefined;
 
-  // If the found record is completed/archived, check whether the same patient already
-  // has a newer active visit on a different date. If so, hide the archived slot in the
-  // day/week grid to prevent "duplicate" appearances.
-  if (candidate.completed) {
-    const hasFutureActiveVisit = realPatients.some((p) => {
-      if (p.id === candidate.id) return false;
-      if (p.date === dateStr) return false;
-      if (p.completed || p.noShow) return false;
-      if (candidate.patientDbId && p.patientDbId) return p.patientDbId === candidate.patientDbId;
-      return p.name === candidate.name && (p.patronymic || "") === (candidate.patronymic || "");
-    });
-    if (hasFutureActiveVisit) return undefined;
-  }
-
+  // Completed visits are immutable calendar facts — always show them at their original date,
+  // even when the same patient has a future planning visit on a different date.
   return candidate;
 }
 
@@ -578,18 +566,18 @@ function WeekGrid({
                       </>
                     )}
                     {!isSelected && slot?.patient && (
-                      <div className="flex items-center justify-center gap-0.5">
+                      <div className="absolute inset-0 pointer-events-none">
+                        {hasConfirmedAllergen(slot.patient.allergies) && (
+                          <AllergyShield
+                            size={10}
+                            style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }}
+                            className="absolute left-[8px] top-1/2 -translate-y-1/2 shrink-0"
+                          />
+                        )}
                         {isNoShow && (
-                          <>
-                            <span className="hidden sm:inline text-[9px] font-extrabold text-status-risk">Н/З</span>
-                            <span className="block sm:hidden w-2.5 h-2.5 rounded-sm bg-status-risk/70" />
-                          </>
-                        )}
-                        {!isFrozen && !isNoShow && hasConfirmedAllergen(slot.patient.allergies) && (
-                          <AllergyShield size={11} style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }} className="shrink-0" />
-                        )}
-                        {!isFrozen && !isNoShow && !hasConfirmedAllergen(slot.patient.allergies) && (
-                          <span className="block sm:hidden w-2.5 h-2.5 rounded-sm opacity-80" />
+                          <span className="hidden sm:flex absolute inset-0 items-center justify-center text-[9px] font-extrabold text-status-risk z-10">
+                            Н/З
+                          </span>
                         )}
                       </div>
                     )}
