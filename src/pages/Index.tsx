@@ -1347,7 +1347,7 @@ export default function Index() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-2 pb-0 sm:pt-3 sm:pb-0 space-y-1.5 sm:space-y-2.5">
-        <div className="flex items-center justify-between max-w-7xl mx-auto px-3 sm:px-6">
+        <div className="flex items-center justify-between max-w-[1440px] mx-auto px-3 sm:px-6">
           <div>
             <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
             <p className="text-[11px] sm:text-sm text-muted-foreground">
@@ -1370,7 +1370,7 @@ export default function Index() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 space-y-1.5 sm:space-y-2.5">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-6 space-y-1.5 sm:space-y-2.5">
           <ViewToggle
             activeView={view}
             onViewChange={setView}
@@ -1430,7 +1430,7 @@ export default function Index() {
       </header>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 pb-24">
+      <main className="max-w-[1440px] mx-auto px-3 sm:px-6 pt-4 pb-24">
         {view === "operational" ? (
           <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-3 sm:gap-5">
             {/* Column 1: AI Alerts */}
@@ -1723,7 +1723,7 @@ export default function Index() {
       </main>
 
       {trainingMode && (
-        <section className="max-w-7xl mx-auto px-3 sm:px-6 pb-4">
+        <section className="max-w-[1440px] mx-auto px-3 sm:px-6 pb-4">
           <div className="bg-surface-raised border border-border rounded-xl p-3 text-xs text-muted-foreground">
             <div className="font-bold text-sm text-primary mb-2">Лог навчального режиму</div>
             {trainingLog.length === 0 ? (
