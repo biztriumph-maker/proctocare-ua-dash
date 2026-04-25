@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { getUnclosedVisits } from "@/lib/supabaseSync";
 import { supabase } from "@/lib/supabaseClient";
+import { ALERT_PANEL, UNCLOSED_VISIT_MODAL } from "@/config/agentMessages";
 
 interface AIAlert {
   id: string;
@@ -44,10 +45,10 @@ function getDateBadge(date: Date): { label: string; className: string } {
   const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays <= 0) {
-    return { label: "СЬОГОДНІ", className: "text-white bg-status-risk font-bold" };
+    return { label: ALERT_PANEL.dateBadge.today, className: "text-white bg-status-risk font-bold" };
   }
   if (diffDays === 1) {
-    return { label: "ЗАВТРА", className: "text-white bg-status-progress font-bold" };
+    return { label: ALERT_PANEL.dateBadge.tomorrow, className: "text-white bg-status-progress font-bold" };
   }
   const formatted = date.toLocaleDateString("uk-UA", { day: "numeric", month: "short" }).toUpperCase().replace(".", "");
   return { label: formatted, className: "text-muted-foreground bg-muted font-bold" };
@@ -228,9 +229,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
   };
 
   const doctorPhoneNormalized = normalizePhoneForViber(doctorPhone);
-  const busyAfter1900Template = doctorPhoneNormalized
-    ? `Я зараз зайнятий. Передзвоніть мені, будь ласка, після 19:00 на мій телефон: ${doctorPhoneNormalized}.`
-    : "Я зараз зайнятий. Передзвоніть мені, будь ласка, після 19:00.";
+  const busyAfter1900Template = ALERT_PANEL.busyTemplate(doctorPhoneNormalized || undefined);
 
   const handleCallClick = (alert: AIAlert) => {
     const viberHref = getViberCallHref(alert.patientPhone);
@@ -301,13 +300,13 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-status-progress text-white text-xs font-semibold shrink-0 transition-all duration-200 hover:shadow-card-hover active:scale-[0.96]"
             >
               <MessageCircle size={14} />
-              {isExpanded ? "Згорнути" : "Відповісти"}
+              {isExpanded ? ALERT_PANEL.card.collapseBtn : ALERT_PANEL.card.expandBtn}
             </button>
           </div>
 
           {isExpanded && (
             <div className="space-y-2 pt-1 border-t border-border/60">
-              <p className="text-[11px] font-semibold text-muted-foreground">Останні повідомлення:</p>
+              <p className="text-[11px] font-semibold text-muted-foreground">{ALERT_PANEL.card.lastMessages}</p>
               <div className="space-y-1.5">
                 {alert.chatPreview.map((msg, i) => {
                   const isPatient = msg.sender === "patient";
@@ -325,7 +324,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
                       )}
                     >
                       <p className="text-[10px] font-bold text-muted-foreground mb-0.5">
-                        {isPatient ? "Клієнт" : isDoctor ? "Лікар" : "Асистент"} · {msg.time}
+                        {isPatient ? ALERT_PANEL.senderLabels.patient : isDoctor ? ALERT_PANEL.senderLabels.doctor : ALERT_PANEL.senderLabels.ai} · {msg.time}
                       </p>
                       <p className="text-foreground whitespace-pre-wrap">{renderBoldText(msg.text)}</p>
                     </div>
@@ -341,26 +340,26 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
                     className="w-full px-3 h-9 inline-flex items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-semibold shadow-card hover:bg-emerald-700 active:scale-[0.93] transition-all disabled:opacity-60"
                     title={normalizePhoneForViber(alert.patientPhone)}
                   >
-                    {callingId === alert.id ? "Підключення..." : "Позвонить"}
+                    {callingId === alert.id ? ALERT_PANEL.card.callConnecting : ALERT_PANEL.card.callIdle}
                   </button>
                 </div>
               )}
 
               <div className="rounded-xl border-2 border-primary/35 bg-primary/5 p-2.5 space-y-1.5">
-                <p className="text-[11px] font-semibold text-primary">Відповідь лікаря пацієнту</p>
+                <p className="text-[11px] font-semibold text-primary">{ALERT_PANEL.card.replyTitle}</p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     onClick={() => setDrafts((prev) => ({ ...prev, [alert.id]: busyAfter1900Template }))}
                     className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white border border-primary/25 text-primary hover:bg-primary/10 transition-colors active:scale-[0.96]"
                   >
-                    Швидка відповідь: після 19:00
+                    {ALERT_PANEL.card.quickReplyBtn}
                   </button>
                 </div>
                 <div className="flex items-end gap-2 bg-background rounded-lg border border-border px-2 py-1.5">
                   <textarea
                   value={draft}
                   onChange={(e) => setDrafts((prev) => ({ ...prev, [alert.id]: e.target.value }))}
-                  placeholder="Відповідь лікаря пацієнту..."
+                  placeholder={ALERT_PANEL.card.replyPlaceholder}
                   rows={2}
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none min-h-[44px]"
                 />
@@ -431,7 +430,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
             }}>⚠</div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                Незакритий прийом
+                {UNCLOSED_VISIT_MODAL.bannerTitle}
               </div>
               <div style={{ fontSize: 11, color: '#fde9c0', marginTop: 2 }}>
                 {unclosedVisits[0].patients?.full_name || unclosedVisits[0].patients?.name || '—'} · {unclosedVisits[0].visit_date}
@@ -473,10 +472,10 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
               <X size={24} color="#8E8E93" />
             </button>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#1a2b3c', marginBottom: 6 }}>
-              Закрити прийом
+              {UNCLOSED_VISIT_MODAL.modalTitle}
             </div>
             <div style={{ fontSize: 13, color: '#5a7184', marginBottom: 16, lineHeight: 1.5 }}>
-              Оберіть дію для цього прийому.
+              {UNCLOSED_VISIT_MODAL.modalSubtitle}
             </div>
             <div style={{ padding: '12px 0', marginBottom: 14 }}>
               {(() => {
@@ -499,11 +498,11 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
             </div>
             {modalHasProtocol ? (
               <div style={{ color: '#1f8f4d', fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
-                Висновок заповнено. Тепер ви можете завершити візит.
+                {UNCLOSED_VISIT_MODAL.protocolFilled}
               </div>
             ) : (
               <div style={{ color: '#d32f2f', fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
-                Висновок лікаря ще не заповнено!
+                {UNCLOSED_VISIT_MODAL.protocolEmpty}
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
@@ -518,7 +517,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
                   }}
                 >
                   <Check size={18} />
-                  Завершити процедуру
+                  {UNCLOSED_VISIT_MODAL.btnComplete}
                 </button>
               ) : (
                 <button
@@ -529,21 +528,21 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
                     onOpenVisit?.(current.id);
                   }}
                   style={{
-                    width: '100%', padding: 14, border: 'none',
+                    width: ‘100%’, padding: 14, border: ‘none’,
                     borderRadius: 10, fontSize: 15, fontWeight: 600,
-                    cursor: 'pointer', background: '#007AFF', color: '#ffffff',
+                    cursor: ‘pointer’, background: ‘#007AFF’, color: ‘#ffffff’,
                   }}
-                >Заповнити протокол</button>
+                >{UNCLOSED_VISIT_MODAL.btnFillProtocol}</button>
               )}
               <button
                 onClick={() => markVisitNoShow()}
                 style={{
-                  width: '100%', padding: 14,
-                  border: '1.5px solid #8E8E93', borderRadius: 10,
+                  width: ‘100%’, padding: 14,
+                  border: ‘1.5px solid #8E8E93’, borderRadius: 10,
                   fontSize: 15, fontWeight: 600,
-                  cursor: 'pointer', background: 'transparent', color: '#8E8E93',
+                  cursor: ‘pointer’, background: ‘transparent’, color: ‘#8E8E93’,
                 }}
-              >Пацієнт не з’явився</button>
+              >{UNCLOSED_VISIT_MODAL.btnNoShow}</button>
             </div>
           </div>
         </div>
@@ -551,7 +550,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
       <div className="flex items-center gap-2">
         <AlertTriangle size={16} className={hasUnclosed ? "text-orange-500 shrink-0" : "text-status-progress shrink-0"} />
         <h3 className="text-sm font-semibold text-foreground">
-          {hasUnclosed ? "У вас є незавершені прийоми, що потребують уваги" : "Асистент: потрібна увага"}
+          {hasUnclosed ? ALERT_PANEL.titleWithUnclosed : ALERT_PANEL.titleDefault}
         </h3>
         <span className={cn("ml-auto text-white text-xs font-bold px-2.5 py-0.5 rounded-full tabular-nums", hasUnclosed ? "bg-orange-500" : "bg-status-progress")}>
           {hasUnclosed ? unclosedVisits.length : visible.length}
@@ -561,7 +560,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
         {primaryAlert && renderCard(primaryAlert)}
         {visible.length === 0 && (
           <div className="rounded-lg border border-dashed border-status-progress/30 bg-white/70 px-3 py-3 text-xs text-muted-foreground">
-            Наразі немає звернень, що потребують відповіді лікаря.
+            {ALERT_PANEL.emptyState}
           </div>
         )}
       </div>
@@ -576,7 +575,7 @@ export function AIAlertSection({ alerts, onSendReply, doctorPhone, onVisitClosed
               size={14}
               className={cn("transition-transform duration-200", showDeferred && "rotate-180")}
             />
-            Показати ще ({extraAlerts.length})
+            {ALERT_PANEL.showMore(extraAlerts.length)}
           </button>
           {showDeferred && (
             <div className="space-y-2 animate-reveal-up">

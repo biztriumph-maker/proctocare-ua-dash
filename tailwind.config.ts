@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
@@ -17,6 +18,10 @@ export default {
     },
     extend: {
       colors: {
+        // ─── LOCKED BRAND COLOR — DO NOT CHANGE without explicit user confirmation ───
+        // Unified navy blue for ALL active elements: menu buttons, date badges, calendar toggles.
+        // Reference: CalendarView День/Тиждень toggles. Approved 2026-04-22.
+        "brand-active": "#003366",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -92,12 +97,17 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        breathe: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.5" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        breathe: "breathe 3s ease-in-out infinite",
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

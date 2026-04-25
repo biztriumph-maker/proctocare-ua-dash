@@ -1,8 +1,13 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Plus, Phone, MessageCircle, AlertTriangle } from "lucide-react";
-import { ViewToggle } from "@/components/ViewToggle";
+import {
+  AGENT_CHAT_MESSAGES,
+  AI_SUMMARY_DEFAULTS,
+  TOAST_MESSAGES,
+  BANNER_LABELS,
+  NO_SHOW_ANNOTATION,
+} from "@/config/agentMessages";
+import { Plus, Phone, MessageCircle, AlertTriangle, Activity, CalendarDays, Layers, Bot } from "lucide-react";
 import { type FilterType } from "@/components/StatusFilterBar";
-import { AIAlertSection } from "@/components/AIAlertSection";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
 import { PatientDetailView } from "@/components/PatientDetailView";
 import { CalendarView } from "@/components/CalendarView";
@@ -19,6 +24,12 @@ tomorrow.setDate(tomorrow.getDate() + 1);
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const UA_WEEKDAYS = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п\'ятниця', 'субота'];
+const UA_MONTHS_GEN = ['січня', 'лютого', 'березня', 'квітня', 'травня', 'червня', 'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня'];
+function formatUkrainianDate(d: Date): string {
+  return `${UA_WEEKDAYS[d.getDay()]}, ${d.getDate()} ${UA_MONTHS_GEN[d.getMonth()]}`;
 }
 
 function getCurrentScheduleDates() {
@@ -189,7 +200,7 @@ function buildDashboardAssistantAlerts(patients: Patient[]): DashboardAssistantA
       visitIso,
       patientName: patient ? `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}` : `Пацієнт ${patientId}`,
       patientPhone: patient?.phone,
-      question: (lastPatientMessage?.text || "Пацієнт потребує консультації щодо дієти").trim(),
+      question: (lastPatientMessage?.text || AGENT_CHAT_MESSAGES.fallbackQuestion).trim(),
       appointmentDate: isValidDate ? appointmentDate : new Date(),
       appointmentTime: patient?.time || "--:--",
       chatPreview: session.messages.slice(-3),
@@ -290,7 +301,7 @@ function hydrateMissingProfile(target: Patient, source?: Patient): Patient {
     const current = out[field];
     const fallback = source[field];
     if ((typeof current !== "string" || !current.trim()) && typeof fallback === "string" && fallback.trim()) {
-      out[field] = fallback;
+      (out as Record<string, unknown>)[field] = fallback;
     }
   }
 
@@ -702,6 +713,7 @@ export default function Index() {
   const [showForm, setShowForm] = useState(false);
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
   const [showTomorrow, setShowTomorrow] = useState(false);
+  const [showOverdue, setShowOverdue] = useState(false);
   const [trainingLog, setTrainingLog] = useState<string[]>([]);
   const trainingMode = false;
 
@@ -979,6 +991,18 @@ export default function Index() {
   }, [todayPatients]);
   const tomorrowPatients = useMemo(() => patients.filter(p => p.date === tomorrowIso), [patients, tomorrowIso]);
 
+  const overdueAppointments = useMemo(() => {
+    return patients
+      .filter((p) => {
+        if (!p.date || p.date >= todayIso) return false;
+        const status = p.status as string;
+        return !p.completed && !p.noShow
+            && status !== "completed"
+            && status !== "no_show";
+      })
+      .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  }, [patients, todayIso]);
+
   const counts = useMemo(() => ({
     total: activeTodayPatients.length,
     ready: activeTodayPatients.filter((p) => p.status === "ready").length,
@@ -1028,7 +1052,7 @@ export default function Index() {
       time: entry.time,
       procedure: entry.procedures?.length > 0 ? entry.procedures.join(", ") : entry.procedure,
       status: "planning",
-      aiSummary: entry.aiPrep ? "Асистент надсилає інструкції..." : "Очікує підготовки",
+      aiSummary: entry.aiPrep ? AI_SUMMARY_DEFAULTS.withAiPrep : AI_SUMMARY_DEFAULTS.withoutAiPrep,
       birthDate: entry.birthDate,
       phone: entry.phone,
       primaryNotes: entry.notes,
@@ -1048,8 +1072,8 @@ export default function Index() {
     setPatients((prev) => [...prev, newPatient]);
     setSelectedPatient(newPatient);
     setNewlyCreatedId(newId);
-    toast.success(`Запис створено: ${entry.name} о ${entry.time}`, {
-      description: entry.aiPrep ? "Асистент розпочав підготовку" : undefined,
+    toast.success(TOAST_MESSAGES.entryCreated(entry.name, entry.time), {
+      description: entry.aiPrep ? TOAST_MESSAGES.aiPrepStarted : undefined,
     });
     logTraining(`Нова навчальна запис: ${entry.name} ${entry.date} ${entry.time}`);
     setTimeout(() => setNewlyCreatedId(null), 4500);
@@ -1088,13 +1112,13 @@ export default function Index() {
     setPatients((prev) =>
       prev.map((p) =>
         p.id === patientId
-          ? { ...p, status: "progress" as PatientStatus, aiSummary: "Лікар відповів у чаті, очікуємо реакцію пацієнта" }
+          ? { ...p, status: "progress" as PatientStatus, aiSummary: AI_SUMMARY_DEFAULTS.afterDoctorReply }
           : p
       )
     );
 
     setAssistantAlerts((prev) => prev.filter((a) => a.id !== alertId));
-    toast.success(`Відповідь надіслано пацієнту${patientName ? `: ${patientName}` : ""}`);
+    toast.success(TOAST_MESSAGES.replySent(patientName));
   }, [assistantAlerts]);
 
   const handlePatientClick = useCallback((patient: Patient) => {
@@ -1128,8 +1152,8 @@ export default function Index() {
     const current = patientsRef.current.find((p) => p.id === patientId);
     const existingProtocol = current?.protocol?.trim() || "";
     const annotatedProtocol = existingProtocol
-      ? `🚫 Прийом аннульовано (неявка пацієнта)\n\n${existingProtocol}`
-      : "🚫 Прийом аннульовано (неявка пацієнта)";
+      ? `${NO_SHOW_ANNOTATION}\n\n${existingProtocol}`
+      : NO_SHOW_ANNOTATION;
     isClosingWorkflowRef.current = false;
     closingWorkflowVisitIdRef.current = null;
     setUnclosedModalReopenVisitId(null);
@@ -1297,7 +1321,7 @@ export default function Index() {
       date: newVisitData.date,
       procedure: donor.procedure,
       status: "planning",
-      aiSummary: "Очікує підготовки",
+      aiSummary: AI_SUMMARY_DEFAULTS.withoutAiPrep,
       fromForm: true,
       completed: false,
       noShow: false,
@@ -1323,12 +1347,6 @@ export default function Index() {
     await refreshPatientsFromSupabase("createNewVisit");
   }, [refreshPatientsFromSupabase, todayIso]);
 
-  const tomorrowDate = new Date();
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = tomorrowDate.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "short" });
-
-  const tomorrowRiskCount = tomorrowPatients.filter(p => p.status === "risk").length;
-
   const allCalendarPatients = useMemo(() => [
     ...patients,
   ], [patients]);
@@ -1344,14 +1362,14 @@ export default function Index() {
   }, [searchQuery]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#f0f4f8]">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-2 pb-0 sm:pt-3 sm:pb-0 space-y-1.5 sm:space-y-2.5">
+      <header className="sticky top-0 z-30 bg-[#f0f4f8]/90 backdrop-blur-md pt-2 pb-2 sm:pt-3 sm:pb-3">
         <div className="flex items-center justify-between max-w-[1440px] mx-auto px-3 sm:px-6">
           <div>
-            <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight tracking-tight">ProctoCare</h1>
+            <h1 className="text-base sm:text-xl font-semibold text-foreground leading-tight tracking-tight">ProctoCare</h1>
             <p className="text-[11px] sm:text-sm text-muted-foreground">
-              {new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })}
+              {formatUkrainianDate(new Date())}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1369,16 +1387,10 @@ export default function Index() {
             </button>
           </div>
         </div>
-
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-6 space-y-1.5 sm:space-y-2.5">
-          <ViewToggle
-            activeView={view}
-            onViewChange={setView}
-            disabledOperational={!!searchQuery.trim()}
-          />
-          {trainingMode && (
+        {trainingMode && (
+          <div className="max-w-[1440px] mx-auto px-3 sm:px-6 mt-2">
             <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 text-xs text-foreground flex flex-wrap gap-2">
-              <strong>Учебный режим</strong>
+              <strong>Навчальний режим</strong>
               <button
                 onClick={() => {
                   const id = `training-${Date.now()}`;
@@ -1389,7 +1401,7 @@ export default function Index() {
                     time: "12:00",
                     procedure: "Тестова процедура",
                     status: "progress",
-                    aiSummary: "Тренувальна запис",
+                    aiSummary: AI_SUMMARY_DEFAULTS.trainingEntry,
                     birthDate: "01.01.1980",
                     phone: "+380501234567",
                     primaryNotes: "Пробна запис",
@@ -1425,68 +1437,130 @@ export default function Index() {
                 Очистити лог
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
       {/* Content */}
-      <main className="max-w-[1440px] mx-auto px-3 sm:px-6 pt-4 pb-24">
-        {view === "operational" ? (
-          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] xl:grid-cols-[360px_1fr] gap-3 sm:gap-5">
-            {/* Column 1: AI Alerts */}
-            <div className="space-y-3 sm:space-y-4">
-              <AIAlertSection
-                alerts={assistantAlerts}
-                onSendReply={handleSendDashboardReply}
-                doctorPhone={doctorPhoneForQuickReply}
-                onVisitClosed={() => {
-                  setVisitClosureRefreshKey((n) => n + 1);
-                  void refreshPatientsFromSupabase("visitClosed");
-                }}
-                reopenTrigger={unclosedModalReopenTrigger}
-                reopenVisitId={unclosedModalReopenVisitId}
-                refreshTrigger={visitClosureRefreshKey}
-                onStartClosingWorkflow={(visitId) => {
-                  isClosingWorkflowRef.current = true;
-                  closingWorkflowVisitIdRef.current = visitId;
-                }}
-                onOpenVisit={(visitId) => {
-                  const target = allCalendarPatients.find((p) => p.id === visitId);
-                  if (target) {
-                    setSelectedPatient(enrichPatientWithVisitHistory(target, allCalendarPatients));
-                  }
-                }}
-              />
+      <main className="max-w-7xl mx-auto px-2 sm:px-6 pt-4 pb-24">
 
-              {/* Tomorrow card — same size as AI alerts */}
-              <button
-                onClick={() => setShowTomorrow(!showTomorrow)}
-                className={cn(
-                  "w-full rounded-xl p-4 text-center transition-all duration-200 active:scale-[0.98] animate-reveal-up",
-                  showTomorrow
-                    ? "bg-[hsl(263,70%,50%)] text-white shadow-card"
-                    : "bg-[hsl(270,80%,90%)] border-2 border-[hsl(270,70%,80%)] shadow-card hover:shadow-card-hover"
-                )}
-              >
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <h3 className={cn("text-sm font-semibold", showTomorrow ? "text-white" : "text-foreground")}>
-                    Завтра · {tomorrowStr}
-                  </h3>
-                  {tomorrowRiskCount > 0 && (
-                    <span className="w-6 h-6 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold shadow-sm">
-                      {tomorrowRiskCount}
-                    </span>
-                  )}
-                </div>
-                <p className={cn("text-xs", showTomorrow ? "text-white/80" : "text-muted-foreground")}>
-                  {tomorrowPatients.length} записів · {tomorrowRiskCount > 0 ? `${tomorrowRiskCount} потребує уваги` : "Все в нормі"}
-                </p>
-              </button>
+        {/* Amber banner — прострочені прийоми за минулі дні */}
+        {view === "operational" && overdueAppointments.length > 0 && (
+          <button
+            onClick={() => {
+              setView("operational");
+              setShowTomorrow(false);
+              setShowOverdue(true);
+              setFilter("all");
+              setSearchQuery("");
+            }}
+            className="w-full flex items-center justify-between bg-orange-100 border border-orange-300 rounded-2xl px-4 py-2.5 mb-3 cursor-pointer text-left active:scale-[0.99] shadow-sm"
+          >
+            <span className="text-orange-900 text-[14px] font-[500]">
+              {BANNER_LABELS.overdueBanner}
+            </span>
+            <span className="ml-3 shrink-0 w-7 h-7 bg-white border-2 border-orange-400 rounded-full flex items-center justify-center text-orange-800 text-[13px] font-bold shadow-sm">
+              {overdueAppointments.length}
+            </span>
+          </button>
+        )}
+
+        {/* 2×2 Dashboard — навігація, стиль як День/Тиждень у календарі */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {/* Оперативка — активна тільки коли немає showTomorrow і showOverdue */}
+          <button
+            onClick={() => { if (!searchQuery.trim()) { setView("operational"); setShowTomorrow(false); setShowOverdue(false); setFilter("all"); } }}
+            className={cn(
+              "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
+              view === "operational" && !showTomorrow && !showOverdue && !searchQuery.trim()
+                ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
+                : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400",
+              !!searchQuery.trim() && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <Activity size={16} strokeWidth={1.75} />
+            Оперативка
+          </button>
+
+          {/* Планування */}
+          <button
+            onClick={() => setView("calendar")}
+            className={cn(
+              "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
+              view === "calendar"
+                ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
+                : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400"
+            )}
+          >
+            <Layers size={16} strokeWidth={1.75} />
+            Планування
+          </button>
+
+          {/* Завтра — активна (синя) коли showTomorrow */}
+          {view === "operational" && (
+            <button
+              onClick={() => { setView("operational"); setShowTomorrow(true); setShowOverdue(false); }}
+              className={cn(
+                "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
+                showTomorrow
+                  ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
+                  : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400"
+              )}
+            >
+              <CalendarDays size={16} strokeWidth={1.75} />
+              Завтра
+            </button>
+          )}
+
+          {/* Агент — сірий за замовчуванням, блакитний при сповіщеннях */}
+          {view === "operational" && (
+            <div className={cn(
+              "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300",
+              assistantAlerts.length > 0
+                ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]"
+                : "border-slate-300 bg-slate-200 text-[#1e293b]"
+            )}>
+              <Bot size={16} strokeWidth={1.75} />
+              Агент
             </div>
+          )}
+        </div>
 
-            {/* Column 2: Patient Timeline — toggles between today and tomorrow */}
-            <div className="space-y-2 sm:space-y-3">
-              {showTomorrow ? (
+        {view === "operational" ? (
+          <div className="space-y-2 sm:space-y-3">
+              {showOverdue ? (
+                <>
+                  <div className="flex justify-center mt-8 mb-5">
+                    <div className="inline-flex items-center px-7 py-2 rounded-xl bg-orange-400/95 text-[#431407] font-bold text-lg shadow-[0_2px_12px_rgba(249,115,22,0.25)]">
+                      {BANNER_LABELS.overdueSection}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {overdueAppointments.map((patient, i) => (
+                      <div key={patient.id} className="min-w-0">
+                        {patient.date && (
+                          <p className="text-xs font-semibold text-[#431407] px-1 mb-1">
+                            📅 {isoToDisplayDate(patient.date)}
+                          </p>
+                        )}
+                        <PatientCard
+                          patient={patient}
+                          index={i}
+                          onClick={handlePatientClick}
+                          onNoShow={handleNoShow}
+                          onComplete={handleComplete}
+                          onAfterComplete={() => handleAfterComplete(patient.id)}
+                        />
+                      </div>
+                    ))}
+                    {overdueAppointments.length === 0 && (
+                      <div className="col-span-2 text-center py-12 text-muted-foreground text-sm">
+                        Немає прострочених записів
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : showTomorrow ? (
                 <>
                   {/* Проблематика block */}
                   {(() => {
@@ -1526,11 +1600,13 @@ export default function Index() {
                     ) : null;
                   })()}
 
-                  {/* Tomorrow schedule */}
-                  <h3 className="text-sm font-bold text-foreground mt-3">
-                    Записи на завтра
-                  </h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                  {/* Tomorrow date badge */}
+                  <div className="flex justify-center mt-8 mb-5">
+                    <div className="inline-flex items-center px-7 py-2 rounded-xl bg-brand-active text-white font-bold text-lg shadow-[0_2px_8px_rgba(0,51,102,0.18)]">
+                      {tomorrow.toLocaleDateString("uk-UA", { day: "numeric", month: "long" })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
                     {(() => {
                       const morning = filteredTomorrow.filter(p => parseInt(p.time) < 13);
                       const afternoon = filteredTomorrow.filter(p => parseInt(p.time) >= 13);
@@ -1542,12 +1618,12 @@ export default function Index() {
                       }
                       return (
                         <>
-                          <div className="space-y-2 sm:space-y-3">
+                          <div className="space-y-2 sm:space-y-3 max-w-[550px] w-full">
                             {morning.map((patient, i) => (
                               <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} />
                             ))}
                           </div>
-                          <div className="space-y-2 sm:space-y-3">
+                          <div className="space-y-2 sm:space-y-3 max-w-[550px] w-full">
                             {afternoon.map((patient, i) => (
                               <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} />
                             ))}
@@ -1559,13 +1635,12 @@ export default function Index() {
                 </>
               ) : (
                 <>
-                  <div className="hidden md:flex items-baseline gap-3 mb-1">
-                    <h3 className="text-lg font-bold text-foreground">Сьогоднішні записи</h3>
-                    <span className="text-base font-semibold text-primary">
+                  <div className="flex justify-center mt-8 mb-5">
+                    <div className="inline-flex items-center px-7 py-2 rounded-xl bg-brand-active text-white font-bold text-lg shadow-[0_2px_8px_rgba(0,51,102,0.18)]">
                       {new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long" })}
-                    </span>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
                     {(() => {
                       const morning = filtered.filter(p => parseInt(p.time) < 13);
                       const afternoon = filtered.filter(p => parseInt(p.time) >= 13);
@@ -1577,12 +1652,12 @@ export default function Index() {
                       }
                       return (
                         <>
-                          <div className="space-y-2 sm:space-y-3">
+                          <div className="space-y-2 sm:space-y-3 max-w-[550px] w-full">
                             {morning.map((patient, i) => (
                               <PatientCard key={patient.id} patient={patient} index={i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} onAfterComplete={() => handleAfterComplete(patient.id)} />
                             ))}
                           </div>
-                          <div className="space-y-2 sm:space-y-3">
+                          <div className="space-y-2 sm:space-y-3 max-w-[550px] w-full">
                             {afternoon.map((patient, i) => (
                               <PatientCard key={patient.id} patient={patient} index={morning.length + i} onClick={handlePatientClick} isNew={patient.id === newlyCreatedId} onNoShow={handleNoShow} onComplete={handleComplete} onAfterComplete={() => handleAfterComplete(patient.id)} />
                             ))}
@@ -1598,7 +1673,6 @@ export default function Index() {
                   )}
                 </>
               )}
-            </div>
           </div>
         ) : (
           <CalendarView
@@ -1704,7 +1778,7 @@ export default function Index() {
                 time: p.time,
                 procedure: p.procedure,
                 status: p.status,
-                aiSummary: "Дані з календаря",
+                aiSummary: AI_SUMMARY_DEFAULTS.fromCalendar,
                 date: p.date || todayIso,
                 fromForm: true,
               };

@@ -168,10 +168,10 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         <button
           onClick={() => setViewMode("day")}
           className={cn(
-            "flex h-full flex-1 items-center justify-center rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200 active:scale-[0.97]",
+            "flex h-full flex-1 items-center justify-center rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
             viewMode === "day"
-              ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)]"
-              : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3]"
+              ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
+              : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400"
           )}
         >
           День
@@ -179,10 +179,10 @@ export function CalendarView({ onSlotClick, onPatientClick, searchQuery = "", se
         <button
           onClick={() => setViewMode("week")}
           className={cn(
-            "flex h-full flex-1 items-center justify-center rounded-[12px] border text-[18px] font-[500] tracking-[0.02em] transition-all duration-200 active:scale-[0.97]",
+            "flex h-full flex-1 items-center justify-center rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
             viewMode === "week"
-              ? "border-[#003366] bg-[#003366] text-white shadow-[0_2px_8px_rgba(0,51,102,0.15)]"
-              : "border-[#D1D5DB] bg-[#F3F4F6] text-[#374151] hover:border-[#C4CAD3] hover:bg-[#ECEFF3]"
+              ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
+              : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400"
           )}
         >
           Тиждень

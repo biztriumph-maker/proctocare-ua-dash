@@ -15,7 +15,7 @@ export function AllergyShield({ size = 14, className, style }: { size?: number; 
   );
 }
 
-export type PatientStatus = "planning" | "progress" | "risk" | "ready";
+export type PatientStatus = "planning" | "progress" | "risk" | "ready" | "yellow";
 
 export interface HistoryEntry {
   value: string;
@@ -53,6 +53,7 @@ export interface Patient {
   paid?: boolean;
   noShow?: boolean;
   completed?: boolean;
+  drugChoice?: 'fortrans' | 'izyklin';
 }
 
 interface PatientCardProps {
@@ -68,8 +69,9 @@ interface PatientCardProps {
 const statusConfig: Record<PatientStatus, { border: string; dot: string; label: string; bg: string; bgHex: string; textHex: string }> = {
   planning: { border: "border-l-slate-500", dot: "bg-slate-500", label: "Планування", bg: "bg-slate-300", bgHex: "#CBD5E1", textHex: "#475569" },
   progress: { border: "border-l-yellow-500", dot: "bg-yellow-500", label: "Підготовка", bg: "bg-yellow-100", bgHex: "#FEF3C7", textHex: "#D97706" },
-  risk: { border: "border-l-red-500", dot: "bg-red-500", label: "Ризик", bg: "bg-red-100", bgHex: "#FEE2E2", textHex: "#DC2626" },
-  ready: { border: "border-l-green-500", dot: "bg-green-500", label: "Допущено", bg: "bg-green-100", bgHex: "#DCFCE7", textHex: "#16A34A" },
+  yellow:   { border: "border-l-yellow-500", dot: "bg-yellow-500", label: "Підготовка", bg: "bg-yellow-100", bgHex: "#FEF3C7", textHex: "#D97706" },
+  risk:     { border: "border-l-red-500", dot: "bg-red-500", label: "Ризик", bg: "bg-red-100", bgHex: "#FEE2E2", textHex: "#DC2626" },
+  ready:    { border: "border-l-green-500", dot: "bg-green-500", label: "Допущено", bg: "bg-green-100", bgHex: "#DCFCE7", textHex: "#16A34A" },
 };
 
 /**
@@ -85,6 +87,9 @@ export function computePatientStatus(patient: Patient): PatientStatus {
 
   // Rule 3: Ready — patient confirmed all steps
   if (patient.completed || patient.status === "ready") return "ready";
+
+  // Rule 2.5: Yellow — assistant-led preparation actively started
+  if (patient.status === "yellow") return "yellow";
 
   // Date-based rules
   if (patient.date) {
@@ -143,7 +148,7 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
   };
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col w-full">
       {/* Confirmation modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in" onClick={() => setConfirmAction(null)}>
@@ -223,9 +228,9 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
       {/* Card */}
       <div
         className={cn(
-          "w-full text-left bg-surface-raised rounded-lg border-l-4 px-3 py-2 sm:px-4 sm:py-3 sm:rounded-xl",
-          "shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)]",
-          "transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]",
+          "w-full text-left bg-surface-raised rounded-2xl border-l-4 px-3 py-2 sm:px-4 sm:py-2",
+          "shadow-[0_6px_44px_0px_rgba(0,0,0,0.06)]",
+          "transition-all duration-300 hover:shadow-[0_12px_60px_0px_rgba(0,0,0,0.10)] hover:-translate-y-0.5",
           "animate-reveal-up",
           patient.completed
             ? "border-l-status-ready border-2 border-status-ready/50 bg-[hsl(142,60%,93%)]"
@@ -241,10 +246,11 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
           className="w-full text-left active:scale-[0.98] transition-transform"
         >
           <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1">
+            <div className="min-w-0 flex-1 space-y-1">
+              {/* Time + status badge — left-aligned markers */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <Clock size={12} className="text-muted-foreground shrink-0" />
-                <span className="text-[11px] font-semibold text-foreground tabular-nums">
+                <span className="text-[13px] font-bold text-foreground tabular-nums">
                   {patient.time}
                 </span>
                 <span className={cn(
@@ -261,22 +267,23 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                   <Check size={14} className="text-status-ready" strokeWidth={3} />
                 )}
               </div>
-              <h4 className={cn("flex items-center gap-1.5 text-[13px] sm:text-sm font-semibold leading-tight", patient.noShow ? "text-muted-foreground line-through" : "text-foreground")}>
-                <span className={cn("shrink-0 w-2 h-2 rounded-full", statusConfig[computePatientStatus(patient)].dot)} />
-                {hasConfirmedAllergen(patient.allergies) && (
-                  <AllergyShield
-                    size={12}
-                    className="shrink-0"
-                    style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.55))" }}
-                  />
-                )}
-                <span className="truncate">{patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}</span>
-              </h4>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[11px] text-muted-foreground">{patient.procedure}</span>
-                {!patient.noShow && (
-                  <span className="text-[11px] text-primary font-medium truncate">· {patient.aiSummary}</span>
-                )}
+              {/* Name + procedure — centered */}
+              <div className="flex flex-col items-center text-center py-1 sm:py-0.5">
+                <h4 className={cn(
+                  "flex items-center gap-1.5 text-base font-semibold leading-tight",
+                  patient.noShow ? "text-muted-foreground line-through" : "text-foreground"
+                )}>
+                  <span className={cn("shrink-0 w-2 h-2 rounded-full", statusConfig[computePatientStatus(patient)].dot)} />
+                  {hasConfirmedAllergen(patient.allergies) && (
+                    <AllergyShield
+                      size={13}
+                      className="shrink-0"
+                      style={{ filter: "drop-shadow(0 0 4px rgba(239,68,68,0.55))" }}
+                    />
+                  )}
+                  <span>{patient.name}{patient.patronymic ? ` ${patient.patronymic}` : ""}</span>
+                </h4>
+                <span className="text-xs text-slate-400 mt-1">{patient.procedure}</span>
               </div>
             </div>
           </div>
@@ -284,16 +291,16 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
       </div>
 
       <div className={cn(
-        "flex items-center gap-2 mt-2",
+        "flex items-center gap-1.5 mt-2 mb-1",
         patient.completed && "invisible pointer-events-none"
       )}>
           {onComplete && (
             <button
               onClick={handleCompleteClick}
               disabled={checkingProtocol}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-ready hover:border-status-ready/60 hover:bg-status-ready-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-ready border border-border disabled:opacity-60 disabled:pointer-events-none"
+              className="flex-1 flex items-center justify-center gap-1 h-10 text-[11px] font-semibold whitespace-nowrap text-muted-foreground bg-slate-50 hover:text-status-ready hover:border-status-ready/40 hover:bg-status-ready-bg px-3 rounded-xl transition-colors active:scale-[0.97] active:text-status-ready border border-border disabled:opacity-60 disabled:pointer-events-none"
             >
-              {checkingProtocol ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+              {checkingProtocol ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
               Прийом завершено
             </button>
           )}
@@ -303,9 +310,9 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
                 e.stopPropagation();
                 setConfirmAction("noshow");
               }}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground bg-transparent hover:text-status-risk hover:border-status-risk/60 hover:bg-status-risk-bg px-3 py-1.5 rounded-lg transition-colors active:scale-[0.95] active:text-status-risk border border-border"
+              className="flex-1 flex items-center justify-center gap-1 h-10 text-[11px] font-semibold whitespace-nowrap text-muted-foreground bg-slate-50 hover:text-status-risk hover:border-status-risk/40 hover:bg-status-risk-bg px-3 rounded-xl transition-colors active:scale-[0.97] active:text-status-risk border border-border"
             >
-              <X size={12} strokeWidth={3} />
+              <X size={13} strokeWidth={3} />
               Не з'явився
             </button>
           )}

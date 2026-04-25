@@ -47,6 +47,7 @@ export type VisitRow = {
   is_test?: boolean;
   files?: Array<{ id: string; name: string; type: "doctor" | "patient"; date: string; url?: string; storageKey?: string; mimeType?: string }>;
   protocol_history?: Array<{ value: string; timestamp: string; date: string }>;
+  drug_choice?: 'fortrans' | 'izyklin';
 };
 
 // Перетворює дані з Supabase у формат дашборду
@@ -64,7 +65,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     time: visit.visit_time || '',
     date: visit.visit_date,
     procedure: visit.procedure || '',
-    status: (visit.status || 'planning') as 'planning' | 'ready' | 'progress' | 'risk',
+    status: (visit.status || 'planning') as 'planning' | 'ready' | 'progress' | 'risk' | 'yellow',
     aiSummary: visit.ai_summary || '',
     notes: visit.notes,
     primaryNotes: visit.primary_notes,
@@ -74,6 +75,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     completed: visit.completed,
     files: visit.files || [],
     protocolHistory: visit.protocol_history ?? undefined,
+    drugChoice: visit.drug_choice,
   };
 }
 
@@ -339,6 +341,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('time' in updates) visitUpdate.visit_time = updates.time;
   if ('files' in updates) visitUpdate.files = updates.files;
   if ('protocolHistory' in updates) visitUpdate.protocol_history = updates.protocolHistory;
+  if ('drugChoice' in updates) visitUpdate.drug_choice = updates.drugChoice;
 
   if (Object.keys(visitUpdate).length > 0) {
     console.log("📝 Updating visit:", visitUpdate);

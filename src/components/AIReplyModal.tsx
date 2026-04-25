@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Send, X, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { REPLY_MODAL_QUICK_ACTIONS, REPLY_MODAL_LABELS } from "@/config/agentMessages";
 
 interface ChatMessage {
   sender: "ai" | "patient";
@@ -24,11 +25,7 @@ interface AIReplyModalProps {
   onSend: (id: string, message: string) => void;
 }
 
-const QUICK_ACTIONS = [
-  "Так, можна",
-  "Ні, замініть на…",
-  "Зателефонуйте в клініку",
-];
+const QUICK_ACTIONS = REPLY_MODAL_QUICK_ACTIONS;
 
 export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
   const [text, setText] = useState("");
@@ -85,7 +82,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
         <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/15">
           <CalendarDays size={14} className="text-primary shrink-0" />
           <p className="text-[12px] font-medium text-foreground">
-            Процедура призначена на:{" "}
+            {REPLY_MODAL_LABELS.appointmentBanner}{" "}
             <span className="font-bold text-primary">
               {formattedDate}, {alert.appointmentTime}
             </span>
@@ -105,7 +102,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
               )}
             >
               <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">
-                {msg.sender === "patient" ? "Пацієнт" : "Асистент"} · {msg.time}
+                {msg.sender === "patient" ? REPLY_MODAL_LABELS.patientSenderLabel : REPLY_MODAL_LABELS.assistantSenderLabel} · {msg.time}
               </p>
               <p>{msg.text}</p>
             </div>
@@ -114,7 +111,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
           {/* The unresolved question */}
           <div className="rounded-xl px-3 py-2 text-[12px] leading-relaxed max-w-[85%] bg-status-risk/10 border border-status-risk/20 mr-auto">
             <p className="text-[10px] font-semibold text-status-risk mb-0.5">
-              Питання без відповіді
+              {REPLY_MODAL_LABELS.unansweredLabel}
             </p>
             <p className="text-foreground">{alert.question}</p>
           </div>
@@ -139,7 +136,7 @@ export function AIReplyModal({ alert, onClose, onSend }: AIReplyModalProps) {
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Ваша відповідь…"
+              placeholder={REPLY_MODAL_LABELS.replyPlaceholder}
               rows={2}
               className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[40px] max-h-24"
             />

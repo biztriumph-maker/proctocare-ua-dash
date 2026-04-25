@@ -1,4 +1,14 @@
 ﻿import { useState, useRef, useEffect, useMemo } from "react";
+import {
+  AGENT_CHAT_MESSAGES,
+  PATIENT_QUICK_REPLIES,
+  AI_SUMMARY_BY_STATUS,
+  EVENT_LOG_LABELS,
+  classifyProcedureGroup,
+  ROADMAP_MESSAGES,
+} from "@/config/agentMessages";
+import { supabase } from "@/lib/supabaseClient";
+import { isSupabaseDataMode } from "@/lib/supabaseSync";
 import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw, Loader2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
@@ -21,7 +31,11 @@ interface ChatMessage {
   text: string;
   time: string;
   unanswered?: boolean;
-  quickReply?: { yes: string; no: string; context?: "greeting" | "diet" };
+  quickReply?: {
+    yes: string;
+    no?: string;
+    context?: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved";
+  };
 }
 
 interface PatientDetailViewProps {
@@ -38,23 +52,26 @@ interface PatientDetailViewProps {
 
 const statusLabel: Record<PatientStatus, string> = {
   planning: "Планування",
-  progress: "Підготовка триває",
-  risk: "Потребує уваги",
-  ready: "Допущено до процедури",
+  progress: "Підготовка",
+  yellow:   "Підготовка",
+  risk:     "Потребує уваги",
+  ready:    "Допущено до процедури",
 };
 
 const statusDot: Record<PatientStatus, string> = {
   planning: "bg-slate-400",
   progress: "bg-yellow-500",
-  risk: "bg-red-500",
-  ready: "bg-green-500",
+  yellow:   "bg-yellow-500",
+  risk:     "bg-red-500",
+  ready:    "bg-green-500",
 };
 
 const statusBadgeBg: Record<PatientStatus, string> = {
   planning: "bg-slate-100 text-slate-700",
   progress: "bg-yellow-100 text-yellow-800",
-  risk: "bg-red-100 text-red-700",
-  ready: "bg-green-100 text-green-700",
+  yellow:   "bg-yellow-100 text-yellow-800",
+  risk:     "bg-red-100 text-red-700",
+  ready:    "bg-green-100 text-green-700",
 };
 
 function calcAge(birthDate: string): { age: number | null; ageStr: string } {
@@ -155,184 +172,38 @@ function getInitialActiveProtocol(patient: Patient, activeVisitIso: string): str
   return patient.protocol || "";
 }
 
-type DoctorProfile = {
-  surname: string;
-  firstName: string;
-  middleName: string;
-};
+// ── Текстовий двигун асистента (Блок 5 / 5.1 ТЗ) ─────────────────────────────
+// Статуси: planning (сірий) | yellow (підготовка) | risk (червоний) | ready (зелений)
 
-function formatUkrainianDayMonth(isoDate: string): string {
-  const months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
-  const [y, m, d] = isoDate.split("-").map(Number);
-  if (!y || !m || !d) return isoDate;
-  return `${d} ${months[m - 1] || ""}`;
-}
-
-function minusDaysIso(isoDate: string, days: number): string {
-  const date = new Date(isoDate + "T00:00:00");
-  date.setDate(date.getDate() - days);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function parseFullName(raw: string): DoctorProfile {
-  const parts = raw.trim().split(/\s+/).filter(Boolean);
-  return {
-    surname: parts[0] || "",
-    firstName: parts[1] || "",
-    middleName: parts[2] || "",
-  };
-}
-
-function getDoctorProfile(): DoctorProfile {
-  const fallback = parseFullName("Коваленко Іван Петрович");
-
-  try {
-    const raw = localStorage.getItem("proctocare_doctor_profile");
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as {
-      surname?: string;
-      firstName?: string;
-      middleName?: string;
-      name?: string;
-      patronymic?: string;
-      fullName?: string;
-    };
-
-    if (parsed.fullName?.trim()) {
-      const fromFullName = parseFullName(parsed.fullName);
-      if (fromFullName.surname && fromFullName.firstName) return fromFullName;
-    }
-
-    const profile: DoctorProfile = {
-      surname: (parsed.surname || "").trim(),
-      firstName: (parsed.firstName || parsed.name || "").trim(),
-      middleName: (parsed.middleName || parsed.patronymic || "").trim(),
-    };
-
-    if (profile.surname && profile.firstName) return profile;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function getPatientContactName(patient: Patient): string {
-  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
-  const parts = full.split(/\s+/).filter(Boolean);
-  const firstName = parts[1] || parts[0] || "Пацієнте";
-  const middleName = patient.patronymic || parts[2] || "";
-
-  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
+function getPatientNameInfo(patient: Patient): { salutation: string; firstName: string; address: string } {
+  const parts = (patient.name || "").trim().split(/\s+/).filter(Boolean);
+  const firstName = parts.length >= 2 ? parts[1] : (parts[0] || "Пацієнт");
+  const patronymic = (patient.patronymic || "").trim();
+  const isFemale = patronymic.endsWith("івна") || patronymic.endsWith("ївна") || patronymic.endsWith("вна");
   const salutation = isFemale ? "Пані" : "Пане";
-  return `${salutation} ${firstName}${middleName ? ` ${middleName}` : ""}`;
+  const address = patronymic ? `${salutation} ${firstName} ${patronymic}` : `${salutation} ${firstName}`;
+  return { salutation, firstName, address };
 }
 
-function toGenitiveForm(word: string): string {
-  const w = word.trim();
-  if (!w) return w;
-
-  // Basic Ukrainian inflection rules for common masculine forms used in UI messages.
-  if (/енко$/i.test(w)) return `${w}а`;
-  if (/ич$/i.test(w)) return `${w}а`;
-  if (/ій$/i.test(w)) return `${w.slice(0, -1)}я`;
-  if (/й$/i.test(w)) return `${w.slice(0, -1)}я`;
-  if (/[бвгґджзклмнпрстфхцчшщ]$/i.test(w)) return `${w}а`;
-  return w;
+function buildGreetingMessage(patient: Patient, appointmentIsoDate: string, appointmentTime: string, serviceName: string): string {
+  const { address } = getPatientNameInfo(patient);
+  return AGENT_CHAT_MESSAGES.greetingTemplate({
+    patientAddress: address,
+    serviceName: serviceName || "процедуру",
+    appointmentDisplay: isoToDisplay(appointmentIsoDate),
+    appointmentTime: appointmentTime || "--:--",
+  });
 }
 
-function toVocativeForm(word: string): string {
-  const w = word.trim();
-  if (!w) return w;
-
-  if (/ич$/i.test(w)) return `${w}у`;
-  if (/й$/i.test(w)) return `${w.slice(0, -1)}ю`;
-  if (/о$/i.test(w)) return `${w.slice(0, -1)}е`;
-  if (/а$/i.test(w)) return `${w.slice(0, -1)}о`;
-  if (/я$/i.test(w)) return `${w.slice(0, -1)}є`;
-  if (/[бвгґджзклмнпрстфхцчшщ]$/i.test(w)) return `${w}е`;
-  return w;
+function buildDrugSelectionMessage(patient: Patient): string {
+  const { salutation, firstName } = getPatientNameInfo(patient);
+  return AGENT_CHAT_MESSAGES.drugSelectionTemplate({ salutation, firstName });
 }
 
-function getPatientGreetingLine(patient: Patient): string {
-  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
-  const parts = full.split(/\s+/).filter(Boolean);
-  const firstName = parts[1] || parts[0] || "Пацієнт";
-  const middleName = patient.patronymic || parts[2] || "";
-  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
-
-  if (isFemale) {
-    return `Вітаю, Пані ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}!`;
-  }
-
-  return `Вітаю, Пане ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}!`;
-}
-
-function getPatientAddressInVocative(patient: Patient): string {
-  const full = `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}`.trim();
-  const parts = full.split(/\s+/).filter(Boolean);
-  const firstName = parts[1] || parts[0] || "Пацієнте";
-  const middleName = patient.patronymic || parts[2] || "";
-  const isFemale = middleName.endsWith("івна") || middleName.endsWith("ївна") || middleName.endsWith("вна") || /[ая]$/i.test(firstName);
-  const salutation = isFemale ? "Пані" : "Пане";
-  return `${salutation} ${toVocativeForm(firstName)}${middleName ? ` ${toVocativeForm(middleName)}` : ""}`;
-}
-
-function getDoctorNameInGenitive(doctor: DoctorProfile): string {
-  // Keep surname in base form, inflect first+middle names as requested in UI copy.
-  const surname = doctor.surname.trim();
-  const firstName = toGenitiveForm(doctor.firstName);
-  const middleName = toGenitiveForm(doctor.middleName);
-  return `${surname} ${firstName} ${middleName}`.replace(/\s+/g, " ").trim();
-}
-
-function buildEmulationGreetingMessage(params: {
-  patient: Patient;
-  doctor: DoctorProfile;
-  serviceName: string;
-  appointmentIsoDate: string;
-  appointmentTime: string;
-}): string {
-  const patientGreetingLine = getPatientGreetingLine(params.patient);
-  const doctorFullName = `${params.doctor.surname} ${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
-  const doctorFullNameGenitive = getDoctorNameInGenitive(params.doctor);
-  const dietStartDate = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 3));
-  const doctorShortName = `${params.doctor.firstName} ${params.doctor.middleName}`.replace(/\s+/g, " ").trim();
-
-  return `**${patientGreetingLine}**\n\nЦе цифровий асистент лікаря **${doctorFullNameGenitive}**.\n\nВи записані на процедуру: **${params.serviceName}**, яка відбудеться **${isoToDisplay(params.appointmentIsoDate)}** о **${params.appointmentTime || "--:--"}**.\n\n**${doctorShortName}** доручив мені супроводжувати вашу підготовку. Ми разом подбаємо про те, щоб майбутня процедура пройшла максимально легко, комфортно та принесла найкращий результат для вашого здоров'я.\n\nНаш перший етап — бережна дієта, яку ми розпочнемо **${dietStartDate}**.\n\nЧи готові ви отримати перелік того, що допоможе вам правильно підготуватися?`;
-}
-
-function buildDietInstructionMessage(params: { patient: Patient; appointmentIsoDate: string }): string {
-  const patientAddress = getPatientAddressInVocative(params.patient);
-  const dietStart = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 3));
-  const dayBefore = formatUkrainianDayMonth(minusDaysIso(params.appointmentIsoDate, 1));
-  const apptDay = formatUkrainianDayMonth(params.appointmentIsoDate);
-
-  return `Чудово! **${patientAddress}**, надсилаю докладний перелік для підготовки. Будь ласка, прочитайте його уважно.
-
-ЗАБОРОНЕНО (ЗА 3 ДНІ ДО ПРОЦЕДУРИ):
-Починаючи з **${dietStart}**, необхідно повністю виключити з раціону: БУРЯК, МАК, СЕЗАМ, ГОРІХИ ТА НАСІННЯ, а також будь-які продукти, які їх містять.
-
-ДЕНЬ ПЕРЕД ПРОЦЕДУРОЮ (**${dayBefore}**):
-
-Сніданок (що можна їсти):
-Картопляне пюре, йогурт без добавок, яйця, відварена курка.
-
-З 14:00 (ЩО НЕ МОЖНА РОБИТИ):
-
-КАТЕГОРИЧНО ЗАБОРОНЕНО: вживати зупи, овочі, фрукти та будь-які дрібні продукти (сезам, насіння тощо).
-
-Можна пити: чай, воду, компот (крім напоїв червоного кольору).
-
-ВАЖЛИВІ ЗАУВАЖЕННЯ ЩОДО ПРЕПАРАТІВ ТА РЕЖИМУ:
-
-Зранку в день процедури (**${apptDay}**): якщо вона проводиться з медичним сном (наркозом), НЕ МОЖНА приймати препарати від тиску (антигіпертензивні).
-
-Після процедури з медичним сном: людині, якій робили наркоз, КАТЕГОРИЧНО ЗАБОРОНЕНО сідати за кермо.
-
-НЕОБХІДНО ПРИДБАТИ ЗАЗДАЛЕГІДЬ:
-Вам потрібно купити в аптеці препарат ФОРТРАНС (4 пакети). Детальну схему прийому препарату я надішлю вам пізніше.
-
-**${patientAddress}**, чи все вам зрозуміло? Які саме продукти вам заборонено вживати у ці дні?`;
+/** "Я готова" for female, "Я готовий" for male — based on patronymic suffix */
+function getReadyButtonText(patient: Patient): string {
+  const { salutation } = getPatientNameInfo(patient);
+  return salutation === "Пані" ? "Я готова" : "Я готовий";
 }
 
 // ── Autonomous assistant trigger helpers ─────────────────────────────────────
@@ -348,6 +219,7 @@ type AssistantSessionState = {
   waitingForStep2Ack: boolean;
   step2AckResult: "none" | "confirmed" | "question";
   welcomeSent: boolean;
+  drugChoice: 'fortrans' | 'izyklin' | null;
 };
 
 type AssistantSessionStoredState = AssistantSessionState & {
@@ -396,6 +268,7 @@ function normalizeAndPruneAssistantStore(store: Record<string, unknown>): { clea
       waitingForStep2Ack: !!session.waitingForStep2Ack,
       step2AckResult: session.step2AckResult === "confirmed" || session.step2AckResult === "question" ? session.step2AckResult : "none",
       welcomeSent: !!session.welcomeSent,
+      drugChoice: session.drugChoice === "fortrans" || session.drugChoice === "izyklin" ? session.drugChoice : null,
       savedAt,
     };
   }
@@ -471,6 +344,7 @@ function getAssistantSession(patientId: string, visitIso: string): AssistantSess
       waitingForStep2Ack: !!entry.waitingForStep2Ack,
       step2AckResult: entry.step2AckResult === "confirmed" || entry.step2AckResult === "question" ? entry.step2AckResult : "none",
       welcomeSent: !!entry.welcomeSent,
+      drugChoice: entry.drugChoice === "fortrans" || entry.drugChoice === "izyklin" ? entry.drugChoice : null,
     };
   } catch {
     return null;
@@ -590,33 +464,38 @@ function getMockChat(patient: Patient): ChatMessage[] {
   return base;
 }
 
-function getPreparationProgress(patient: Patient, services?: string[]): { percent: number; steps: { label: string; done: boolean }[] } {
+function getPreparationProgress(patient: Patient, _services?: string[]): { percent: number; steps: { label: string; done: boolean }[] } {
   const status = patient.status;
-  const hasPolypectomy = services?.some(s => s.includes("Поліпектомія") || s.includes("поліпектомія"));
+  const group = classifyProcedureGroup(patient.procedure || "");
+  const isActive = status === "progress" || status === "yellow" || status === "risk";
 
-  if (patient.fromForm && !services?.length) {
-    return {
-      percent: 0,
-      steps: [
-        { label: "Дієта 3 дні", done: false },
-        { label: "Прийом препарату", done: false },
-        { label: "Очищення завершено", done: false },
-        { label: "Аналізи в нормі", done: false },
-      ],
-    };
+  // Група Г — Гастроскопія: 2 кроки
+  if (group === 'G') {
+    const steps = [
+      { label: "Підготовка вечері", done: status === "ready" || isActive },
+      { label: "Готовий до процедури", done: status === "ready" },
+    ];
+    return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
   }
 
+  // Група К — Колоноскопія / Ректоскопія: 3 кроки
+  if (group === 'K') {
+    const steps = [
+      { label: "Дієта та підготовка", done: status === "ready" || isActive },
+      { label: "Прийом препарату", done: status === "ready" },
+      { label: "Готовий до процедури", done: status === "ready" },
+    ];
+    return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
+  }
+
+  // Fallback — невизначена процедура: 4 кроки (старий вигляд)
   const steps = [
     { label: "Дієта 3 дні", done: status === "ready" || status === "progress" || status === "risk" },
     { label: "Прийом препарату", done: status === "ready" || status === "progress" },
     { label: "Очищення завершено", done: status === "ready" },
-    { label: "Аналізи в нормі", done: status === "ready" },
-    ...(hasPolypectomy ? [{ label: "Консультація анестезіолога", done: status === "ready" }] : []),
+    { label: "Готовий до процедури", done: status === "ready" },
   ];
-
-  const doneCount = steps.filter(s => s.done).length;
-  const percent = Math.round((doneCount / steps.length) * 100);
-  return { percent, steps };
+  return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
 }
 
 export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete, onCreateNewVisit, onOpenVisit }: PatientDetailViewProps) {
@@ -694,22 +573,31 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     }
     const entry = getWelcomeEntry(patient.id, activeVisitIso);
     if (!entry) return [];
-    const doctor = getDoctorProfile();
-    const serviceName = patient.procedure || "процедуру";
-    const text = buildEmulationGreetingMessage({
-      patient,
-      doctor,
-      serviceName,
-      appointmentIsoDate: activeVisitIso,
-      appointmentTime: patient.time || "",
-    });
-    return [{ sender: "ai", text, time: entry.time, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }];
+    const text = buildGreetingMessage(patient, activeVisitIso, patient.time, patient.procedure || "");
+    return [{ sender: "ai", text, time: entry.time, quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" } }];
   });
   const [waitingForDietAck, setWaitingForDietAck] = useState(restoredAssistantSession?.waitingForDietAck ?? false);
   const [dietInstructionSent, setDietInstructionSent] = useState(restoredAssistantSession?.dietInstructionSent ?? false);
   const [waitingForStep2Ack, setWaitingForStep2Ack] = useState(restoredAssistantSession?.waitingForStep2Ack ?? false);
   const [step2AckResult, setStep2AckResult] = useState<"none" | "confirmed" | "question">(restoredAssistantSession?.step2AckResult ?? "none");
   const [welcomeSent, setWelcomeSent] = useState(() => restoredAssistantSession?.welcomeSent ?? isWelcomeSent(patient.id, activeVisitIso));
+  const [drugChoice, setDrugChoice] = useState<'fortrans' | 'izyklin' | null>(
+    restoredAssistantSession?.drugChoice ?? patient.drugChoice ?? null
+  );
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs for stable reads inside the init effect without adding to its deps.
+  // Prevents wiping locally-generated greeting when Supabase normalizes a
+  // temp visit ID (new-{ts}) to a real UUID — the key in localStorage changes,
+  // but the in-memory state should be preserved until the save-effect re-persists it.
+  const emulatedMessagesRef = useRef(emulatedMessages);
+  const welcomeSentRef = useRef(welcomeSent);
+  const prevPatientIdRef = useRef(patient.id);
+  const drugChoiceRef = useRef(drugChoice);
+  const step2AckResultRef = useRef(step2AckResult);
+  const dietInstructionSentRef = useRef(dietInstructionSent);
+  const patientRef = useRef(patient);
 
   useEffect(() => {
     const restored = getAssistantSession(patient.id, activeVisitIso);
@@ -720,31 +608,51 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setWaitingForStep2Ack(restored.waitingForStep2Ack);
       setStep2AckResult(restored.step2AckResult);
       setWelcomeSent(restored.welcomeSent);
+      setDrugChoice(restored.drugChoice);
       return;
     }
 
     const entry = getWelcomeEntry(patient.id, activeVisitIso);
     if (entry) {
-      const doctor = getDoctorProfile();
-      const serviceName = patient.procedure || "процедуру";
-      const text = buildEmulationGreetingMessage({
-        patient,
-        doctor,
-        serviceName,
-        appointmentIsoDate: activeVisitIso,
-        appointmentTime: patient.time || "",
-      });
-      setEmulatedMessages([{ sender: "ai", text, time: entry.time, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }]);
+      const text = buildGreetingMessage(patient, activeVisitIso, patient.time, patient.procedure || "");
+      setEmulatedMessages([{ sender: "ai", text, time: entry.time, quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" } }]);
       setWelcomeSent(true);
-    } else {
-      setEmulatedMessages([]);
-      setWelcomeSent(false);
+      setWaitingForDietAck(false);
+      setDietInstructionSent(false);
+      setWaitingForStep2Ack(false);
+      setStep2AckResult("none");
+      return;
     }
+
+    // No localStorage entry found for this patient.id / visitIso combination.
+    // Supabase ID normalization: the temp "new-{ts}" visit ID was replaced with a real
+    // UUID after the DB insert confirmed. Preserve in-memory state — the save-effect
+    // will re-persist everything under the new key on next tick.
+    const prevId = prevPatientIdRef.current;
+    prevPatientIdRef.current = patient.id;
+    if (prevId.startsWith("new-") && (emulatedMessagesRef.current.length > 0 || welcomeSentRef.current)) {
+      return;
+    }
+
+    setEmulatedMessages([]);
+    setWelcomeSent(false);
     setWaitingForDietAck(false);
     setDietInstructionSent(false);
     setWaitingForStep2Ack(false);
     setStep2AckResult("none");
   }, [patient.id, activeVisitIso]);
+
+  // Keep refs in sync after every render so effects can always read the latest
+  // values without adding them to dependency arrays.
+  useEffect(() => {
+    emulatedMessagesRef.current = emulatedMessages;
+    welcomeSentRef.current = welcomeSent;
+    prevPatientIdRef.current = patient.id;
+    drugChoiceRef.current = drugChoice;
+    step2AckResultRef.current = step2AckResult;
+    dietInstructionSentRef.current = dietInstructionSent;
+    patientRef.current = patient;
+  });
 
   useEffect(() => {
     saveAssistantSession(patient.id, activeVisitIso, {
@@ -754,8 +662,165 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       waitingForStep2Ack,
       step2AckResult,
       welcomeSent,
+      drugChoice,
     });
-  }, [patient.id, activeVisitIso, emulatedMessages, waitingForDietAck, dietInstructionSent, waitingForStep2Ack, step2AckResult, welcomeSent]);
+  }, [patient.id, activeVisitIso, emulatedMessages, waitingForDietAck, dietInstructionSent, waitingForStep2Ack, step2AckResult, welcomeSent, drugChoice]);
+
+  // Realtime: cross-device assistant action sync.
+  // Reconstructs full AI conversation on receiving device from DB state transitions.
+  // Self-exclusion via refs: if this device already applied the action, refs reflect
+  // post-action state → condition is false → no double-render or duplicate messages.
+  useEffect(() => {
+    if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
+    const visitId = patient.id;
+
+    const makeTime = () => {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, "0");
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+      return `${dd}.${mm} | ${hhmm}`;
+    };
+
+    const applyRemoteTransition = (row: Record<string, unknown>) => {
+      const newDrug   = row.drug_choice as string | null | undefined;
+      const newStatus = row.status     as string | null | undefined;
+      const t = makeTime();
+
+      // ── 1. Drug choice → patient reply + confirm + roadmap ─────────────────
+      // Self-exclusion: newDrug already equals ref (this device just saved it)
+      if (
+        (newDrug === 'fortrans' || newDrug === 'izyklin') &&
+        newDrug !== drugChoiceRef.current &&
+        !dietInstructionSentRef.current
+      ) {
+        const choice     = newDrug as 'fortrans' | 'izyklin';
+        const drugName   = choice === 'fortrans' ? 'Фортранс' : 'Ізіклін';
+        const patientTxt = choice === 'fortrans' ? PATIENT_QUICK_REPLIES.fortrans : PATIENT_QUICK_REPLIES.izyklin;
+        const group      = classifyProcedureGroup(patientRef.current.procedure || '');
+        const roadmap    = group === 'G'
+          ? ROADMAP_MESSAGES.groupG()
+          : ROADMAP_MESSAGES.groupK({ drugChoice: choice });
+        setDrugChoice(choice);
+        setDietInstructionSent(true);
+        setEmulatedMessages((prev) => [
+          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
+          { sender: 'patient' as const, text: patientTxt, time: t },
+          { sender: 'ai'     as const, text: AGENT_CHAT_MESSAGES.drugChoiceConfirm({ drugName }), time: t },
+          { sender: 'ai'     as const, text: roadmap, time: t },
+        ]);
+        return;
+      }
+
+      // ── 2. Status → 'yellow' (start_prep yes) → patient reply + drug selection ──
+      // Self-exclusion: drug_choice question already visible OR diet step already done
+      if (
+        newStatus === 'yellow' &&
+        step2AckResultRef.current !== 'question' &&
+        !dietInstructionSentRef.current &&
+        !emulatedMessagesRef.current.some((m) => m.quickReply?.context === 'drug_choice')
+      ) {
+        const drugText  = buildDrugSelectionMessage(patientRef.current);
+        const readyText = getReadyButtonText(patientRef.current);
+        setEmulatedMessages((prev) => [
+          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
+          { sender: 'patient' as const, text: readyText, time: t },
+          {
+            sender: 'ai' as const,
+            text: drugText,
+            time: t,
+            quickReply: {
+              yes: PATIENT_QUICK_REPLIES.fortrans,
+              no:  PATIENT_QUICK_REPLIES.izyklin,
+              context: 'drug_choice' as const,
+            },
+          },
+        ]);
+        return;
+      }
+
+      // ── 3. Status → 'risk' → patient reply + typing + "Є запитання" response ──
+      // Self-exclusion: step2AckResult already 'question' (this device just set it)
+      if (newStatus === 'risk' && step2AckResultRef.current !== 'question') {
+        const { address } = getPatientNameInfo(patientRef.current);
+        setStep2AckResult('question');
+        setEmulatedMessages((prev) => [
+          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
+          { sender: 'patient' as const, text: PATIENT_QUICK_REPLIES.dietNo, time: t },
+        ]);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        setIsTyping(true);
+        typingTimerRef.current = setTimeout(() => {
+          setIsTyping(false);
+          setEmulatedMessages((prev) => [...prev, {
+            sender: 'ai' as const,
+            text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
+            time: makeTime(),
+            quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: 'question_resolved' as const },
+          }]);
+        }, 1000);
+        return;
+      }
+
+      // ── 4. Status → 'yellow' (question resolved) → patient reply + typing + confirm ──
+      // Self-exclusion: step2AckResult already 'none' (this device just reset it)
+      if (newStatus === 'yellow' && step2AckResultRef.current === 'question') {
+        setStep2AckResult('none');
+        setEmulatedMessages((prev) => [
+          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
+          { sender: 'patient' as const, text: PATIENT_QUICK_REPLIES.questionResolved, time: t },
+        ]);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        setIsTyping(true);
+        typingTimerRef.current = setTimeout(() => {
+          setIsTyping(false);
+          setEmulatedMessages((prev) => [...prev, {
+            sender: 'ai' as const,
+            text: AGENT_CHAT_MESSAGES.questionResolvedConfirm,
+            time: makeTime(),
+          }]);
+        }, 800);
+        return;
+      }
+    };
+
+    const channel = supabase
+      .channel(`pdv-${visitId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'visits' },
+        (payload) => {
+          const row = (payload.new ?? {}) as Record<string, unknown>;
+          if (row.id !== visitId) return;
+          applyRemoteTransition(row);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') console.error('[PDV Realtime] channel error for visit', visitId);
+      });
+
+    // Mobile: reconcile state when tab regains focus (WS channel may have dropped)
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { data } = await supabase
+        .from('visits')
+        .select('id, drug_choice, status')
+        .eq('id', visitId)
+        .single();
+      if (data) applyRemoteTransition(data as Record<string, unknown>);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      void supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [patient.id]);
+
+  // Cleanup typing timer on unmount
+  useEffect(() => () => {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+  }, []);
 
   const baseChat = getMockChat(patient);
   const chat = [...baseChat, ...emulatedMessages];
@@ -766,31 +831,14 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (patient.noShow) return "risk";
     if (patient.completed) return "ready";
     if (step2AckResult === "question") return "risk";
-
-    if (welcomeSent || waitingForDietAck || dietInstructionSent || waitingForStep2Ack || step2AckResult === "confirmed") {
-      return "progress";
-    }
-
     return computePatientStatus(patient);
-  }, [
-    patient,
-    step2AckResult,
-    welcomeSent,
-    waitingForDietAck,
-    dietInstructionSent,
-    waitingForStep2Ack,
-  ]);
+  }, [patient, step2AckResult]);
 
   useEffect(() => {
     if (!onUpdatePatient) return;
     if (patient.status === effectiveStatus) return;
 
-    const aiSummaryByStatus: Record<PatientStatus, string> = {
-      planning: "Записаний на процедуру, очікує підготовки",
-      progress: "Підготовка триває, асистент веде пацієнта",
-      risk: "Пацієнт має запитання, потрібна відповідь лікаря",
-      ready: "Підготовка завершена, пацієнт допущений",
-    };
+    const aiSummaryByStatus: Record<PatientStatus, string> = AI_SUMMARY_BY_STATUS;
 
     onUpdatePatient({
       status: effectiveStatus,
@@ -971,45 +1019,46 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   // Build event log from state flags
   const eventLogs: EventLog[] = useMemo(() => {
     const logs: EventLog[] = [];
+    const nowTime = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
     logs.push({
       timestamp: patient.time || "--:--",
-      event: `Картку відкрито · ${isoToDisplay(activeVisitIso)}`,
+      event: EVENT_LOG_LABELS.cardOpened(isoToDisplay(activeVisitIso)),
       status: "completed",
     });
     if (welcomeSent) logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: "Вітальне повідомлення надіслано",
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.welcomeSent,
       status: "completed",
     });
     if (dietInstructionSent) logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: "Інструкція щодо харчування надіслана",
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.dietSent,
       status: "completed",
     });
     if (waitingForStep2Ack) logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: "Очікування підтвердження пацієнта",
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.waitingForPatient,
       status: "pending",
     });
     if (step2AckResult === "confirmed") logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: "Пацієнт підтвердив готовність",
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.patientConfirmed,
       status: "completed",
     });
     if (step2AckResult === "question") logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: "Пацієнт має запитання",
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.patientHasQuestion,
       status: "warning",
     });
     if (rescheduleNoticeOriginalDate) logs.push({
-      timestamp: new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
-      event: `Підготовку перезапущено (перенос з ${rescheduleNoticeOriginalDate})`,
+      timestamp: nowTime,
+      event: EVENT_LOG_LABELS.rescheduled(rescheduleNoticeOriginalDate),
       status: "warning",
     });
     if (logs.length === 1) {
       logs.push({
         timestamp: patient.time || "--:--",
-        event: "Очікування наступної дії пацієнта",
+        event: EVENT_LOG_LABELS.waitingForAction,
         status: "pending",
       });
     }
@@ -1020,22 +1069,20 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   useEffect(() => {
     if (!allFieldsReady || welcomeSent) return;
     const timer = setTimeout(() => {
-      const doctor = getDoctorProfile();
-      const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "процедуру");
-      const messageText = buildEmulationGreetingMessage({
-        patient,
-        doctor,
-        serviceName,
-        appointmentIsoDate: activeVisitIso,
-        appointmentTime: patient.time || "",
-      });
+      const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "");
+      const messageText = buildGreetingMessage(patient, activeVisitIso, patient.time, serviceName);
       const _ts = new Date();
       const _dd = String(_ts.getDate()).padStart(2, "0");
       const _mm = String(_ts.getMonth() + 1).padStart(2, "0");
       const _hhmm = _ts.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
       const messageTime = `${_dd}.${_mm} | ${_hhmm}`;
-      setEmulatedMessages((prev) => [...prev, { sender: "ai", text: messageText, time: messageTime, quickReply: { yes: "Так", no: "Ні", context: "greeting" } }]);
-      setWaitingForDietAck(true);
+      setEmulatedMessages((prev) => [...prev, {
+        sender: "ai",
+        text: messageText,
+        time: messageTime,
+        quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" },
+      }]);
+      setWaitingForDietAck(false);
       setDietInstructionSent(false);
       setWaitingForStep2Ack(false);
       setStep2AckResult("none");
@@ -1046,63 +1093,147 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFieldsReady, welcomeSent]);
 
-  const handleQuickReply = (answer: "yes" | "no", context: "greeting" | "diet" = "greeting") => {
+  const handleQuickReply = (answer: "yes" | "no", context: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved" = "start_prep") => {
     const now = new Date();
     const dd = String(now.getDate()).padStart(2, "0");
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
     const replyTime = `${dd}.${mm} | ${hhmm}`;
-    const replyText = context === "diet"
-      ? (answer === "yes" ? "Так, все зрозуміло" : "Є запитання")
-      : (answer === "yes" ? "Так" : "Ні");
-    // Remove quickReply chips from the greeting message, add patient reply
+
+    const replyTextMap: Record<string, string> = {
+      "start_prep_yes": getReadyButtonText(patient),
+      "start_prep_no":  "Є запитання",
+      "drug_choice_yes": PATIENT_QUICK_REPLIES.fortrans,
+      "drug_choice_no":  PATIENT_QUICK_REPLIES.izyklin,
+      "diet_yes": PATIENT_QUICK_REPLIES.dietYes,
+      "diet_no":  PATIENT_QUICK_REPLIES.dietNo,
+      "greeting_yes": PATIENT_QUICK_REPLIES.greetingYes,
+      "greeting_no":  PATIENT_QUICK_REPLIES.greetingNo,
+      "question_resolved_yes": PATIENT_QUICK_REPLIES.questionResolved,
+    };
+    const replyText = replyTextMap[`${context}_${answer}`] ?? answer;
+
+    // Знімаємо кнопки з попереднього повідомлення, додаємо відповідь пацієнта
     setEmulatedMessages((prev) =>
       prev
         .map((m) => m.quickReply ? { ...m, quickReply: undefined } : m)
         .concat({ sender: "patient", text: replyText, time: replyTime })
     );
 
-    if (context === "greeting" && answer === "yes") {
-      const dietText = buildDietInstructionMessage({ patient, appointmentIsoDate: activeVisitIso });
+    // ── Блок 5: "Розпочати підготовку" / "Є запитання" ───────────────────────
+    if (context === "start_prep") {
+      if (answer === "no") {
+        const { address } = getPatientNameInfo(patient);
+        setStep2AckResult("question");
+        onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        setIsTyping(true);
+        typingTimerRef.current = setTimeout(() => {
+          setIsTyping(false);
+          setEmulatedMessages((prev) => [...prev, {
+            sender: "ai" as const,
+            text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
+            time: replyTime,
+            quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" },
+          }]);
+        }, 2000);
+        return;
+      }
+      // answer === "yes" → починаємо підготовку
+      onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
+      const drugText = buildDrugSelectionMessage(patient);
       setEmulatedMessages((prev) => [...prev, {
         sender: "ai",
-        text: dietText,
+        text: drugText,
         time: replyTime,
-        quickReply: { yes: "Так, все зрозуміло", no: "Є запитання", context: "diet" },
+        quickReply: {
+          yes: PATIENT_QUICK_REPLIES.fortrans,
+          no:  PATIENT_QUICK_REPLIES.izyklin,
+          context: "drug_choice",
+        },
       }]);
+      return;
+    }
+
+    // ── Блок 5.1 + Блок 6: Вибір препарату → Дорожня карта ──────────────────
+    if (context === "drug_choice") {
+      const choice: 'fortrans' | 'izyklin' = answer === "yes" ? "fortrans" : "izyklin";
+      const drugName = answer === "yes" ? "Фортранс" : "Ізіклін";
+      setDrugChoice(choice);
+      onUpdatePatient?.({ drugChoice: choice });
+
+      const group = classifyProcedureGroup(patient.procedure || "");
+      const roadmapText = group === 'G'
+        ? ROADMAP_MESSAGES.groupG()
+        : ROADMAP_MESSAGES.groupK({ drugChoice: choice });
+
+      setEmulatedMessages((prev) => [
+        ...prev,
+        { sender: "ai", text: AGENT_CHAT_MESSAGES.drugChoiceConfirm({ drugName }), time: replyTime },
+        { sender: "ai", text: roadmapText, time: replyTime },
+      ]);
       setDietInstructionSent(true);
-      setWaitingForStep2Ack(true);
-      setWaitingForDietAck(false);
-      setStep2AckResult("none");
       return;
     }
 
-    if (context === "greeting" && answer === "no") {
-      setDietInstructionSent(false);
-      setWaitingForStep2Ack(false);
+    // ── Блок 5 ТЗ: "Питання вирішено. Розпочати!" → скидаємо risk, повертаємо yellow ──
+    if (context === "question_resolved") {
       setStep2AckResult("none");
-      setWaitingForDietAck(false);
+      onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      setIsTyping(true);
+      typingTimerRef.current = setTimeout(() => {
+        setIsTyping(false);
+        setEmulatedMessages((prev) => [...prev, {
+          sender: "ai" as const,
+          text: AGENT_CHAT_MESSAGES.questionResolvedConfirm,
+          time: replyTime,
+        }]);
+      }, 800);
       return;
     }
 
+    // ── Залишкова логіка для diet (backward compat) ───────────────────────────
     if (context === "diet" && answer === "no") {
       setEmulatedMessages((prev) => [...prev, {
         sender: "ai",
-        text: "Передав запит лікарю. Очікуйте відповідь у цьому чаті.",
+        text: AGENT_CHAT_MESSAGES.forwardedToDoctor,
         time: replyTime,
       }]);
       setStep2AckResult("question");
-    }
-
-    if (context === "diet" && answer === "yes") {
-      setStep2AckResult("confirmed");
-    }
-
-    if (context === "diet") {
       setWaitingForStep2Ack(false);
     }
-
+    if (context === "diet" && answer === "yes") {
+      setStep2AckResult("confirmed");
+      setWaitingForStep2Ack(false);
+    }
     setWaitingForDietAck(false);
+  };
+
+  const handleHasQuestion = () => {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+    const time = `${dd}.${mm} | ${hhmm}`;
+    const { address } = getPatientNameInfo(patient);
+    setEmulatedMessages((prev) => [
+      ...prev.map((m) => (m.quickReply ? { ...m, quickReply: undefined } : m)),
+      { sender: "patient" as const, text: PATIENT_QUICK_REPLIES.dietNo, time },
+    ]);
+    setStep2AckResult("question");
+    onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    setIsTyping(true);
+    typingTimerRef.current = setTimeout(() => {
+      setIsTyping(false);
+      setEmulatedMessages((prev) => [...prev, {
+        sender: "ai" as const,
+        text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
+        time,
+        quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" },
+      }]);
+    }, 2000);
   };
 
   // Derive lastVisit from the latest valid archived date: completed visit from schedule
@@ -1114,12 +1245,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     // completed=true in DB must not pollute lastVisit or archive logic.
     const closedCurrentVisitIso = patient.date
       && patient.date <= getTodayIsoKyiv()
-      && (patient.completed || patient.status === "ready" || patient.status === "completed" || patient.noShow)
+      && (patient.completed || patient.status === "ready" || (patient.status as string) === "completed" || patient.noShow)
       ? patient.date
       : undefined;
     const closedCurrentVisitOutcome: "completed" | "no-show" | undefined = patient.noShow
       ? "no-show"
-      : ((patient.completed || patient.status === "ready" || patient.status === "completed") ? "completed" : undefined);
+      : ((patient.completed || patient.status === "ready" || (patient.status as string) === "completed") ? "completed" : undefined);
 
     const visitByIso = new Map<string, Patient>();
     for (const visit of relatedVisits) {
@@ -1130,8 +1261,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         continue;
       }
 
-      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready" || existing.status === "completed") ? 2 : 0);
-      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready" || visit.status === "completed") ? 2 : 0);
+      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready" || (existing.status as string) === "completed") ? 2 : 0);
+      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready" || (visit.status as string) === "completed") ? 2 : 0);
       if (currentRank >= existingRank) visitByIso.set(visit.date, visit);
     }
 
@@ -1142,7 +1273,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready" && linkedVisit.status !== "completed") continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready" && (linkedVisit.status as string) !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1151,7 +1282,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready" && linkedVisit.status !== "completed") continue;
+        if (!linkedVisit.completed && linkedVisit.status !== "ready" && (linkedVisit.status as string) !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1169,7 +1300,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             ? closedCurrentVisitOutcome
             : (visitByIso.get(bestIso)?.noShow
                 ? "no-show"
-                : ((visitByIso.get(bestIso)?.completed || visitByIso.get(bestIso)?.status === "ready" || visitByIso.get(bestIso)?.status === "completed")
+                : ((visitByIso.get(bestIso)?.completed || visitByIso.get(bestIso)?.status === "ready" || (visitByIso.get(bestIso)?.status as string) === "completed")
                   ? "completed"
                   : undefined)))
         : undefined;
@@ -1703,7 +1834,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                     </div>
                   </ContentBlock>
                   <div className="flex-1 min-h-0 bg-card rounded-xl overflow-hidden shadow-[0_6px_16px_rgba(0,0,0,0.08)] flex flex-col">
-                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
+                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && step2AckResult !== "question" ? handleHasQuestion : undefined} isTyping={isTyping} />
                     <ChatInput />
                   </div>
                 </div>
@@ -1804,7 +1935,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   waitingForStep2Ack={waitingForStep2Ack}
                   step2AckResult={step2AckResult}
                 />
-                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} />
+                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && step2AckResult !== "question" ? handleHasQuestion : undefined} isTyping={isTyping} />
                 <ChatInput />
               </ContentBlock>
             </div>
@@ -2103,17 +2234,19 @@ function LinearProgressBar({ preparation, status, waitingForDietAck = false, die
   step2AckResult?: "none" | "confirmed" | "question";
 }) {
   const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
+  const lastStepIdx = preparation.steps.length - 1;
 
   const getSegmentColor = (i: number): string => {
-    // Determine if step is done, current, failed, or future
-    const isDone = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === 1) || preparation.steps[i]?.done;
-    const isFailed = step2AckResult === "question" && i === 1;
-    const isActive = !isDone && !isFailed && i === firstPendingIdx;
-    
-    if (isDone) return "bg-green-500"; // Completed: Solid Green
-    if (isFailed) return "bg-red-500"; // Failed/Alert: Solid Red
-    if (isActive) return "bg-yellow-500"; // Current: Solid Yellow (no pulsing)
-    return "bg-gray-200"; // Future: Light Grey
+    // Виключно сесійна логіка: колір змінюється ЛИШЕ після реальної взаємодії
+    const isDone   = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === lastStepIdx);
+    const isFailed = step2AckResult === "question" && i === lastStepIdx;
+    // Проміжні кроки (між 0 і lastStep) жовті після того як roadmap надіслано
+    const isActive = dietInstructionSent && !isDone && !isFailed && i > 0 && i < lastStepIdx;
+
+    if (isFailed) return "bg-red-500";
+    if (isDone && i === lastStepIdx) return "bg-green-500"; // Зелений — ТІЛЬКИ останній
+    if (isDone || isActive) return "bg-yellow-400";         // Жовтий — активний або завершений проміжний
+    return "bg-gray-200";                                   // Сірий — за замовчуванням (Точка 0)
   };
 
   return (
@@ -2241,14 +2374,21 @@ function HistoryModal({ isOpen, onClose, chat, eventLogs = [] }: {
   );
 }
 
-function ChatPane({ chat, unanswered, onQuickReply }: {
+function ChatPane({ chat, unanswered, onQuickReply, onHasQuestion, isTyping }: {
   chat: ChatMessage[];
   unanswered: ChatMessage[];
-  onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet") => void;
+  onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved") => void;
+  onHasQuestion?: () => void;
+  isTyping?: boolean;
 }) {
-  // Filter out all system messages from the main chat display (moved to History modal)
+  const bottomRef = useRef<HTMLDivElement>(null);
   const activeMessages = chat.filter((m) => !m.unanswered && !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено"))));
-  
+  const hasActiveQuickReply = activeMessages.length > 0 && !!activeMessages[activeMessages.length - 1].quickReply;
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeMessages.length, isTyping]);
+
   return (
     <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[#F0F8FF]">
       {/* Pinned unanswered questions */}
@@ -2259,61 +2399,85 @@ function ChatPane({ chat, unanswered, onQuickReply }: {
         >
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={14} className="text-status-risk shrink-0" />
-            <span className="text-xs font-bold text-status-risk">
-              Питання без відповіді · {msg.time}
-            </span>
+            <span className="text-xs font-bold text-status-risk">Питання без відповіді · {msg.time}</span>
           </div>
           <p className="text-foreground font-bold">{msg.text}</p>
         </div>
       ))}
 
-      {/* Chat history — Telegram-style bubbles */}
+      {/* Chat history — bubbles */}
       {activeMessages.map((msg, i) => {
         const isPatient = msg.sender === "patient";
-        const isDoctor = msg.sender === "doctor";
-        const isAssistant = msg.sender === "ai";
-        
+        const isDoctor  = msg.sender === "doctor";
         return (
           <div key={i} className={cn("flex flex-col", isPatient ? "items-start" : "items-end")}>
-            <div
-              className={cn(
-                "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
-                isDoctor
-                  ? "bg-green-100 border border-green-300 rounded-br-sm text-green-900" // Doctor: Light Green, right
-                  : isPatient
-                    ? "bg-white border border-gray-300 rounded-bl-sm text-gray-900" // Patient: Pure White, left
-                    : "bg-yellow-50 border border-yellow-300 rounded-bl-sm text-yellow-900" // Assistant: Light Beige/Yellow, left
-              )}
-            >
-              <p className={cn(
-                "text-[11px] font-bold mb-0.5",
-                isDoctor ? "text-green-700" : isPatient ? "text-gray-600" : "text-yellow-700"
-              )}>
+            <div className={cn(
+              "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
+              isDoctor  ? "bg-green-100 border border-green-300 rounded-br-sm text-green-900"
+              : isPatient ? "bg-white border border-gray-300 rounded-bl-sm text-gray-900"
+                          : "bg-yellow-50 border border-yellow-300 rounded-bl-sm text-yellow-900"
+            )}>
+              <p className={cn("text-[11px] font-bold mb-0.5", isDoctor ? "text-green-700" : isPatient ? "text-gray-600" : "text-yellow-700")}>
                 {isDoctor ? "Лікар" : isPatient ? "Клієнт" : "Асистент"} · {msg.time}
               </p>
-              <p className="text-foreground">
-                {renderBoldText(msg.text)}
-              </p>
+              <p className="text-foreground">{renderBoldText(msg.text)}</p>
             </div>
+
+            {/* QuickReply buttons — inside chat bubble area */}
             {msg.quickReply && onQuickReply && (
-              <div className="flex gap-2 mt-1.5">
+              <div className="flex gap-2 mt-2 flex-wrap">
                 <button
                   onClick={() => onQuickReply("yes", msg.quickReply?.context)}
-                  className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-sky-600 text-white hover:bg-sky-700 active:scale-[0.94] transition-all shadow-sm"
+                  className="text-[12px] font-bold px-3.5 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700 active:scale-[0.94] transition-all shadow-sm"
                 >
                   {msg.quickReply.yes}
                 </button>
-                <button
-                  onClick={() => onQuickReply("no", msg.quickReply?.context)}
-                  className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white border border-slate-200 text-foreground hover:bg-slate-50 active:scale-[0.94] transition-all shadow-sm"
-                >
-                  {msg.quickReply.no}
-                </button>
+                {msg.quickReply.no && (
+                  <button
+                    onClick={() => onQuickReply("no", msg.quickReply?.context)}
+                    className={cn(
+                      "text-[12px] font-bold px-3.5 py-1.5 rounded-full active:scale-[0.94] transition-all shadow-sm",
+                      msg.quickReply.context === "drug_choice"
+                        ? "bg-white border border-slate-300 text-foreground hover:bg-slate-50"
+                        : "bg-amber-500 text-white hover:bg-amber-600"
+                    )}
+                  >
+                    {msg.quickReply.no}
+                  </button>
+                )}
               </div>
             )}
           </div>
         );
       })}
+
+      {/* Typing indicator — "Асистент пише..." */}
+      {isTyping && (
+        <div className="flex flex-col items-end animate-reveal-up">
+          <div className="rounded-2xl px-4 py-2.5 shadow-[0_2px_8px_rgba(0,0,0,0.07)] bg-yellow-50 border border-yellow-300 rounded-bl-sm">
+            <p className="text-[11px] font-bold mb-1.5 text-yellow-700">Асистент</p>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "160ms" }} />
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "320ms" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent "Є запитання" button — visible after roadmap, when no quickReply showing */}
+      {onHasQuestion && !hasActiveQuickReply && !isTyping && (
+        <div className="flex justify-end pt-1">
+          <button
+            onClick={onHasQuestion}
+            className="text-[12px] font-bold px-3.5 py-1.5 rounded-full bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.94] transition-all shadow-sm"
+          >
+            Є запитання
+          </button>
+        </div>
+      )}
+
+      <div ref={bottomRef} />
     </div>
   );
 }
