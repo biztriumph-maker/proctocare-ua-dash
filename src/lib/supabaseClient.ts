@@ -24,3 +24,13 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 export const supabaseEnvironment = SUPABASE_ENV;
+
+/** Standard DB health check — use instead of any /api/check-db endpoint. */
+export async function checkSupabaseConnection(): Promise<boolean> {
+	try {
+		const { error } = await supabase.from('visits').select('id').limit(1);
+		return !error;
+	} catch {
+		return false;
+	}
+}

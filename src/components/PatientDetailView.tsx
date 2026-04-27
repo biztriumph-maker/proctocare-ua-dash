@@ -5,17 +5,20 @@ import {
   AI_SUMMARY_BY_STATUS,
   EVENT_LOG_LABELS,
   classifyProcedureGroup,
-  ROADMAP_MESSAGES,
 } from "@/config/agentMessages";
 import { supabase } from "@/lib/supabaseClient";
-import { isSupabaseDataMode } from "@/lib/supabaseSync";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Send, Pencil, FileText, Trash2, ClipboardList, ChevronRight, ChevronDown, Check, Calendar, RotateCcw, Loader2, Minimize2 } from "lucide-react";
+import {
+  isSupabaseDataMode,
+  upsertAssistantSession,
+  loadAssistantSessionDB,
+  subscribeToAssistantSessionDB,
+} from "@/lib/supabaseSync";
+import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Pencil, FileText, Trash2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
 import { computePatientStatus, AllergyShield } from "./PatientCard";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Progress } from "@/components/ui/progress";
 import { CountryPhoneInput } from "./CountryPhoneInput";
 import { PatientServices, ReschedulePicker } from "./PatientServices";
 import { toast } from "sonner";
@@ -25,18 +28,14 @@ import { PatientAllergies } from "./PatientAllergies";
 import { PatientFiles, type FileItem } from "./PatientFiles";
 import { PatientProfile } from "./PatientProfile";
 import { usePatientContext } from "@/hooks/usePatientContext";
-
-interface ChatMessage {
-  sender: "ai" | "patient" | "doctor";
-  text: string;
-  time: string;
-  unanswered?: boolean;
-  quickReply?: {
-    yes: string;
-    no?: string;
-    context?: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved";
-  };
-}
+import {
+  type ChatMessage,
+  type EventLog,
+  ChatPane,
+  ChatInput,
+  LinearProgressBar,
+  HistoryModal,
+} from "./AssistantChat";
 
 interface PatientDetailViewProps {
   patient: Patient;
@@ -195,15 +194,12 @@ function buildGreetingMessage(patient: Patient, appointmentIsoDate: string, appo
   });
 }
 
-function buildDrugSelectionMessage(patient: Patient): string {
-  const { salutation, firstName } = getPatientNameInfo(patient);
-  return AGENT_CHAT_MESSAGES.drugSelectionTemplate({ salutation, firstName });
-}
 
-/** "Я готова" for female, "Я готовий" for male — based on patronymic suffix */
 function getReadyButtonText(patient: Patient): string {
-  const { salutation } = getPatientNameInfo(patient);
-  return salutation === "Пані" ? "Я готова" : "Я готовий";
+  const parts = patient.name.trim().split(/\s+/);
+  const patronymic = parts[2] ?? "";
+  if (/івна$|овна$|євна$/i.test(patronymic)) return "Я готова";
+  return "Я готовий";
 }
 
 // ── Autonomous assistant trigger helpers ─────────────────────────────────────
@@ -437,32 +433,15 @@ function getMockProfile(patient: Patient) {
   };
 }
 
-function getMockChat(patient: Patient): ChatMessage[] {
-  if (patient.fromForm) return [];
-  const base: ChatMessage[] = [
-    { sender: "ai", text: "Доброго дня! Починайте підготовку за інструкцією: дієта без клітковини за 3 дні до процедури.", time: "09:00" },
-    { sender: "patient", text: "Дякую. А що саме не можна їсти?", time: "09:15" },
-    { sender: "ai", text: "Виключіть: хліб, каші, овочі, фрукти, горіхи. Дозволено: білий рис, курка, риба, бульйон.", time: "09:16" },
-  ];
 
-  if (patient.status === "risk") {
-    base.push(
-      { sender: "patient", text: "У мене алергія на один з препаратів. Що робити?", time: "10:20", unanswered: true },
-    );
-  } else if (patient.status === "progress") {
-    base.push(
-      { sender: "patient", text: "Препарат прийнято, починаю очищення.", time: "14:00" },
-      { sender: "ai", text: "Чудово! Продовжуйте за графіком. Наступна порція о 18:00.", time: "14:01" },
-    );
-  } else {
-    base.push(
-      { sender: "patient", text: "Все зроблено, почуваюсь добре.", time: "18:00" },
-      { sender: "ai", text: "Підготовка завершена. Завтра о 08:00 чекаємо вас натщесерце.", time: "18:01" },
-    );
-  }
-
-  return base;
+function makeTimestamp(): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+  return `${dd}.${mm} | ${hhmm}`;
 }
+
 
 function getPreparationProgress(patient: Patient, _services?: string[]): { percent: number; steps: { label: string; done: boolean }[] } {
   const status = patient.status;
@@ -574,6 +553,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const entry = getWelcomeEntry(patient.id, activeVisitIso);
     if (!entry) return [];
     const text = buildGreetingMessage(patient, activeVisitIso, patient.time, patient.procedure || "");
+    if (!text) return [];
     return [{ sender: "ai", text, time: entry.time, quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" } }];
   });
   const [waitingForDietAck, setWaitingForDietAck] = useState(restoredAssistantSession?.waitingForDietAck ?? false);
@@ -585,6 +565,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     restoredAssistantSession?.drugChoice ?? patient.drugChoice ?? null
   );
   const [isTyping, setIsTyping] = useState(false);
+  const [hideInput, setHideInput] = useState(false);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs for stable reads inside the init effect without adding to its deps.
@@ -597,6 +578,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const drugChoiceRef = useRef(drugChoice);
   const step2AckResultRef = useRef(step2AckResult);
   const dietInstructionSentRef = useRef(dietInstructionSent);
+  // Prevents applyRemoteTransition block 2 from firing during the 800ms typing
+  // window after "Питання вирішено" — the device that pressed the button sets this
+  // to true synchronously, so the incoming realtime event is ignored.
+  const questionResolvedInProgressRef = useRef(false);
   const patientRef = useRef(patient);
 
   useEffect(() => {
@@ -615,7 +600,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const entry = getWelcomeEntry(patient.id, activeVisitIso);
     if (entry) {
       const text = buildGreetingMessage(patient, activeVisitIso, patient.time, patient.procedure || "");
-      setEmulatedMessages([{ sender: "ai", text, time: entry.time, quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" } }]);
+      if (text) {
+        setEmulatedMessages([{ sender: "ai", text, time: entry.time, quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" } }]);
+      }
       setWelcomeSent(true);
       setWaitingForDietAck(false);
       setDietInstructionSent(false);
@@ -664,7 +651,18 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       welcomeSent,
       drugChoice,
     });
-  }, [patient.id, activeVisitIso, emulatedMessages, waitingForDietAck, dietInstructionSent, waitingForStep2Ack, step2AckResult, welcomeSent, drugChoice]);
+    // Sync session to Supabase so other devices get the update via Realtime
+    if (isSupabaseDataMode && !patient.id.startsWith('new-') && patient.patientDbId && welcomeSent) {
+      void upsertAssistantSession(patient.id, patient.patientDbId, activeVisitIso, {
+        messages: emulatedMessages,
+        waitingForDietAck,
+        dietInstructionSent,
+        waitingForStep2Ack,
+        step2AckResult,
+        welcomeSent,
+      });
+    }
+  }, [patient.id, patient.patientDbId, activeVisitIso, emulatedMessages, waitingForDietAck, dietInstructionSent, waitingForStep2Ack, step2AckResult, welcomeSent, drugChoice]);
 
   // Realtime: cross-device assistant action sync.
   // Reconstructs full AI conversation on receiving device from DB state transitions.
@@ -674,112 +672,55 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
     const visitId = patient.id;
 
-    const makeTime = () => {
-      const now = new Date();
-      const dd = String(now.getDate()).padStart(2, "0");
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-      return `${dd}.${mm} | ${hhmm}`;
-    };
-
     const applyRemoteTransition = (row: Record<string, unknown>) => {
       const newDrug   = row.drug_choice as string | null | undefined;
       const newStatus = row.status     as string | null | undefined;
-      const t = makeTime();
 
-      // ── 1. Drug choice → patient reply + confirm + roadmap ─────────────────
-      // Self-exclusion: newDrug already equals ref (this device just saved it)
+      // Propagate status to parent list so the card reflects changes from other devices
+      const validStatuses = ['planning', 'progress', 'yellow', 'risk', 'ready'];
+      if (newStatus && validStatuses.includes(newStatus) && newStatus !== patientRef.current.status) {
+        onUpdatePatient?.({ status: newStatus as PatientStatus });
+      }
+
+      // Update drug choice flag (messages come from assistant_chats Realtime)
       if (
         (newDrug === 'fortrans' || newDrug === 'izyklin') &&
-        newDrug !== drugChoiceRef.current &&
-        !dietInstructionSentRef.current
+        newDrug !== drugChoiceRef.current
       ) {
-        const choice     = newDrug as 'fortrans' | 'izyklin';
-        const drugName   = choice === 'fortrans' ? 'Фортранс' : 'Ізіклін';
-        const patientTxt = choice === 'fortrans' ? PATIENT_QUICK_REPLIES.fortrans : PATIENT_QUICK_REPLIES.izyklin;
-        const group      = classifyProcedureGroup(patientRef.current.procedure || '');
-        const roadmap    = group === 'G'
-          ? ROADMAP_MESSAGES.groupG()
-          : ROADMAP_MESSAGES.groupK({ drugChoice: choice });
-        setDrugChoice(choice);
+        setDrugChoice(newDrug as 'fortrans' | 'izyklin');
         setDietInstructionSent(true);
-        setEmulatedMessages((prev) => [
-          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
-          { sender: 'patient' as const, text: patientTxt, time: t },
-          { sender: 'ai'     as const, text: AGENT_CHAT_MESSAGES.drugChoiceConfirm({ drugName }), time: t },
-          { sender: 'ai'     as const, text: roadmap, time: t },
-        ]);
         return;
       }
 
-      // ── 2. Status → 'yellow' (start_prep yes) → patient reply + drug selection ──
-      // Self-exclusion: drug_choice question already visible OR diet step already done
-      if (
-        newStatus === 'yellow' &&
-        step2AckResultRef.current !== 'question' &&
-        !dietInstructionSentRef.current &&
-        !emulatedMessagesRef.current.some((m) => m.quickReply?.context === 'drug_choice')
-      ) {
-        const drugText  = buildDrugSelectionMessage(patientRef.current);
-        const readyText = getReadyButtonText(patientRef.current);
-        setEmulatedMessages((prev) => [
-          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
-          { sender: 'patient' as const, text: readyText, time: t },
-          {
-            sender: 'ai' as const,
-            text: drugText,
-            time: t,
-            quickReply: {
-              yes: PATIENT_QUICK_REPLIES.fortrans,
-              no:  PATIENT_QUICK_REPLIES.izyklin,
-              context: 'drug_choice' as const,
-            },
-          },
-        ]);
-        return;
-      }
-
-      // ── 3. Status → 'risk' → patient reply + typing + "Є запитання" response ──
-      // Self-exclusion: step2AckResult already 'question' (this device just set it)
+      // Status → 'risk': update step2AckResult flag
       if (newStatus === 'risk' && step2AckResultRef.current !== 'question') {
-        const { address } = getPatientNameInfo(patientRef.current);
         setStep2AckResult('question');
-        setEmulatedMessages((prev) => [
-          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
-          { sender: 'patient' as const, text: PATIENT_QUICK_REPLIES.dietNo, time: t },
-        ]);
-        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-        setIsTyping(true);
-        typingTimerRef.current = setTimeout(() => {
-          setIsTyping(false);
-          setEmulatedMessages((prev) => [...prev, {
-            sender: 'ai' as const,
-            text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
-            time: makeTime(),
-            quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: 'question_resolved' as const },
-          }]);
-        }, 1000);
         return;
       }
 
-      // ── 4. Status → 'yellow' (question resolved) → patient reply + typing + confirm ──
-      // Self-exclusion: step2AckResult already 'none' (this device just reset it)
+      // Status → 'yellow': load session from DB and apply to this device's state
+      if (newStatus === 'yellow' && patientRef.current.status !== 'yellow') {
+        const applySession = async () => {
+          const session = await loadAssistantSessionDB(visitId);
+          if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
+          console.log('[Session] Applying remote session state for', visitId, 'msgs:', session.messages.length);
+          setEmulatedMessages(session.messages as import('./AssistantChat').ChatMessage[]);
+          setWaitingForDietAck(session.waiting_for_diet_ack);
+          setDietInstructionSent(session.diet_instruction_sent);
+          setWaitingForStep2Ack(session.waiting_for_step2_ack);
+          setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
+          setWelcomeSent(session.welcome_sent);
+        };
+        // Immediate attempt — may not have Block 4 yet (inserted 800ms later)
+        void applySession().then(() => {
+          // Retry after 1.5s to catch diet block inserted by pressing device after 800ms
+          setTimeout(() => void applySession(), 1500);
+        });
+      }
+
+      // Status → 'yellow' after question: reset step2AckResult flag
       if (newStatus === 'yellow' && step2AckResultRef.current === 'question') {
         setStep2AckResult('none');
-        setEmulatedMessages((prev) => [
-          ...prev.map((m) => m.quickReply ? { ...m, quickReply: undefined } : m),
-          { sender: 'patient' as const, text: PATIENT_QUICK_REPLIES.questionResolved, time: t },
-        ]);
-        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-        setIsTyping(true);
-        typingTimerRef.current = setTimeout(() => {
-          setIsTyping(false);
-          setEmulatedMessages((prev) => [...prev, {
-            sender: 'ai' as const,
-            text: AGENT_CHAT_MESSAGES.questionResolvedConfirm,
-            time: makeTime(),
-          }]);
-        }, 800);
         return;
       }
     };
@@ -792,6 +733,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         (payload) => {
           const row = (payload.new ?? {}) as Record<string, unknown>;
           if (row.id !== visitId) return;
+          console.log("СИГНАЛ ОТРИМАНО: Статус змінено для", row.id);
           applyRemoteTransition(row);
         }
       )
@@ -808,6 +750,16 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         .eq('id', visitId)
         .single();
       if (data) applyRemoteTransition(data as Record<string, unknown>);
+      // Reload chat to catch messages sent while tab was hidden
+      const session = await loadAssistantSessionDB(visitId);
+      if (session && Array.isArray(session.messages) && session.messages.length > 0) {
+        setEmulatedMessages(session.messages as ChatMessage[]);
+        setWaitingForDietAck(session.waiting_for_diet_ack);
+        setDietInstructionSent(session.diet_instruction_sent);
+        setWaitingForStep2Ack(session.waiting_for_step2_ack);
+        setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
+        setWelcomeSent(session.welcome_sent);
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -822,8 +774,37 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
   }, []);
 
-  const baseChat = getMockChat(patient);
-  const chat = [...baseChat, ...emulatedMessages];
+  // ── Load session from DB on mount ──────────────────────────────────────────
+  useEffect(() => {
+    if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
+    loadAssistantSessionDB(patient.id).then((session) => {
+      if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
+      setEmulatedMessages(session.messages as ChatMessage[]);
+      setWaitingForDietAck(session.waiting_for_diet_ack);
+      setDietInstructionSent(session.diet_instruction_sent);
+      setWaitingForStep2Ack(session.waiting_for_step2_ack);
+      setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
+      setWelcomeSent(session.welcome_sent);
+    });
+  }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Realtime: session update subscription ───────────────────────────────────
+  useEffect(() => {
+    if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
+    const unsub = subscribeToAssistantSessionDB(patient.id, (session) => {
+      if (!Array.isArray(session.messages) || session.messages.length === 0) return;
+      setEmulatedMessages(session.messages as ChatMessage[]);
+      setWaitingForDietAck(session.waiting_for_diet_ack);
+      setDietInstructionSent(session.diet_instruction_sent);
+      setWaitingForStep2Ack(session.waiting_for_step2_ack);
+      setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
+      setWelcomeSent(session.welcome_sent);
+    });
+    return unsub;
+  }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const useDB = isSupabaseDataMode && !patient.id.startsWith("new-");
+  const chat = emulatedMessages;
   const unanswered = chat.filter((m) => m.unanswered);
   const preparation = getPreparationProgress(patient, localServices);
 
@@ -1066,54 +1047,46 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   }, [welcomeSent, dietInstructionSent, waitingForStep2Ack, step2AckResult, rescheduleNoticeOriginalDate, patient.time, activeVisitIso]);
 
   // Auto-send welcome message when all 4 fields are filled for the first time
+  // Guard: if greetingTemplate returns "" — assistant stays silent (no message shown)
   useEffect(() => {
     if (!allFieldsReady || welcomeSent) return;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       const serviceName = localServices.length > 0 ? localServices.join(", ") : (patient.procedure || "");
       const messageText = buildGreetingMessage(patient, activeVisitIso, patient.time, serviceName);
-      const _ts = new Date();
-      const _dd = String(_ts.getDate()).padStart(2, "0");
-      const _mm = String(_ts.getMonth() + 1).padStart(2, "0");
-      const _hhmm = _ts.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-      const messageTime = `${_dd}.${_mm} | ${_hhmm}`;
-      setEmulatedMessages((prev) => [...prev, {
-        sender: "ai",
-        text: messageText,
-        time: messageTime,
-        quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" },
-      }]);
+      const messageTime = makeTimestamp();
+
+      if (!messageText) return; // порожній текст → мовчимо
+
       setWaitingForDietAck(false);
       setDietInstructionSent(false);
       setWaitingForStep2Ack(false);
       setStep2AckResult("none");
       markWelcomeSent(patient.id, activeVisitIso, messageTime, messageText);
       setWelcomeSent(true);
+      const greetingMsg: ChatMessage = {
+        sender: "ai",
+        text: messageText,
+        time: messageTime,
+        quickReply: { yes: getReadyButtonText(patient), no: "Є запитання", context: "start_prep" },
+      };
+      setEmulatedMessages([greetingMsg]);
     }, 1500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFieldsReady, welcomeSent]);
 
-  const handleQuickReply = (answer: "yes" | "no", context: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved" = "start_prep") => {
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, "0");
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-    const replyTime = `${dd}.${mm} | ${hhmm}`;
+  const handleQuickReply = (answer: "yes" | "no", context: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved" | "diet_confirm" = "start_prep") => {
+    const replyTime = makeTimestamp();
 
     const replyTextMap: Record<string, string> = {
       "start_prep_yes": getReadyButtonText(patient),
       "start_prep_no":  "Є запитання",
-      "drug_choice_yes": PATIENT_QUICK_REPLIES.fortrans,
-      "drug_choice_no":  PATIENT_QUICK_REPLIES.izyklin,
-      "diet_yes": PATIENT_QUICK_REPLIES.dietYes,
-      "diet_no":  PATIENT_QUICK_REPLIES.dietNo,
-      "greeting_yes": PATIENT_QUICK_REPLIES.greetingYes,
-      "greeting_no":  PATIENT_QUICK_REPLIES.greetingNo,
       "question_resolved_yes": PATIENT_QUICK_REPLIES.questionResolved,
+      "diet_confirm_yes": PATIENT_QUICK_REPLIES.dietConfirm,
     };
     const replyText = replyTextMap[`${context}_${answer}`] ?? answer;
 
-    // Знімаємо кнопки з попереднього повідомлення, додаємо відповідь пацієнта
+    // Always update emulatedMessages — visual fallback when DB is unavailable
     setEmulatedMessages((prev) =>
       prev
         .map((m) => m.quickReply ? { ...m, quickReply: undefined } : m)
@@ -1124,82 +1097,99 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (context === "start_prep") {
       if (answer === "no") {
         const { address } = getPatientNameInfo(patient);
-        setStep2AckResult("question");
-        onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
+        setHideInput(true);
+        onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
         if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
         setIsTyping(true);
+
+        if (useDB) {
+          supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+            .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
+        }
         typingTimerRef.current = setTimeout(() => {
           setIsTyping(false);
+          const aiText = AGENT_CHAT_MESSAGES.hasQuestionResponse({ address });
+          if (!aiText) return; // порожній текст → мовчимо
           setEmulatedMessages((prev) => [...prev, {
             sender: "ai" as const,
-            text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
+            text: aiText,
             time: replyTime,
-            quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" },
+            quickReply: PATIENT_QUICK_REPLIES.questionResolved
+              ? { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" as const }
+              : undefined,
           }]);
         }, 2000);
         return;
       }
+
       // answer === "yes" → починаємо підготовку
+      // Визначаємо групу: Г (Гастроскопія) → одразу Блок 6; К (Колоноскопія та ін.) → Блок 4 (дієта)
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
-      const drugText = buildDrugSelectionMessage(patient);
-      setEmulatedMessages((prev) => [...prev, {
-        sender: "ai",
-        text: drugText,
-        time: replyTime,
-        quickReply: {
-          yes: PATIENT_QUICK_REPLIES.fortrans,
-          no:  PATIENT_QUICK_REPLIES.izyklin,
-          context: "drug_choice",
-        },
-      }]);
+      const procGroup = classifyProcedureGroup(patient.procedure || "");
+
+      if (useDB) {
+        supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+          .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
+      }
+      // Група К → Блок 4 (харчування) per logic.md
+      // Група Г → мовчить (тексту для цього кроку в logic.md поки немає)
+      if (procGroup === 'K' && AGENT_CHAT_MESSAGES.dietBlockK) {
+        setIsTyping(true);
+        typingTimerRef.current = setTimeout(() => {
+          setEmulatedMessages((prev) => [...prev, {
+            sender: "ai",
+            text: AGENT_CHAT_MESSAGES.dietBlockK,
+            time: makeTimestamp(),
+            quickReply: PATIENT_QUICK_REPLIES.dietConfirm
+              ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
+              : undefined,
+          }]);
+          setIsTyping(false);
+        }, 800);
+      }
       return;
     }
 
-    // ── Блок 5.1 + Блок 6: Вибір препарату → Дорожня карта ──────────────────
-    if (context === "drug_choice") {
-      const choice: 'fortrans' | 'izyklin' = answer === "yes" ? "fortrans" : "izyklin";
-      const drugName = answer === "yes" ? "Фортранс" : "Ізіклін";
-      setDrugChoice(choice);
-      onUpdatePatient?.({ drugChoice: choice });
-
-      const group = classifyProcedureGroup(patient.procedure || "");
-      const roadmapText = group === 'G'
-        ? ROADMAP_MESSAGES.groupG()
-        : ROADMAP_MESSAGES.groupK({ drugChoice: choice });
-
-      setEmulatedMessages((prev) => [
-        ...prev,
-        { sender: "ai", text: AGENT_CHAT_MESSAGES.drugChoiceConfirm({ drugName }), time: replyTime },
-        { sender: "ai", text: roadmapText, time: replyTime },
-      ]);
-      setDietInstructionSent(true);
+    // ── Блок 4 підтверджено: пацієнт натиснув "Дотримуюсь дієти" ────────────────
+    // Блок 5 ТЗ (текст у logic.md) — поки не реалізовано, асистент мовчить.
+    if (context === "diet_confirm") {
       return;
     }
 
-    // ── Блок 5 ТЗ: "Питання вирішено. Розпочати!" → скидаємо risk, повертаємо yellow ──
+    // ── "Питання вирішено. Розпочати!" → за групою: К→Блок 4, Г→Блок 6 ────────
     if (context === "question_resolved") {
+      const procGroup = classifyProcedureGroup(patient.procedure || "");
       setStep2AckResult("none");
+      setHideInput(false);
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       setIsTyping(true);
-      typingTimerRef.current = setTimeout(() => {
+
+      // Група К → Блок 4 (харчування) per logic.md; порожній текст → мовчимо
+      // Група Г → мовчить (тексту для цього кроку в logic.md поки немає)
+      if (procGroup === 'K' && AGENT_CHAT_MESSAGES.dietBlockK) {
+        questionResolvedInProgressRef.current = true;
+        typingTimerRef.current = setTimeout(() => {
+          setIsTyping(false);
+          questionResolvedInProgressRef.current = false;
+          setEmulatedMessages((prev) => {
+            if (prev.some((m) => m.quickReply?.context === "diet_confirm")) return prev;
+            return [
+              ...prev,
+              { sender: "ai" as const, text: AGENT_CHAT_MESSAGES.dietBlockK, time: replyTime,
+                quickReply: PATIENT_QUICK_REPLIES.dietConfirm
+                  ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
+                  : undefined },
+            ];
+          });
+        }, 800);
+      } else {
         setIsTyping(false);
-        setEmulatedMessages((prev) => [...prev, {
-          sender: "ai" as const,
-          text: AGENT_CHAT_MESSAGES.questionResolvedConfirm,
-          time: replyTime,
-        }]);
-      }, 800);
+      }
       return;
     }
 
-    // ── Залишкова логіка для diet (backward compat) ───────────────────────────
     if (context === "diet" && answer === "no") {
-      setEmulatedMessages((prev) => [...prev, {
-        sender: "ai",
-        text: AGENT_CHAT_MESSAGES.forwardedToDoctor,
-        time: replyTime,
-      }]);
       setStep2AckResult("question");
       setWaitingForStep2Ack(false);
     }
@@ -1211,29 +1201,40 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   };
 
   const handleHasQuestion = () => {
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, "0");
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const hhmm = now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-    const time = `${dd}.${mm} | ${hhmm}`;
+    const time = makeTimestamp();
     const { address } = getPatientNameInfo(patient);
-    setEmulatedMessages((prev) => [
-      ...prev.map((m) => (m.quickReply ? { ...m, quickReply: undefined } : m)),
-      { sender: "patient" as const, text: PATIENT_QUICK_REPLIES.dietNo, time },
-    ]);
-    setStep2AckResult("question");
-    onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
+    setHideInput(true);
+    onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     setIsTyping(true);
+
+    if (useDB) {
+      supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+        .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
+    }
+    setEmulatedMessages((prev) => [
+      ...prev.map((m) => (m.quickReply ? { ...m, quickReply: undefined } : m)),
+      { sender: "patient" as const, text: "Є запитання", time },
+    ]);
     typingTimerRef.current = setTimeout(() => {
       setIsTyping(false);
+      const aiText = AGENT_CHAT_MESSAGES.hasQuestionResponse({ address });
+      if (!aiText) return; // порожній текст → мовчимо
       setEmulatedMessages((prev) => [...prev, {
         sender: "ai" as const,
-        text: AGENT_CHAT_MESSAGES.hasQuestionResponse({ address }),
+        text: aiText,
         time,
-        quickReply: { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" },
+        quickReply: PATIENT_QUICK_REPLIES.questionResolved
+          ? { yes: PATIENT_QUICK_REPLIES.questionResolved, context: "question_resolved" as const }
+          : undefined,
       }]);
     }, 2000);
+  };
+
+  const handleDoctorSend = (text: string) => {
+    const time = makeTimestamp();
+    const doctorMsg: ChatMessage = { sender: "doctor", text, time };
+    setEmulatedMessages((prev) => [...prev, doctorMsg]);
   };
 
   // Derive lastVisit from the latest valid archived date: completed visit from schedule
@@ -1801,41 +1802,31 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
-                <div className="p-4 min-h-full flex flex-col gap-3">
-                  <ContentBlock title="Журнал подій" icon={<Activity size={13} />}
-                    headerRight={
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setHistoryModalOpen(true)}
-                          className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors"
-                          title="Журнал подій"
-                        >
-                          <FileText size={14} className="text-muted-foreground" />
-                        </button>
-                      </div>
-                    }
-                  >
-                    <LinearProgressBar
-                      preparation={preparation}
-                      status={effectiveStatus}
-                      waitingForDietAck={waitingForDietAck}
-                      dietInstructionSent={dietInstructionSent}
-                      waitingForStep2Ack={waitingForStep2Ack}
-                      step2AckResult={step2AckResult}
-                    />
-                    <div className="px-4 pb-3 space-y-1.5">
-                      {eventLogs.slice(0, 3).map((log, i) => (
-                        <div key={`mobile-log-${i}`} className="text-[11px] text-muted-foreground leading-snug truncate">
-                          <span className="font-semibold text-foreground/80">{log.timestamp}</span>
-                          <span className="mx-1">·</span>
-                          <span>{log.event}</span>
-                        </div>
-                      ))}
+                <div className="p-4 flex flex-col gap-3">
+                  {/* Progress bar — compact, no journal entries on mobile */}
+                  <div className="bg-card rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex items-center justify-between px-1 pr-3">
+                    <div className="flex-1">
+                      <LinearProgressBar
+                        preparation={preparation}
+                        status={effectiveStatus}
+                        waitingForDietAck={waitingForDietAck}
+                        dietInstructionSent={dietInstructionSent}
+                        waitingForStep2Ack={waitingForStep2Ack}
+                        step2AckResult={step2AckResult}
+                      />
                     </div>
-                  </ContentBlock>
-                  <div className="flex-1 min-h-0 bg-card rounded-xl overflow-hidden shadow-[0_6px_16px_rgba(0,0,0,0.08)] flex flex-col">
-                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && step2AckResult !== "question" ? handleHasQuestion : undefined} isTyping={isTyping} />
-                    <ChatInput />
+                    <button
+                      onClick={() => setHistoryModalOpen(true)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                      title="Журнал подій"
+                    >
+                      <FileText size={13} className="text-muted-foreground" />
+                    </button>
+                  </div>
+                  {/* Chat — natural height so outer scroll container handles scrolling */}
+                  <div className="bg-card rounded-xl shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
+                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} isTyping={isTyping} />
+                    {!hideInput && <ChatInput onSend={handleDoctorSend} />}
                   </div>
                 </div>
               ) : null}
@@ -1935,8 +1926,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   waitingForStep2Ack={waitingForStep2Ack}
                   step2AckResult={step2AckResult}
                 />
-                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && step2AckResult !== "question" ? handleHasQuestion : undefined} isTyping={isTyping} />
-                <ChatInput />
+                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && !hideInput ? handleHasQuestion : undefined} isTyping={isTyping} />
+                {!hideInput && <ChatInput onSend={handleDoctorSend} />}
               </ContentBlock>
             </div>
           </div>
@@ -2199,351 +2190,7 @@ function ContentBlock({ children, className, title, icon, headerRight }: {
   );
 }
 
-// ── Sidebar Tracker — compact steps with ✓ / ⏳ / ⚠ icons + call button ──
-// ── Preparation Tracker — 4 steps with green checkmarks ──
-function PreparationTracker({ preparation }: { preparation: ReturnType<typeof getPreparationProgress> }) {
-  return (
-    <div className="px-4 pb-4 space-y-3">
-      <div className="space-y-2.5">
-        {preparation.steps.map((step, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <div className={cn(
-              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
-              step.done ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"
-            )}>
-              {step.done ? "✓" : i + 1}
-            </div>
-            <span className={cn("text-sm", step.done ? "font-bold text-foreground" : "text-muted-foreground")}>
-              {step.label}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Prep Stepper — thin horizontal step indicator at top of Assistant block ──
-// ── Linear Progress Timeline (Thin line, 5 segments) ──
-function LinearProgressBar({ preparation, status, waitingForDietAck = false, dietInstructionSent = false, waitingForStep2Ack = false, step2AckResult = "none" }: {
-  preparation: ReturnType<typeof getPreparationProgress>;
-  status: PatientStatus;
-  waitingForDietAck?: boolean;
-  dietInstructionSent?: boolean;
-  waitingForStep2Ack?: boolean;
-  step2AckResult?: "none" | "confirmed" | "question";
-}) {
-  const firstPendingIdx = preparation.steps.findIndex(s => !s.done);
-  const lastStepIdx = preparation.steps.length - 1;
-
-  const getSegmentColor = (i: number): string => {
-    // Виключно сесійна логіка: колір змінюється ЛИШЕ після реальної взаємодії
-    const isDone   = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === lastStepIdx);
-    const isFailed = step2AckResult === "question" && i === lastStepIdx;
-    // Проміжні кроки (між 0 і lastStep) жовті після того як roadmap надіслано
-    const isActive = dietInstructionSent && !isDone && !isFailed && i > 0 && i < lastStepIdx;
-
-    if (isFailed) return "bg-red-500";
-    if (isDone && i === lastStepIdx) return "bg-green-500"; // Зелений — ТІЛЬКИ останній
-    if (isDone || isActive) return "bg-yellow-400";         // Жовтий — активний або завершений проміжний
-    return "bg-gray-200";                                   // Сірий — за замовчуванням (Точка 0)
-  };
-
-  return (
-    <div className="px-4 pb-3 pt-4">
-      {/* Labels above line */}
-      <div className="flex justify-between mb-2 gap-1">
-        {preparation.steps.map((step, i) => (
-          <div key={`label-${i}`} className="flex-1 min-w-0 flex flex-col items-center overflow-hidden">
-            <p className="text-[8px] font-semibold text-center leading-tight text-foreground truncate w-full max-w-full px-0.5" title={step.label}>
-              {step.label}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Timeline line divided into 5 segments */}
-      <div className="flex gap-0.5 h-1">
-        {preparation.steps.map((step, i) => (
-          <div
-            key={`segment-${i}`}
-            className={cn("flex-1 rounded-sm transition-colors", getSegmentColor(i))}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Chat Pane — Messenger Premium style ──
-function renderBoldText(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith("**") && part.endsWith("**")
-          ? <strong key={i}>{part.slice(2, -2)}</strong>
-          : <span key={i}>{part}</span>
-      )}
-    </>
-  );
-}
-
-// ── System History Modal (Desktop & Mobile) ──
-type EventLog = {
-  timestamp: string;
-  event: string;
-  status: "pending" | "completed" | "warning" | "error";
-};
-
-function HistoryModal({ isOpen, onClose, chat, eventLogs = [] }: {
-  isOpen: boolean;
-  onClose: () => void;
-  chat: ChatMessage[];
-  eventLogs?: EventLog[];
-}) {
-  if (!isOpen) return null;
-
-  const systemMessages = chat.filter((m) => !m.unanswered && m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")));
-  
-  const getStatusColor = (status: string): string => {
-    switch (status) {
-      case "completed": return "text-green-700 bg-green-50";
-      case "warning": return "text-yellow-700 bg-yellow-50";
-      case "error": return "text-red-700 bg-red-50";
-      default: return "text-slate-600 bg-slate-50";
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-card rounded-xl shadow-xl border border-border/60 w-full max-w-2xl max-h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 shrink-0">
-          <div>
-            <h3 className="text-base font-bold text-foreground">📜 Журнал подій</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Порядок діяльності та статуси</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
-          >
-            <X size={18} className="text-muted-foreground" />
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-6">
-          {eventLogs.length === 0 && systemMessages.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">Немає записів у журналі</p>
-          ) : (
-            <div className="space-y-4">
-              {/* Event Log Table */}
-              {eventLogs.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-foreground mb-2 uppercase opacity-60">Подорож</h4>
-                  <div className="space-y-1">
-                    {eventLogs.map((log, i) => (
-                      <div key={i} className={cn("flex gap-3 px-3 py-2 rounded border", getStatusColor(log.status))}>
-                        <span className="font-mono text-[10px] shrink-0 whitespace-nowrap">{log.timestamp}</span>
-                        <span className="text-xs flex-1">{log.event}</span>
-                        <span className="text-[10px] font-semibold uppercase shrink-0">{log.status === "completed" ? "✓" : log.status === "error" ? "✗" : log.status === "warning" ? "!" : "○"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* System Messages */}
-              {systemMessages.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-foreground mb-2 uppercase opacity-60">Повідомлення системи</h4>
-                  <div className="space-y-1">
-                    {systemMessages.map((msg, i) => (
-                      <div key={i} className="flex gap-3 px-3 py-2 rounded bg-muted/30 border border-border/30">
-                        <span className="font-mono text-[10px] shrink-0 whitespace-nowrap">{msg.time}</span>
-                        <p className="text-xs leading-relaxed flex-1">{msg.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatPane({ chat, unanswered, onQuickReply, onHasQuestion, isTyping }: {
-  chat: ChatMessage[];
-  unanswered: ChatMessage[];
-  onQuickReply?: (answer: "yes" | "no", context?: "greeting" | "diet" | "start_prep" | "drug_choice" | "question_resolved") => void;
-  onHasQuestion?: () => void;
-  isTyping?: boolean;
-}) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const activeMessages = chat.filter((m) => !m.unanswered && !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено"))));
-  const hasActiveQuickReply = activeMessages.length > 0 && !!activeMessages[activeMessages.length - 1].quickReply;
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeMessages.length, isTyping]);
-
-  return (
-    <div className="mx-5 my-3 rounded-[20px] px-4 py-3 space-y-2.5 overflow-y-auto flex-1 border border-sky-100 bg-[#F0F8FF]">
-      {/* Pinned unanswered questions */}
-      {unanswered.map((msg, i) => (
-        <div
-          key={`pinned-${i}`}
-          className="rounded-xl px-4 py-3 text-sm leading-relaxed bg-status-risk-bg border-2 border-status-risk/30 shadow-[0_2px_8px_rgba(0,0,0,0.06)] animate-reveal-up"
-        >
-          <div className="flex items-center gap-1.5 mb-1">
-            <AlertTriangle size={14} className="text-status-risk shrink-0" />
-            <span className="text-xs font-bold text-status-risk">Питання без відповіді · {msg.time}</span>
-          </div>
-          <p className="text-foreground font-bold">{msg.text}</p>
-        </div>
-      ))}
-
-      {/* Chat history — bubbles */}
-      {activeMessages.map((msg, i) => {
-        const isPatient = msg.sender === "patient";
-        const isDoctor  = msg.sender === "doctor";
-        return (
-          <div key={i} className={cn("flex flex-col", isPatient ? "items-start" : "items-end")}>
-            <div className={cn(
-              "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
-              isDoctor  ? "bg-green-100 border border-green-300 rounded-br-sm text-green-900"
-              : isPatient ? "bg-white border border-gray-300 rounded-bl-sm text-gray-900"
-                          : "bg-yellow-50 border border-yellow-300 rounded-bl-sm text-yellow-900"
-            )}>
-              <p className={cn("text-[11px] font-bold mb-0.5", isDoctor ? "text-green-700" : isPatient ? "text-gray-600" : "text-yellow-700")}>
-                {isDoctor ? "Лікар" : isPatient ? "Клієнт" : "Асистент"} · {msg.time}
-              </p>
-              <p className="text-foreground">{renderBoldText(msg.text)}</p>
-            </div>
-
-            {/* QuickReply buttons — inside chat bubble area */}
-            {msg.quickReply && onQuickReply && (
-              <div className="flex gap-2 mt-2 flex-wrap">
-                <button
-                  onClick={() => onQuickReply("yes", msg.quickReply?.context)}
-                  className="text-[12px] font-bold px-3.5 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700 active:scale-[0.94] transition-all shadow-sm"
-                >
-                  {msg.quickReply.yes}
-                </button>
-                {msg.quickReply.no && (
-                  <button
-                    onClick={() => onQuickReply("no", msg.quickReply?.context)}
-                    className={cn(
-                      "text-[12px] font-bold px-3.5 py-1.5 rounded-full active:scale-[0.94] transition-all shadow-sm",
-                      msg.quickReply.context === "drug_choice"
-                        ? "bg-white border border-slate-300 text-foreground hover:bg-slate-50"
-                        : "bg-amber-500 text-white hover:bg-amber-600"
-                    )}
-                  >
-                    {msg.quickReply.no}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Typing indicator — "Асистент пише..." */}
-      {isTyping && (
-        <div className="flex flex-col items-end animate-reveal-up">
-          <div className="rounded-2xl px-4 py-2.5 shadow-[0_2px_8px_rgba(0,0,0,0.07)] bg-yellow-50 border border-yellow-300 rounded-bl-sm">
-            <p className="text-[11px] font-bold mb-1.5 text-yellow-700">Асистент</p>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "160ms" }} />
-              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "320ms" }} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Persistent "Є запитання" button — visible after roadmap, when no quickReply showing */}
-      {onHasQuestion && !hasActiveQuickReply && !isTyping && (
-        <div className="flex justify-end pt-1">
-          <button
-            onClick={onHasQuestion}
-            className="text-[12px] font-bold px-3.5 py-1.5 rounded-full bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.94] transition-all shadow-sm"
-          >
-            Є запитання
-          </button>
-        </div>
-      )}
-
-      <div ref={bottomRef} />
-    </div>
-  );
-}
-
-// ── Chat Input — textarea with smart line expansion ──
-function ChatInput() {
-  const [value, setValue] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    setValue(newValue);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      const newHeight = Math.min(Math.max(36, textareaRef.current.scrollHeight), 120); // Max 5 lines (~120px)
-      textareaRef.current.style.height = `${newHeight}px`;
-    }
-  };
-
-  const handleSend = () => {
-    if (value.trim()) {
-      // TODO: Send message through parent handler
-      console.log("Sending:", value);
-      setValue("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  return (
-    <div className="px-4 py-3 border-t border-border/40 bg-card shrink-0">
-      <div className="flex items-end gap-2.5 bg-[hsl(200,100%,96%)] rounded-lg p-2.5">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          placeholder="Відповісти..."
-          rows={1}
-          className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none leading-5 max-h-[120px]"
-        />
-        <button
-          onClick={handleSend}
-          disabled={!value.trim()}
-          className={cn(
-            "w-8 h-8 flex items-center justify-center rounded transition-all shrink-0",
-            value.trim()
-              ? "bg-sky-600 text-white hover:bg-sky-700 active:scale-[0.93]"
-              : "bg-muted text-muted-foreground cursor-not-allowed opacity-40"
-          )}
-          title="Надіслати (Enter)"
-        >
-          <Send size={16} strokeWidth={2} />
-        </button>
-      </div>
-    </div>
-  );
-}
+// PreparationTracker removed — unused (LinearProgressBar is used instead, now in AssistantChat.tsx)
 
 // ── Assistant Toggle — moved from NewEntryForm ──
 

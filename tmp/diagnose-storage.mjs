@@ -1,8 +1,23 @@
 // Діагностичний скрипт: перевіряє Storage bucket і права на завантаження
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 
-const SUPABASE_URL = 'https://xwzbpmssbbpofbvwuqms.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_MHUMQXgw7Kc2jSHMMDKKpw__VJ1fEgH';
+// Load .env.local (keys must never be hardcoded in source files)
+try {
+  const raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf-8');
+  for (const line of raw.replace(/\r/g, '').split('\n')) {
+    const m = line.match(/^([^#\s][^=]*)=(.*)$/);
+    if (m) process.env[m[1].trim()] = m[2].trim();
+  }
+} catch { /* .env.local optional */ }
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_TEST_URL;
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_TEST_ANON_KEY;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('❌ Missing VITE_SUPABASE_TEST_URL / VITE_SUPABASE_TEST_ANON_KEY in .env.local');
+  process.exit(1);
+}
 const BUCKET = 'patient-files';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

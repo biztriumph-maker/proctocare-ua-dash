@@ -48,6 +48,7 @@ export type VisitRow = {
   files?: Array<{ id: string; name: string; type: "doctor" | "patient"; date: string; url?: string; storageKey?: string; mimeType?: string }>;
   protocol_history?: Array<{ value: string; timestamp: string; date: string }>;
   drug_choice?: 'fortrans' | 'izyklin';
+  last_processed_step?: string;
 };
 
 // Перетворює дані з Supabase у формат дашборду
@@ -624,6 +625,178 @@ export async function getUnclosedVisits() {
     .lt('visit_date', today);
   if (error) console.error(error);
   return data ?? [];
+}
+
+// ─── Assistant Session Sync (uses real assistant_chats schema) ────────────────
+// The assistant_chats table stores ONE ROW per visit (id = visit_id).
+// Schema: id, patient_id, visit_date, messages (JSONB), waiting_for_diet_ack,
+//         diet_instruction_sent, waiting_for_step2_ack, step2_ack_result,
+//         welcome_sent, saved_at
+
+export type AssistantSessionRow = {
+  id: string;
+  patient_id: string;
+  visit_date: string;
+  messages: unknown[];
+  waiting_for_diet_ack: boolean;
+  diet_instruction_sent: boolean;
+  waiting_for_step2_ack: boolean;
+  step2_ack_result: string;
+  welcome_sent: boolean;
+  saved_at?: string;
+};
+
+/** Upsert the full session state for a visit (one row per visit). */
+export async function upsertAssistantSession(
+  visitId: string,
+  patientDbId: string,
+  visitDate: string,
+  session: {
+    messages: unknown[];
+    waitingForDietAck: boolean;
+    dietInstructionSent: boolean;
+    waitingForStep2Ack: boolean;
+    step2AckResult: string;
+    welcomeSent: boolean;
+  }
+): Promise<void> {
+  if (!USE_SUPABASE || !patientDbId || visitId.startsWith('new-')) return;
+  const { error } = await supabase
+    .from('assistant_chats')
+    .upsert({
+      id: visitId,
+      patient_id: patientDbId,
+      visit_date: visitDate,
+      messages: session.messages,
+      waiting_for_diet_ack: session.waitingForDietAck,
+      diet_instruction_sent: session.dietInstructionSent,
+      waiting_for_step2_ack: session.waitingForStep2Ack,
+      step2_ack_result: session.step2AckResult,
+      welcome_sent: session.welcomeSent,
+    }, { onConflict: 'id' });
+  if (error) console.error('[Session] upsert error:', error.message);
+}
+
+/** Load the session state for a visit from DB. Returns null if not found. */
+export async function loadAssistantSessionDB(visitId: string): Promise<AssistantSessionRow | null> {
+  if (!USE_SUPABASE || visitId.startsWith('new-')) return null;
+  const { data, error } = await supabase
+    .from('assistant_chats')
+    .select('*')
+    .eq('id', visitId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as AssistantSessionRow;
+}
+
+/** Subscribe to session updates for a visit via Supabase Realtime. */
+export function subscribeToAssistantSessionDB(
+  visitId: string,
+  onUpdate: (row: AssistantSessionRow) => void
+): () => void {
+  if (!USE_SUPABASE || visitId.startsWith('new-')) return () => {};
+  const channel = supabase
+    .channel(`session-${visitId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'assistant_chats' },
+      (payload) => {
+        const row = payload.new as AssistantSessionRow;
+        if (row?.id !== visitId) return;
+        console.log('[Session] СИГНАЛ ОТРИМАНО: оновлення сесії для', visitId);
+        onUpdate(row);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'CHANNEL_ERROR') console.error('[Session] realtime channel error for', visitId);
+      if (status === 'SUBSCRIBED') console.log('[Session] realtime subscribed for', visitId);
+    });
+  return () => { void supabase.removeChannel(channel); };
+}
+
+// ─── Assistant Chat (legacy — individual-message schema, not used by current table) ──
+
+export type AssistantChatRow = {
+  id: string;
+  visit_id: string;
+  sender: 'ai' | 'patient' | 'doctor';
+  text: string;
+  time: string;
+  quick_reply?: { yes: string; no?: string; context?: string } | null;
+  step?: string | null;
+  created_at?: string;
+};
+
+/** Load all chat messages for a visit, ordered by insertion time. */
+export async function loadAssistantChat(visitId: string): Promise<AssistantChatRow[]> {
+  if (!USE_SUPABASE) return [];
+  const { data, error } = await supabase
+    .from('assistant_chats')
+    .select('*')
+    .eq('visit_id', visitId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('[Chat] load error:', error); return []; }
+  return (data ?? []) as AssistantChatRow[];
+}
+
+/** Insert one or more chat messages into assistant_chats (sequential to preserve order). */
+export async function insertAssistantMessages(
+  visitId: string,
+  messages: Array<Pick<AssistantChatRow, 'sender' | 'text' | 'time'> & { quick_reply?: AssistantChatRow['quick_reply']; step?: string }>
+): Promise<void> {
+  if (!USE_SUPABASE) return;
+  for (const msg of messages) {
+    const { error } = await supabase
+      .from('assistant_chats')
+      .insert({ ...msg, visit_id: visitId });
+    if (error) console.error('[Chat] insert error:', error, msg);
+  }
+}
+
+/**
+ * Atomically claim a processing step so only one device inserts AI messages.
+ * Returns true if this device claimed the step (or if DB column doesn't exist).
+ * Returns false if another device already processed this step.
+ */
+export async function claimVisitStep(visitId: string, step: string): Promise<boolean> {
+  if (!USE_SUPABASE) return true;
+  try {
+    const { data, error } = await supabase
+      .from('visits')
+      .update({ last_processed_step: step })
+      .eq('id', visitId)
+      .neq('last_processed_step', step)
+      .select('id');
+    if (error) { console.warn('[Chat] claimVisitStep error (proceeding):', error.message); return true; }
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+/** Subscribe to new assistant_chats rows for a visit via Supabase Realtime.
+ *  Uses client-side filtering (visit_id check) for maximum compatibility —
+ *  server-side filters require REPLICA IDENTITY FULL which may not be set. */
+export function subscribeToAssistantChat(
+  visitId: string,
+  onInsert: (row: AssistantChatRow) => void
+): () => void {
+  if (!USE_SUPABASE) return () => {};
+  const channel = supabase
+    .channel(`assistant-chat-${visitId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'assistant_chats' },
+      (payload) => {
+        const row = payload.new as AssistantChatRow;
+        if (row.visit_id !== visitId) return;
+        onInsert(row);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'CHANNEL_ERROR') console.error('[Chat] realtime channel error for', visitId);
+    });
+  return () => { void supabase.removeChannel(channel); };
 }
 
 // Видалити файл з Supabase Storage

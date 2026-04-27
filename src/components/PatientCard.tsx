@@ -101,7 +101,9 @@ export function computePatientStatus(patient: Patient): PatientStatus {
     if (today < threeDaysBefore) return "planning";
   }
 
-  // Rule 2: Progress — within 3 days and preparation not finished
+  // Rule 2: Progress — within 3 days and preparation actively started
+  // If patient hasn't interacted yet (planning), keep gray per logic.md Block 1
+  if (patient.status === "planning") return "planning";
   return "progress";
 }
 

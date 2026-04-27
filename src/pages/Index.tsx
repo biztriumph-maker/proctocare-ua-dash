@@ -200,7 +200,7 @@ function buildDashboardAssistantAlerts(patients: Patient[]): DashboardAssistantA
       visitIso,
       patientName: patient ? `${patient.name}${patient.patronymic ? ` ${patient.patronymic}` : ""}` : `Пацієнт ${patientId}`,
       patientPhone: patient?.phone,
-      question: (lastPatientMessage?.text || AGENT_CHAT_MESSAGES.fallbackQuestion).trim(),
+      question: (lastPatientMessage?.text || "Пацієнт потребує уваги").trim(),
       appointmentDate: isValidDate ? appointmentDate : new Date(),
       appointmentTime: patient?.time || "--:--",
       chatPreview: session.messages.slice(-3),
@@ -245,6 +245,7 @@ const statusToFilter: Record<PatientStatus, FilterType> = {
   planning: "attention",
   ready: "ready",
   progress: "attention",
+  yellow: "attention",
   risk: "risk",
 };
 

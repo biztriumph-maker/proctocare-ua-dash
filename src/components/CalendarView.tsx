@@ -24,6 +24,7 @@ interface CalendarViewProps {
 const statusDot: Record<PatientStatus, string> = {
   planning: "bg-slate-400",
   progress: "bg-yellow-500",
+  yellow:   "bg-yellow-500",
   risk: "bg-red-500",
   ready: "bg-green-500",
 };
@@ -31,6 +32,7 @@ const statusDot: Record<PatientStatus, string> = {
 const statusSlotBg: Record<PatientStatus, string> = {
   planning: "bg-slate-300 border border-slate-500/70",
   progress: "bg-status-progress-bg border border-status-progress/30",
+  yellow:   "bg-status-progress-bg border border-status-progress/30",
   risk: "bg-status-risk-bg border border-status-risk/30",
   ready: "bg-status-ready-bg border border-status-ready/30",
 };
@@ -632,6 +634,7 @@ function DayGrid({
   const statusColor: Record<PatientStatus, string> = {
     planning: "bg-slate-300 border-slate-500/70",
     progress: "bg-status-progress-bg border-status-progress/35",
+    yellow:   "bg-status-progress-bg border-status-progress/35",
     risk: "bg-status-risk-bg border-status-risk/35",
     ready: "bg-status-ready-bg border-status-ready/35",
   };
@@ -639,6 +642,7 @@ function DayGrid({
   const statusLabel: Record<PatientStatus, string> = {
     planning: "Планування",
     progress: "Підготовка",
+    yellow:   "Підготовка",
     risk: "Ризик",
     ready: "Допущено",
   };
