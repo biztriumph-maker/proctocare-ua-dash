@@ -54,6 +54,7 @@ export interface Patient {
   noShow?: boolean;
   completed?: boolean;
   drugChoice?: 'fortrans' | 'izyklin';
+  telegramLinked?: boolean;
 }
 
 interface PatientCardProps {
@@ -108,7 +109,7 @@ export function computePatientStatus(patient: Patient): PatientStatus {
 }
 
 export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComplete, onAfterComplete }: PatientCardProps) {
-  const config = statusConfig[patient.status];
+  const config = statusConfig[patient.status] ?? statusConfig.planning;
   const [confirmAction, setConfirmAction] = useState<"complete-empty" | "noshow" | null>(null);
   const [checkingProtocol, setCheckingProtocol] = useState(false);
 
@@ -232,7 +233,7 @@ export function PatientCard({ patient, index, onClick, isNew, onNoShow, onComple
         className={cn(
           "w-full text-left bg-surface-raised rounded-2xl border-l-4 px-3 py-2 sm:px-4 sm:py-2",
           "shadow-[0_6px_44px_0px_rgba(0,0,0,0.06)]",
-          "transition-all duration-300 hover:shadow-[0_12px_60px_0px_rgba(0,0,0,0.10)] hover:-translate-y-0.5",
+          "transition-[box-shadow,transform] duration-300 hover:shadow-[0_12px_60px_0px_rgba(0,0,0,0.10)] hover:-translate-y-0.5",
           "animate-reveal-up",
           patient.completed
             ? "border-l-status-ready border-2 border-status-ready/50 bg-[hsl(142,60%,93%)]"

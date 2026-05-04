@@ -42,7 +42,11 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
   const [isPhoneValid, setIsPhoneValid] = useState(false);
   const [procedures, setProcedures] = useState<string[]>([]);
   const [showProcedureSelector, setShowProcedureSelector] = useState(false);
-  const [date, setDate] = useState(prefillDate || new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => {
+    if (prefillDate) return prefillDate;
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  });
   const [time, setTime] = useState(prefillTime || "");
   const [notes, setNotes] = useState("");
   const aiPrep = true; // default, toggle moved to patient card
@@ -356,7 +360,10 @@ export function NewEntryForm({ prefillDate, prefillTime, realPatients, onClose, 
               <div className="flex-1 overflow-y-auto p-4">
                 <CalendarView
                   onSlotClick={(selectedDate, hour) => {
-                    setDate(selectedDate.toISOString().slice(0, 10));
+                    const y = selectedDate.getFullYear();
+                    const mo = String(selectedDate.getMonth() + 1).padStart(2, "0");
+                    const d = String(selectedDate.getDate()).padStart(2, "0");
+                    setDate(`${y}-${mo}-${d}`);
                     setTime(`${String(hour).padStart(2, "0")}:00`);
                   }}
                   realPatients={realPatients}

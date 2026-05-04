@@ -710,6 +710,7 @@ function loadStoredPatients(currentTodayIso: string, currentTomorrowIso: string)
 export default function Index() {
   const { todayIso, tomorrowIso } = useMemo(() => getCurrentScheduleDates(), []);
   const [view, setView] = useState<"operational" | "calendar">("operational");
+  const [showAgentMode, setShowAgentMode] = useState(false);
   const [filter, setFilter] = useState<FilterType>("all");
   const [showForm, setShowForm] = useState(false);
   const [formPrefill, setFormPrefill] = useState<{ date?: string; time?: string }>({});
@@ -1004,12 +1005,31 @@ export default function Index() {
       .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
   }, [patients, todayIso]);
 
+  useEffect(() => {
+    if (showOverdue && overdueAppointments.length === 0) {
+      setShowOverdue(false);
+    }
+  }, [overdueAppointments.length, showOverdue]);
+
   const counts = useMemo(() => ({
     total: activeTodayPatients.length,
     ready: activeTodayPatients.filter((p) => p.status === "ready").length,
     risk: activeTodayPatients.filter((p) => p.status === "risk").length,
     attention: activeTodayPatients.filter((p) => p.status === "progress" || p.status === "planning").length,
   }), [activeTodayPatients]);
+
+  // Patients requiring agent attention: RED (risk) + GREY (planning — awaiting first contact)
+  // Also includes future-dated patients with risk status (e.g. clicked "Є запитання" before visit day)
+  const agentAlertPatients = useMemo(() => {
+    const todayAlerts = activeTodayPatients.filter(p => p.status === "risk" || p.status === "planning");
+    const futureRisk = patients.filter(p =>
+      p.date && p.date > todayIso &&
+      p.status === "risk" &&
+      !p.completed && !p.noShow
+    );
+    const seenIds = new Set(todayAlerts.map(p => p.id));
+    return [...todayAlerts, ...futureRisk.filter(p => !seenIds.has(p.id))];
+  }, [activeTodayPatients, patients, todayIso]);
 
   const filtered = useMemo(() => {
     let list = activeTodayPatients;
@@ -1445,35 +1465,44 @@ export default function Index() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-2 sm:px-6 pt-4 pb-24">
 
-        {/* Amber banner — прострочені прийоми за минулі дні */}
+        {/* ── Luxury-баннер незавершених прийомів — видимий тільки коли є дані ── */}
         {view === "operational" && overdueAppointments.length > 0 && (
           <button
             onClick={() => {
-              setView("operational");
+              setShowOverdue(prev => !prev);
               setShowTomorrow(false);
-              setShowOverdue(true);
               setFilter("all");
               setSearchQuery("");
             }}
-            className="w-full flex items-center justify-between bg-orange-100 border border-orange-300 rounded-2xl px-4 py-2.5 mb-3 cursor-pointer text-left active:scale-[0.99] shadow-sm"
+            className={cn(
+              "w-full flex items-center gap-4 rounded-2xl px-5 py-3 mb-4 text-left",
+              "border transition-all duration-200 active:scale-[0.99]",
+              showOverdue
+                ? "bg-orange-100 border-orange-300 shadow-[0_2px_16px_rgba(249,115,22,0.18)]"
+                : "bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200 hover:border-orange-300 hover:shadow-[0_2px_12px_rgba(249,115,22,0.12)]"
+            )}
           >
-            <span className="text-orange-900 text-[14px] font-[500]">
+            <div className="w-[3px] self-stretch rounded-full bg-orange-400 shrink-0" />
+            <span className="flex-1 text-[14px] font-semibold text-orange-900 tracking-[0.01em]">
               {BANNER_LABELS.overdueBanner}
             </span>
-            <span className="ml-3 shrink-0 w-7 h-7 bg-white border-2 border-orange-400 rounded-full flex items-center justify-center text-orange-800 text-[13px] font-bold shadow-sm">
+            <span className="shrink-0 min-w-[28px] h-7 px-2 flex items-center justify-center rounded-full bg-white border-2 border-orange-300 text-orange-800 text-[13px] font-bold tabular-nums shadow-sm">
               {overdueAppointments.length}
+            </span>
+            <span className="shrink-0 text-orange-400 text-[11px] font-medium">
+              {showOverdue ? "Закрити" : "Переглянути"}
             </span>
           </button>
         )}
 
         {/* 2×2 Dashboard — навігація, стиль як День/Тиждень у календарі */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          {/* Оперативка — активна тільки коли немає showTomorrow і showOverdue */}
+          {/* Оперативка */}
           <button
-            onClick={() => { if (!searchQuery.trim()) { setView("operational"); setShowTomorrow(false); setShowOverdue(false); setFilter("all"); } }}
+            onClick={() => { if (!searchQuery.trim()) { setView("operational"); setShowTomorrow(false); setShowOverdue(false); setFilter("all"); setShowAgentMode(false); } }}
             className={cn(
               "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
-              view === "operational" && !showTomorrow && !showOverdue && !searchQuery.trim()
+              view === "operational" && !showTomorrow && !showOverdue && !searchQuery.trim() && !showAgentMode
                 ? "border-brand-active bg-brand-active text-white shadow-[0_2px_8px_rgba(0,51,102,0.18)]"
                 : "border-slate-300 bg-slate-200 text-[#1e293b] hover:bg-slate-300 hover:border-slate-400",
               !!searchQuery.trim() && "opacity-50 cursor-not-allowed"
@@ -1513,26 +1542,60 @@ export default function Index() {
             </button>
           )}
 
-          {/* Агент — сірий за замовчуванням, блакитний при сповіщеннях */}
+          {/* Агент — помаранчевий при наявності RED/GREY пацієнтів, активний у режимі агента */}
           {view === "operational" && (
-            <div className={cn(
-              "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300",
-              assistantAlerts.length > 0
-                ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]"
-                : "border-slate-300 bg-slate-200 text-[#1e293b]"
-            )}>
+            <button
+              onClick={() => { setShowAgentMode(prev => !prev); setShowTomorrow(false); setShowOverdue(false); }}
+              className={cn(
+                "h-[50px] relative flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
+                showAgentMode
+                  ? "border-orange-400 bg-orange-400 text-white shadow-[0_2px_8px_rgba(249,115,22,0.3)]"
+                  : agentAlertPatients.length > 0
+                    ? "border-orange-200 bg-orange-50 text-orange-700"
+                    : "border-slate-300 bg-slate-200 text-[#1e293b]"
+              )}
+            >
               <Bot size={16} strokeWidth={1.75} />
               Агент
-            </div>
+              {agentAlertPatients.length > 0 && (
+                <span className="absolute top-1.5 right-2 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold tabular-nums shadow-sm">
+                  {agentAlertPatients.length}
+                </span>
+              )}
+            </button>
           )}
         </div>
 
         {view === "operational" ? (
           <div className="space-y-2 sm:space-y-3">
-              {showOverdue ? (
+              {showAgentMode ? (
                 <>
-                  <div className="flex justify-center mt-8 mb-5">
-                    <div className="inline-flex items-center px-7 py-2 rounded-xl bg-orange-400/95 text-[#431407] font-bold text-lg shadow-[0_2px_12px_rgba(249,115,22,0.25)]">
+                  <div className="flex justify-center mt-6 mb-5">
+                    <div className="inline-flex items-center gap-3 px-7 py-2.5 rounded-2xl bg-orange-50 border border-orange-200 text-orange-900 font-bold text-[17px] tracking-[0.01em]">
+                      Ситуаційний центр Агента
+                    </div>
+                  </div>
+                  {agentAlertPatients.length === 0 ? (
+                    <div className="text-center py-16 text-muted-foreground text-sm animate-fade-in">
+                      Немає пацієнтів, що потребують уваги
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {agentAlertPatients.map((patient, i) => (
+                        <PatientCard
+                          key={patient.id}
+                          patient={patient}
+                          index={i}
+                          onClick={handlePatientClick}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : showOverdue ? (
+                <>
+                  <div className="flex justify-center mt-6 mb-5">
+                    <div className="inline-flex items-center gap-3 px-7 py-2.5 rounded-2xl bg-orange-400/95 text-[#431407] font-bold text-[17px] tracking-[0.01em] shadow-[0_4px_16px_rgba(249,115,22,0.22)]">
                       {BANNER_LABELS.overdueSection}
                     </div>
                   </div>
@@ -1541,7 +1604,7 @@ export default function Index() {
                       <div key={patient.id} className="min-w-0">
                         {patient.date && (
                           <p className="text-xs font-semibold text-[#431407] px-1 mb-1">
-                            📅 {isoToDisplayDate(patient.date)}
+                            {isoToDisplayDate(patient.date)}
                           </p>
                         )}
                         <PatientCard
@@ -1554,11 +1617,6 @@ export default function Index() {
                         />
                       </div>
                     ))}
-                    {overdueAppointments.length === 0 && (
-                      <div className="col-span-2 text-center py-12 text-muted-foreground text-sm">
-                        Немає прострочених записів
-                      </div>
-                    )}
                   </div>
                 </>
               ) : showTomorrow ? (

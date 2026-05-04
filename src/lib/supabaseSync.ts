@@ -28,6 +28,8 @@ export type PatientRow = {
   allergies?: string;
   diagnosis?: string;
   is_test?: boolean;
+  telegram_id?: number | null;
+  telegram_token?: string | null;
 };
 
 export type VisitRow = {
@@ -77,6 +79,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     files: visit.files || [],
     protocolHistory: visit.protocol_history ?? undefined,
     drugChoice: visit.drug_choice,
+    telegramLinked: !!p.telegram_id,
   };
 }
 
@@ -89,7 +92,7 @@ export async function loadPatientsFromSupabase() {
 
   const { data, error } = await supabase
     .from('visits')
-    .select(`*, patients (*)`)
+    .select(`*, patients ( id, name, patronymic, phone, birth_date, allergies, diagnosis, is_test, telegram_id )`)
     .order('visit_date', { ascending: true })
     .order('visit_time', { ascending: true });
 
@@ -813,4 +816,48 @@ export async function deleteFileFromSupabaseStorage(publicUrl: string): Promise<
   } catch (err) {
     console.warn('⚠️ Storage delete exception:', err);
   }
+}
+
+// ─── Telegram Registration ─────────────────────────────────────────────────────
+
+/**
+ * Generates a one-time UUID token, saves it to patients.telegram_token,
+ * and returns the Telegram deep link the doctor can copy and send to the patient.
+ * Returns null on failure.
+ */
+export async function generateTelegramToken(
+  patientDbId: string,
+  botUsername: string
+): Promise<string | null> {
+  if (!USE_SUPABASE) return null;
+  const token = crypto.randomUUID();
+  const { error } = await supabase
+    .from('patients')
+    .update({ telegram_token: token })
+    .eq('id', patientDbId);
+  if (error) {
+    console.error('[Telegram] generateTelegramToken error:', error);
+    return null;
+  }
+  return `https://t.me/${botUsername}?start=${token}`;
+}
+
+/**
+ * Loads telegram_id and telegram_token status for a patient.
+ * Returns { telegramId, hasToken } — used to display linked/unlinked status in the UI.
+ */
+export async function loadTelegramStatus(
+  patientDbId: string
+): Promise<{ telegramId: number | null; hasToken: boolean }> {
+  if (!USE_SUPABASE) return { telegramId: null, hasToken: false };
+  const { data, error } = await supabase
+    .from('patients')
+    .select('telegram_id, telegram_token')
+    .eq('id', patientDbId)
+    .maybeSingle();
+  if (error || !data) return { telegramId: null, hasToken: false };
+  return {
+    telegramId: (data as { telegram_id?: number | null }).telegram_id ?? null,
+    hasToken: !!(data as { telegram_token?: string | null }).telegram_token,
+  };
 }

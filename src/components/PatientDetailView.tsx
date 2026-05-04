@@ -3,7 +3,6 @@ import {
   AGENT_CHAT_MESSAGES,
   PATIENT_QUICK_REPLIES,
   AI_SUMMARY_BY_STATUS,
-  EVENT_LOG_LABELS,
   classifyProcedureGroup,
 } from "@/config/agentMessages";
 import { supabase } from "@/lib/supabaseClient";
@@ -12,8 +11,10 @@ import {
   upsertAssistantSession,
   loadAssistantSessionDB,
   subscribeToAssistantSessionDB,
+  generateTelegramToken,
+  loadTelegramStatus,
 } from "@/lib/supabaseSync";
-import { X, MessageCircle, AlertTriangle, User, Activity, Phone, Pencil, FileText, Trash2, Minimize2 } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -30,11 +31,9 @@ import { PatientProfile } from "./PatientProfile";
 import { usePatientContext } from "@/hooks/usePatientContext";
 import {
   type ChatMessage,
-  type EventLog,
   ChatPane,
   ChatInput,
   LinearProgressBar,
-  HistoryModal,
 } from "./AssistantChat";
 
 interface PatientDetailViewProps {
@@ -200,6 +199,38 @@ function getReadyButtonText(patient: Patient): string {
   const patronymic = parts[2] ?? "";
   if (/івна$|овна$|євна$/i.test(patronymic)) return "Я готова";
   return "Я готовий";
+}
+
+// Вибирає наступний блок для Групи Г на основі кількості днів до процедури.
+// days≤0 → Блок 12-Г ранок (день процедури); days=1 → Блок 12-Г анонс (Т-1); days≥2 → Блок 6-Г (дорожня карта).
+function buildNextGBlock(patient: Patient, time: string): ChatMessage | null {
+  if (!patient.date) return null;
+  const todayIso = getTodayIsoKyiv();
+  const days = Math.round(
+    (new Date(patient.date + 'T00:00:00').getTime() - new Date(todayIso + 'T00:00:00').getTime()) / 86_400_000
+  );
+  const { address } = getPatientNameInfo(patient);
+
+  if (days <= 0) {
+    const dow = new Date(patient.date + 'T00:00:00').getDay();
+    const clinicAddress = dow === 3
+      ? 'вул. Юрія Руфа 35в, Центр «МеДіС»'
+      : dow === 6 ? '' : 'вул. Пекарська 696, 2 поверх, 231 каб.';
+    return {
+      sender: 'ai', text: AGENT_CHAT_MESSAGES.block12GMorning({ clinicAddress }), time,
+      quickReply: { yes: PATIENT_QUICK_REPLIES.departureG, context: 'diet_confirm' as const },
+    };
+  }
+  if (days === 1) {
+    return {
+      sender: 'ai', text: AGENT_CHAT_MESSAGES.block12GDayBefore({ address }), time,
+      quickReply: { yes: PATIENT_QUICK_REPLIES.dayBeforeConfirm, context: 'diet_confirm' as const },
+    };
+  }
+  return {
+    sender: 'ai', text: AGENT_CHAT_MESSAGES.block6G, time,
+    quickReply: { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: 'diet_confirm' as const },
+  };
 }
 
 // ── Autonomous assistant trigger helpers ─────────────────────────────────────
@@ -443,36 +474,43 @@ function makeTimestamp(): string {
 }
 
 
-function getPreparationProgress(patient: Patient, _services?: string[]): { percent: number; steps: { label: string; done: boolean }[] } {
-  const status = patient.status;
+function getPreparationProgress(
+  patient: Patient,
+  dietInstructionSent: boolean,
+  _services?: string[],
+  statusOverride?: PatientStatus
+): { percent: number; steps: { label: string; done: boolean }[] } {
+  const status = statusOverride ?? patient.status;
   const group = classifyProcedureGroup(patient.procedure || "");
-  const isActive = status === "progress" || status === "yellow" || status === "risk";
+  const contactMade = status === "yellow" || status === "progress" || status === "risk" || status === "ready";
 
-  // Група Г — Гастроскопія: 2 кроки
+  // ГРУПА Г (Гастроскопія): 3 точки — logic.md Блок 2
   if (group === 'G') {
     const steps = [
-      { label: "Підготовка вечері", done: status === "ready" || isActive },
-      { label: "Готовий до процедури", done: status === "ready" },
+      { label: "Зв'язок встановлено", done: contactMade },
+      { label: "Легка вечеря",        done: status === "ready" },
+      { label: "Виїзд",               done: status === "ready" },
     ];
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
   }
 
-  // Група К — Колоноскопія / Ректоскопія: 3 кроки
+  // ГРУПА К (Колоноскопія / Ректоскопія / Комбі): 5 точок — logic.md Блок 2–3
   if (group === 'K') {
     const steps = [
-      { label: "Дієта та підготовка", done: status === "ready" || isActive },
-      { label: "Прийом препарату", done: status === "ready" },
-      { label: "Готовий до процедури", done: status === "ready" },
+      { label: "Зв'язок встановлено",    done: contactMade },
+      { label: "Старт дієти",            done: dietInstructionSent || status === "ready" },
+      { label: "Підготовка до очищення", done: status === "ready" },
+      { label: "День очищення",          done: status === "ready" },
+      { label: "Виїзд",                  done: status === "ready" },
     ];
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
   }
 
-  // Fallback — невизначена процедура: 4 кроки (старий вигляд)
+  // Fallback — невідома процедура: 3 точки (за зразком Г)
   const steps = [
-    { label: "Дієта 3 дні", done: status === "ready" || status === "progress" || status === "risk" },
-    { label: "Прийом препарату", done: status === "ready" || status === "progress" },
-    { label: "Очищення завершено", done: status === "ready" },
-    { label: "Готовий до процедури", done: status === "ready" },
+    { label: "Зв'язок встановлено", done: contactMade },
+    { label: "Підготовка",          done: dietInstructionSent || status === "ready" },
+    { label: "Виїзд",               done: status === "ready" },
   ];
   return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
 }
@@ -480,6 +518,12 @@ function getPreparationProgress(patient: Patient, _services?: string[]): { perce
 export function PatientDetailView({ patient, allPatients = [], onClose, onUpdatePatient, onDelete, onCreateNewVisit, onOpenVisit }: PatientDetailViewProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<"card" | "assistant" | "files">("card");
+  const [tgStatus, setTgStatus] = useState<{
+    telegramId: number | null;
+    hasToken: boolean;
+    deepLink: string | null;
+    loading: boolean;
+  }>({ telegramId: null, hasToken: false, deepLink: null, loading: false });
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
   const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
   const [deletePhase, setDeletePhase] = useState<"idle" | "confirm" | "countdown">("idle");
@@ -529,7 +573,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   const [localServices, setLocalServices] = useState<string[]>(initialServices);
   const [showReschedulePicker, setShowReschedulePicker] = useState(false);
-  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const restoredAssistantSession = getAssistantSession(patient.id, activeVisitIso);
 
   useEffect(() => {
@@ -676,10 +719,16 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const newDrug   = row.drug_choice as string | null | undefined;
       const newStatus = row.status     as string | null | undefined;
 
-      // Propagate status to parent list so the card reflects changes from other devices
+      // Propagate status to parent list so the card reflects changes from other devices.
+      // Never revert to 'risk' while this device is actively resolving a question —
+      // that would undo the optimistic yellow update and cause visible flicker.
       const validStatuses = ['planning', 'progress', 'yellow', 'risk', 'ready'];
       if (newStatus && validStatuses.includes(newStatus) && newStatus !== patientRef.current.status) {
-        onUpdatePatient?.({ status: newStatus as PatientStatus });
+        if (newStatus === 'risk' && questionResolvedInProgressRef.current) {
+          // Ignore stale risk echo during question resolution window
+        } else {
+          onUpdatePatient?.({ status: newStatus as PatientStatus });
+        }
       }
 
       // Update drug choice flag (messages come from assistant_chats Realtime)
@@ -692,8 +741,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         return;
       }
 
-      // Status → 'risk': update step2AckResult flag
-      if (newStatus === 'risk' && step2AckResultRef.current !== 'question') {
+      // Status → 'risk': update step2AckResult flag.
+      // Skip if this device is currently resolving the question to avoid race condition.
+      if (newStatus === 'risk' && step2AckResultRef.current !== 'question' && !questionResolvedInProgressRef.current) {
         setStep2AckResult('question');
         return;
       }
@@ -793,6 +843,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
     const unsub = subscribeToAssistantSessionDB(patient.id, (session) => {
       if (!Array.isArray(session.messages) || session.messages.length === 0) return;
+      // Stale echo guard: a delayed Realtime event from a previous save must never
+      // overwrite a longer local state — it would restore old quickReply buttons and
+      // cause visible flicker after "Є запитання" or any other optimistic update.
+      if (session.messages.length < emulatedMessagesRef.current.length) return;
       setEmulatedMessages(session.messages as ChatMessage[]);
       setWaitingForDietAck(session.waiting_for_diet_ack);
       setDietInstructionSent(session.diet_instruction_sent);
@@ -803,10 +857,36 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return unsub;
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Load Telegram link status on mount ─────────────────────────────────────
+  useEffect(() => {
+    if (!isSupabaseDataMode || !patient.patientDbId) return;
+    loadTelegramStatus(patient.patientDbId).then((status) => {
+      setTgStatus((prev) => ({ ...prev, ...status }));
+    });
+  }, [patient.patientDbId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Normalize step2AckResult from loaded messages.
+  // Old sessions may have step2AckResult="none" saved in DB but messages already
+  // contain the "question_resolved" quickReply context — meaning the patient clicked
+  // "Є запитання" before this field was persisted correctly. Infer the state so that
+  // status becomes RED and UI renders correctly without requiring another click.
+  useEffect(() => {
+    if (step2AckResult !== "none") return;
+    const inQuestion = emulatedMessages.some(
+      m => m.sender === "ai" && m.quickReply?.context === "question_resolved"
+    );
+    if (!inQuestion) return;
+    setStep2AckResult("question");
+    if (useDB) {
+      supabase.from('visits').update({ status: 'risk' }).eq('id', patient.id)
+        .then(({ error }) => { if (error) console.error('Supabase Error (visits normalize):', error); });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emulatedMessages]);
+
   const useDB = isSupabaseDataMode && !patient.id.startsWith("new-");
   const chat = emulatedMessages;
   const unanswered = chat.filter((m) => m.unanswered);
-  const preparation = getPreparationProgress(patient, localServices);
 
   const effectiveStatus = useMemo<PatientStatus>(() => {
     if (patient.noShow) return "risk";
@@ -814,6 +894,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     if (step2AckResult === "question") return "risk";
     return computePatientStatus(patient);
   }, [patient, step2AckResult]);
+
+  const preparation = getPreparationProgress(patient, dietInstructionSent, localServices, effectiveStatus);
 
   useEffect(() => {
     if (!onUpdatePatient) return;
@@ -998,54 +1080,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   }, [localFullName, fields.phone, localServices, patient.date, patient.time]);
 
   // Build event log from state flags
-  const eventLogs: EventLog[] = useMemo(() => {
-    const logs: EventLog[] = [];
-    const nowTime = new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-    logs.push({
-      timestamp: patient.time || "--:--",
-      event: EVENT_LOG_LABELS.cardOpened(isoToDisplay(activeVisitIso)),
-      status: "completed",
-    });
-    if (welcomeSent) logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.welcomeSent,
-      status: "completed",
-    });
-    if (dietInstructionSent) logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.dietSent,
-      status: "completed",
-    });
-    if (waitingForStep2Ack) logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.waitingForPatient,
-      status: "pending",
-    });
-    if (step2AckResult === "confirmed") logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.patientConfirmed,
-      status: "completed",
-    });
-    if (step2AckResult === "question") logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.patientHasQuestion,
-      status: "warning",
-    });
-    if (rescheduleNoticeOriginalDate) logs.push({
-      timestamp: nowTime,
-      event: EVENT_LOG_LABELS.rescheduled(rescheduleNoticeOriginalDate),
-      status: "warning",
-    });
-    if (logs.length === 1) {
-      logs.push({
-        timestamp: patient.time || "--:--",
-        event: EVENT_LOG_LABELS.waitingForAction,
-        status: "pending",
-      });
-    }
-    return logs.reverse();
-  }, [welcomeSent, dietInstructionSent, waitingForStep2Ack, step2AckResult, rescheduleNoticeOriginalDate, patient.time, activeVisitIso]);
-
   // Auto-send welcome message when all 4 fields are filled for the first time
   // Guard: if greetingTemplate returns "" — assistant stays silent (no message shown)
   useEffect(() => {
@@ -1079,10 +1113,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const replyTime = makeTimestamp();
 
     const replyTextMap: Record<string, string> = {
-      "start_prep_yes": getReadyButtonText(patient),
-      "start_prep_no":  "Є запитання",
+      "start_prep_yes":        getReadyButtonText(patient),
+      "start_prep_no":         "Є запитання",
       "question_resolved_yes": PATIENT_QUICK_REPLIES.questionResolved,
-      "diet_confirm_yes": PATIENT_QUICK_REPLIES.dietConfirm,
+      "drug_choice_yes":       PATIENT_QUICK_REPLIES.drugChoiceFortrans,
+      "drug_choice_no":        PATIENT_QUICK_REPLIES.drugChoiceIzyklin,
+      "diet_confirm_yes":      PATIENT_QUICK_REPLIES.dietConfirm,
     };
     const replyText = replyTextMap[`${context}_${answer}`] ?? answer;
 
@@ -1098,12 +1134,13 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (answer === "no") {
         const { address } = getPatientNameInfo(patient);
         setHideInput(true);
-        onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
+        setStep2AckResult("question");
+        onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
         if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
         setIsTyping(true);
 
         if (useDB) {
-          supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+          supabase.from('visits').update({ status: 'risk' }).eq('id', patient.id)
             .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
         }
         typingTimerRef.current = setTimeout(() => {
@@ -1124,6 +1161,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
       // answer === "yes" → починаємо підготовку
       // Визначаємо групу: Г (Гастроскопія) → одразу Блок 6; К (Колоноскопія та ін.) → Блок 4 (дієта)
+      setStep2AckResult("confirmed");
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
       const procGroup = classifyProcedureGroup(patient.procedure || "");
 
@@ -1131,60 +1169,173 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
           .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
       }
-      // Група К → Блок 4 (харчування) per logic.md
-      // Група Г → мовчить (тексту для цього кроку в logic.md поки немає)
-      if (procGroup === 'K' && AGENT_CHAT_MESSAGES.dietBlockK) {
-        setIsTyping(true);
-        typingTimerRef.current = setTimeout(() => {
-          setEmulatedMessages((prev) => [...prev, {
-            sender: "ai",
-            text: AGENT_CHAT_MESSAGES.dietBlockK,
-            time: makeTimestamp(),
-            quickReply: PATIENT_QUICK_REPLIES.dietConfirm
-              ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
-              : undefined,
-          }]);
-          setIsTyping(false);
-        }, 800);
+      // Група К → Блок 5.1: вибір препарату; Група Г → наступний блок за датою
+      if (procGroup === 'K') {
+        const { address } = getPatientNameInfo(patient);
+        const drugChoiceText = AGENT_CHAT_MESSAGES.dietBlockK({ address });
+        if (drugChoiceText) {
+          setIsTyping(true);
+          typingTimerRef.current = setTimeout(() => {
+            setEmulatedMessages((prev) => [...prev, {
+              sender: "ai",
+              text: drugChoiceText,
+              time: makeTimestamp(),
+              quickReply: { yes: PATIENT_QUICK_REPLIES.drugChoiceFortrans, no: PATIENT_QUICK_REPLIES.drugChoiceIzyklin, context: "drug_choice" as const },
+            }]);
+            setIsTyping(false);
+          }, 800);
+        }
+      } else if (procGroup === 'G') {
+        const gBlock = buildNextGBlock(patient, makeTimestamp());
+        if (gBlock) {
+          setIsTyping(true);
+          typingTimerRef.current = setTimeout(() => {
+            setEmulatedMessages(prev => [...prev, gBlock]);
+            setIsTyping(false);
+          }, 800);
+        }
       }
       return;
     }
 
-    // ── Блок 4 підтверджено: пацієнт натиснув "Дотримуюсь дієти" ────────────────
-    // Блок 5 ТЗ (текст у logic.md) — поки не реалізовано, асистент мовчить.
+    // ── Блок 5.1: пацієнт обрав препарат → надсилаємо Блок 6-К (Дорожня карта) ──
+    if (context === "drug_choice") {
+      const choice = answer === "yes" ? "fortrans" : "izyklin";
+      setDrugChoice(choice);
+      setDietInstructionSent(true);
+      if (useDB) {
+        supabase.from('visits').update({ drug_choice: choice }).eq('id', patient.id)
+          .then(({ error }) => { if (error) console.error('Supabase Error (drug_choice):', error); });
+      }
+      setIsTyping(true);
+      typingTimerRef.current = setTimeout(() => {
+        setEmulatedMessages((prev) => [...prev, {
+          sender: "ai" as const,
+          text: AGENT_CHAT_MESSAGES.block6K,
+          time: makeTimestamp(),
+          quickReply: PATIENT_QUICK_REPLIES.dietConfirm
+            ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
+            : undefined,
+        }]);
+        setIsTyping(false);
+      }, 800);
+      return;
+    }
+
+    // ── Блок 6-К підтверджено: пацієнт натиснув "План отримав, усе зрозуміло" ──
+    // Explicitly lock YELLOW to prevent stale Realtime 'risk' echo from setting RED
     if (context === "diet_confirm") {
+      setStep2AckResult("confirmed");
+      onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
+      if (useDB) {
+        supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+          .then(({ error }) => { if (error) console.error('Supabase Error (diet_confirm):', error); });
+
+        // Create message schedule entries so scheduled messages are sent via Telegram
+        if (patient.patientDbId && patient.date) {
+          const procGroup = classifyProcedureGroup(patient.procedure || "");
+          if (procGroup) {
+            const scheduleBlocks =
+              procGroup === 'K'
+                ? ['block7K', 'block8K', 'block9K', 'block10K', 'block11K']
+                : ['block12G_day_before', 'block12G_morning'];
+
+            // DST-safe Kyiv UTC offset computation (same logic as scheduleBuilder.ts)
+            const kyivToUtc = (dateIso: string, hour: number): string => {
+              const naiveUtc = new Date(`${dateIso}T${String(hour).padStart(2, '0')}:00:00.000Z`);
+              const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kiev', hour: '2-digit', hour12: false });
+              const kyivHour = parseInt(formatter.format(naiveUtc), 10);
+              return new Date(naiveUtc.getTime() - (kyivHour - hour) * 3_600_000).toISOString();
+            };
+            const dayOffset = (daysBeforeVisit: number): string => {
+              const d = new Date(patient.date! + 'T00:00:00Z');
+              d.setUTCDate(d.getUTCDate() - daysBeforeVisit);
+              return d.toISOString().slice(0, 10);
+            };
+
+            const offsetMap: Record<string, { date: string; hour: number }> = {
+              block7K:             { date: dayOffset(4), hour: 8 },
+              block8K:             { date: dayOffset(3), hour: 8 },
+              block9K:             { date: dayOffset(2), hour: 8 },
+              block10K:            { date: dayOffset(1), hour: 8 },
+              block11K:            { date: patient.date!, hour: 4 },
+              block12G_day_before: { date: dayOffset(1), hour: 8 },
+              block12G_morning:    { date: patient.date!, hour: 8 },
+            };
+
+            const rows = scheduleBlocks.map((blockKey) => ({
+              visit_id:    patient.id,
+              patient_id:  patient.patientDbId!,
+              block_key:   blockKey,
+              scheduled_at: kyivToUtc(offsetMap[blockKey].date, offsetMap[blockKey].hour),
+            }));
+
+            supabase.from('message_schedule')
+              .upsert(rows, { onConflict: 'visit_id,block_key', ignoreDuplicates: true })
+              .then(({ error }) => { if (error) console.error('Schedule insert error:', error); });
+          }
+        }
+      }
       return;
     }
 
     // ── "Питання вирішено. Розпочати!" → за групою: К→Блок 4, Г→Блок 6 ────────
     if (context === "question_resolved") {
       const procGroup = classifyProcedureGroup(patient.procedure || "");
+      // Block realtime 'risk' echo synchronously — before any async work
+      questionResolvedInProgressRef.current = true;
       setStep2AckResult("none");
       setHideInput(false);
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       setIsTyping(true);
 
-      // Група К → Блок 4 (харчування) per logic.md; порожній текст → мовчимо
+      // Atomic Supabase write — must fire before the realtime echo can arrive
+      if (useDB) {
+        supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+          .then(({ error }) => { if (error) console.error('Supabase Error (question_resolved):', error); });
+      }
+
+      // Група К → Блок 5.1: вибір препарату (logic.md)
       // Група Г → мовчить (тексту для цього кроку в logic.md поки немає)
-      if (procGroup === 'K' && AGENT_CHAT_MESSAGES.dietBlockK) {
-        questionResolvedInProgressRef.current = true;
-        typingTimerRef.current = setTimeout(() => {
+      if (procGroup === 'K') {
+        const { address } = getPatientNameInfo(patient);
+        const drugChoiceText = AGENT_CHAT_MESSAGES.dietBlockK({ address });
+        if (drugChoiceText) {
+          typingTimerRef.current = setTimeout(() => {
+            setIsTyping(false);
+            questionResolvedInProgressRef.current = false;
+            setEmulatedMessages((prev) => {
+              if (prev.some((m) => m.quickReply?.context === "drug_choice")) return prev;
+              return [
+                ...prev,
+                { sender: "ai" as const, text: drugChoiceText, time: replyTime,
+                  quickReply: { yes: PATIENT_QUICK_REPLIES.drugChoiceFortrans, no: PATIENT_QUICK_REPLIES.drugChoiceIzyklin, context: "drug_choice" as const } },
+              ];
+            });
+          }, 800);
+        } else {
           setIsTyping(false);
           questionResolvedInProgressRef.current = false;
-          setEmulatedMessages((prev) => {
-            if (prev.some((m) => m.quickReply?.context === "diet_confirm")) return prev;
-            return [
-              ...prev,
-              { sender: "ai" as const, text: AGENT_CHAT_MESSAGES.dietBlockK, time: replyTime,
-                quickReply: PATIENT_QUICK_REPLIES.dietConfirm
-                  ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
-                  : undefined },
-            ];
-          });
-        }, 800);
+        }
+      } else if (procGroup === 'G') {
+        const gBlock = buildNextGBlock(patient, replyTime);
+        if (gBlock) {
+          typingTimerRef.current = setTimeout(() => {
+            setIsTyping(false);
+            questionResolvedInProgressRef.current = false;
+            setEmulatedMessages(prev => {
+              if (prev.some(m => m.sender === 'ai' && m.text === gBlock.text)) return prev;
+              return [...prev, gBlock];
+            });
+          }, 800);
+        } else {
+          setIsTyping(false);
+          questionResolvedInProgressRef.current = false;
+        }
       } else {
         setIsTyping(false);
+        questionResolvedInProgressRef.current = false;
       }
       return;
     }
@@ -1204,12 +1355,13 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const time = makeTimestamp();
     const { address } = getPatientNameInfo(patient);
     setHideInput(true);
-    onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
+    setStep2AckResult("question");
+    onUpdatePatient?.({ status: "risk" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.risk });
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     setIsTyping(true);
 
     if (useDB) {
-      supabase.from('visits').update({ status: 'yellow' }).eq('id', patient.id)
+      supabase.from('visits').update({ status: 'risk' }).eq('id', patient.id)
         .then(({ error }) => { if (error) console.error('Supabase Error (visits):', error); });
     }
     setEmulatedMessages((prev) => [
@@ -1353,6 +1505,29 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     setFocusField({ field, value: value ?? "", history });
   };
 
+  const handleGenerateTelegramLink = async () => {
+    if (!patient.patientDbId) return;
+    const botUsername = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) ?? "";
+    if (!botUsername) {
+      toast.error("VITE_TELEGRAM_BOT_USERNAME не налаштовано");
+      return;
+    }
+    setTgStatus((prev) => ({ ...prev, loading: true }));
+    const link = await generateTelegramToken(patient.patientDbId, botUsername);
+    if (link) {
+      setTgStatus((prev) => ({ ...prev, deepLink: link, hasToken: true, loading: false }));
+      try {
+        await navigator.clipboard.writeText(link);
+        toast.success("Посилання скопійовано");
+      } catch {
+        toast.success("Посилання готове");
+      }
+    } else {
+      setTgStatus((prev) => ({ ...prev, loading: false }));
+      toast.error("Помилка генерації посилання");
+    }
+  };
+
   // Відкриває картку конкретного архівного візиту по відображуваній даті
   const handleOpenVisitByDate = (displayDate: string) => {
     const iso = displayToIso(displayDate);
@@ -1438,7 +1613,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const handleCloseRequest = () => {
     setFocusField(null);
     setShowReschedulePicker(false);
-    setHistoryModalOpen(false);
     try {
       handleSaveChanges(true);
     } catch (e) {
@@ -1619,7 +1793,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
 
       <div className={cn(
-        "relative z-10 w-full h-[92dvh] sm:h-auto bg-[hsl(210,40%,96%)] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-[92dvh] overflow-hidden flex flex-col min-h-0",
+        "relative z-10 w-full h-dvh sm:h-auto bg-[hsl(210,40%,96%)] rounded-none sm:rounded-2xl shadow-2xl animate-slide-up safe-bottom max-h-dvh sm:max-h-[92dvh] overflow-hidden flex flex-col min-h-0",
         "sm:max-w-[95vw]"
       )}>
         {/* Handle (mobile) */}
@@ -1770,6 +1944,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       }}
                     />
                   </ContentBlock>
+
                   <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                     <PatientServices services={localServices} onServicesChange={handleServicesChange} showFloatingEdit={!focusField} />
                   </ContentBlock>
@@ -1802,10 +1977,38 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   </ContentBlock>
                 </div>
               ) : activeTab === "assistant" ? (
-                <div className="p-4 flex flex-col gap-3">
-                  {/* Progress bar — compact, no journal entries on mobile */}
-                  <div className="bg-card rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex items-center justify-between px-1 pr-3">
-                    <div className="flex-1">
+                <div className="flex flex-col">
+                  {/* ── Telegram strip ── */}
+                  {isSupabaseDataMode && (
+                    <div className="px-4 pt-3 pb-2.5 border-b border-border">
+                      {tgStatus.telegramId ? (
+                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                          Telegram підключено
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Send size={12} className="text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
+                            {tgStatus.deepLink ?? "Telegram не підключено"}
+                          </span>
+                          <button
+                            onClick={tgStatus.deepLink
+                              ? () => navigator.clipboard.writeText(tgStatus.deepLink!).then(() => toast.success("Скопійовано"))
+                              : handleGenerateTelegramLink}
+                            disabled={tgStatus.loading || !patient.patientDbId}
+                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 whitespace-nowrap transition-colors shrink-0"
+                          >
+                            {tgStatus.loading ? <Loader2 size={11} className="animate-spin" /> : <Copy size={11} />}
+                            Копіювати посилання
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Progress bar — sticky so it stays visible while scrolling the chat */}
+                  <div className="sticky top-0 z-10 px-4 pt-4 pb-1 bg-[hsl(210,40%,96%)]">
+                    <div className="bg-card rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
                       <LinearProgressBar
                         preparation={preparation}
                         status={effectiveStatus}
@@ -1815,18 +2018,13 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                         step2AckResult={step2AckResult}
                       />
                     </div>
-                    <button
-                      onClick={() => setHistoryModalOpen(true)}
-                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-muted transition-colors"
-                      title="Журнал подій"
-                    >
-                      <FileText size={13} className="text-muted-foreground" />
-                    </button>
                   </div>
-                  {/* Chat — natural height so outer scroll container handles scrolling */}
-                  <div className="bg-card rounded-xl shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
-                    <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} isTyping={isTyping} />
-                    {!hideInput && <ChatInput onSend={handleDoctorSend} />}
+                  {/* Chat */}
+                  <div className="px-4 pb-4 pt-2">
+                    <div className="bg-card rounded-xl shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
+                      <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} isTyping={isTyping} />
+                      {!hideInput && <ChatInput onSend={handleDoctorSend} />}
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -1859,6 +2057,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   }}
                 />
               </ContentBlock>
+
               <ContentBlock title={localServices.length > 0 ? "Змінити послуги" : "Послуги"}>
                 <PatientServices services={localServices} onServicesChange={handleServicesChange} showFloatingEdit={!focusField} />
               </ContentBlock>
@@ -1892,32 +2091,42 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             <div className="w-[60%] min-h-0 flex flex-col overflow-hidden p-4 pl-0">
               <ContentBlock title="Асистент" icon={<MessageCircle size={13} />} className="flex-1 flex flex-col overflow-hidden"
                 headerRight={
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setHistoryModalOpen(true)}
-                      className="px-2 py-1 flex items-center gap-1 rounded hover:bg-muted transition-colors text-xs font-medium text-muted-foreground"
-                      title="Журнал подій"
-                    >
-                      📜 Журнал подій
-                    </button>
-                    {unanswered.length > 0 && (
-                      <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
-                        <AlertTriangle size={12} />
-                        {unanswered.length} без відповіді
-                      </span>
-                    )}
-                    {mergedProfile.phone && (
-                      <a
-                        href={`tel:${mergedProfile.phone}`}
-                        className="w-7 h-7 rounded-full bg-status-ready flex items-center justify-center shadow-sm hover:bg-status-ready/90 active:scale-[0.93] transition-all shrink-0"
-                        title={mergedProfile.phone}
-                      >
-                        <Phone size={13} strokeWidth={2.5} className="text-white" />
-                      </a>
-                    )}
-                  </div>
+                  unanswered.length > 0 ? (
+                    <span className="flex items-center gap-1 text-xs font-bold text-status-risk bg-status-risk-bg px-2.5 py-0.5 rounded-full">
+                      <AlertTriangle size={12} />
+                      {unanswered.length} без відповіді
+                    </span>
+                  ) : undefined
                 }
               >
+                {/* ── Telegram strip ── */}
+                {isSupabaseDataMode && (
+                  <div className="px-4 pt-3 pb-2.5 border-b border-border">
+                    {tgStatus.telegramId ? (
+                      <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                        Telegram підключено
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Send size={12} className="text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
+                          {tgStatus.deepLink ?? "Telegram не підключено"}
+                        </span>
+                        <button
+                          onClick={tgStatus.deepLink
+                            ? () => navigator.clipboard.writeText(tgStatus.deepLink!).then(() => toast.success("Скопійовано"))
+                            : handleGenerateTelegramLink}
+                          disabled={tgStatus.loading || !patient.patientDbId}
+                          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 whitespace-nowrap transition-colors shrink-0"
+                        >
+                          {tgStatus.loading ? <Loader2 size={11} className="animate-spin" /> : <Copy size={11} />}
+                          Копіювати посилання
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <LinearProgressBar
                   preparation={preparation}
                   status={effectiveStatus}
@@ -1926,7 +2135,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   waitingForStep2Ack={waitingForStep2Ack}
                   step2AckResult={step2AckResult}
                 />
-                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && !hideInput ? handleHasQuestion : undefined} isTyping={isTyping} />
+                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && !hideInput && step2AckResult === "none" && !emulatedMessages.some(m => m.sender === "patient" && m.text === "Є запитання") ? handleHasQuestion : undefined} isTyping={isTyping} />
                 {!hideInput && <ChatInput onSend={handleDoctorSend} />}
               </ContentBlock>
             </div>
@@ -2005,8 +2214,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           allPatients={allPatients}
         />
 
-        {/* History Modal */}
-        <HistoryModal isOpen={historyModalOpen} onClose={() => setHistoryModalOpen(false)} chat={chat} eventLogs={eventLogs} />
       </div>
     </div>
   );

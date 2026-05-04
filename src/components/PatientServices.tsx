@@ -116,13 +116,14 @@ export function ReschedulePicker({
   initialTime,
   allPatients,
 }: ReschedulePickerProps) {
-  const [date, setDate] = useState(initialDate || new Date().toISOString().slice(0, 10));
+  const todayLocal = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`; })();
+  const [date, setDate] = useState(initialDate || todayLocal);
   const [time, setTime] = useState(initialTime || "");
 
   // Reset to current patient date/time every time the picker is opened.
   useEffect(() => {
     if (open) {
-      setDate(initialDate || new Date().toISOString().slice(0, 10));
+      setDate(initialDate || todayLocal);
       setTime(initialTime || "");
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps

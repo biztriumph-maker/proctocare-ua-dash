@@ -154,13 +154,12 @@ export function LinearProgressBar({
   const lastStepIdx = preparation.steps.length - 1;
 
   const getSegmentColor = (i: number): string => {
-    const isDone   = (dietInstructionSent && i === 0) || (step2AckResult === "confirmed" && i === lastStepIdx);
+    const isDone   = preparation.steps[i]?.done ?? false;
     const isFailed = step2AckResult === "question" && i === lastStepIdx;
-    const isActive = dietInstructionSent && !isDone && !isFailed && i > 0 && i < lastStepIdx;
 
-    if (isFailed) return "bg-red-500";
+    if (isFailed)              return "bg-red-500";
     if (isDone && i === lastStepIdx) return "bg-green-500";
-    if (isDone || isActive) return "bg-yellow-400";
+    if (isDone)                return "bg-yellow-400";
     return "bg-gray-200";
   };
 
@@ -204,8 +203,7 @@ export function ChatPane({
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeMessages = chat.filter(
-    (m) => !m.unanswered &&
-      !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")))
+    (m) => !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")))
   );
   const hasActiveQuickReply = activeMessages.length > 0 && !!activeMessages[activeMessages.length - 1].quickReply;
 
@@ -233,13 +231,13 @@ export function ChatPane({
       {activeMessages.map((msg, i) => {
         const isPatient = msg.sender === "patient";
         const isDoctor  = msg.sender === "doctor";
-        const patientRepliedAfter = activeMessages.slice(i + 1).some(m => m.sender === "patient");
+        const isLastMessage = i === activeMessages.length - 1;
         return (
-          <div key={msg._dbId ?? i} className={cn("flex flex-col", isPatient ? "items-start" : "items-end")}>
+          <div key={msg._dbId ?? i} className={cn("flex flex-col", isPatient || isDoctor ? "items-end" : "items-start")}>
             <div className={cn(
               "rounded-2xl px-4 py-2.5 text-sm leading-relaxed max-w-[86%] shadow-[0_2px_8px_rgba(0,0,0,0.07)] whitespace-pre-wrap",
               isDoctor  ? "bg-green-100 border border-green-300 rounded-br-sm text-green-900"
-              : isPatient ? "bg-white border border-gray-300 rounded-bl-sm text-gray-900"
+              : isPatient ? "bg-white border border-gray-300 rounded-br-sm text-gray-900"
                           : "bg-yellow-50 border border-yellow-300 rounded-bl-sm text-yellow-900"
             )}>
               <p className={cn("text-[11px] font-bold mb-0.5", isDoctor ? "text-green-700" : isPatient ? "text-gray-600" : "text-yellow-700")}>
@@ -248,8 +246,8 @@ export function ChatPane({
               <p className="text-foreground">{renderBoldText(msg.text)}</p>
             </div>
 
-            {/* QuickReply buttons — hidden once patient replied after this message */}
-            {msg.quickReply && onQuickReply && !patientRepliedAfter && (
+            {/* QuickReply buttons — only shown on the last message in the conversation */}
+            {msg.quickReply && onQuickReply && isLastMessage && (
               <div className="flex flex-col md:flex-row gap-2 mt-2 w-full md:w-auto">
                 <button
                   onClick={() => onQuickReply("yes", msg.quickReply?.context)}

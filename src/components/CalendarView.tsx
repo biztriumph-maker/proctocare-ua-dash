@@ -41,6 +41,20 @@ const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const PROCEDURES = ["Колоноскопія", "Ректоскопія", "Аноскопія", "Консультація"];
 
+function formatNameInitials(name: string, patronymic?: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return name;
+  const lastName = parts[0];
+  const firstName = parts[1] || "";
+  const middleFromName = parts.slice(2).join(" ");
+  const middleName = (patronymic || middleFromName || "").trim();
+  const abbr = [
+    firstName ? `${firstName[0].toUpperCase()}.` : "",
+    middleName ? `${middleName[0].toUpperCase()}.` : "",
+  ].filter(Boolean).join(" ");
+  return abbr ? `${lastName} ${abbr}` : lastName;
+}
+
 function getMockSlots(dateStr: string): CalendarSlot[] {
   return HOURS.map((hour) => ({ hour }));
 }
@@ -313,18 +327,10 @@ function SlotPopover({
   }
   top = Math.max(MARGIN, Math.min(top, vh - POPOVER_HEIGHT - MARGIN));
 
-  const compactName = useMemo(() => {
-    const parts = slot.name.trim().split(/\s+/).filter(Boolean);
-    const lastName = parts[0] || "";
-    const firstName = parts[1] || "";
-    const middleNameFromName = parts.slice(2).join(" ");
-    const middleName = (slot.patronymic || middleNameFromName || "").trim();
-    return [
-      lastName,
-      firstName ? `${firstName[0]}.` : "",
-      middleName ? `${middleName[0]}.` : "",
-    ].filter(Boolean).join(" ");
-  }, [slot.name, slot.patronymic]);
+  const compactName = useMemo(
+    () => formatNameInitials(slot.name, slot.patronymic),
+    [slot.name, slot.patronymic]
+  );
 
   return (
     <>
@@ -561,24 +567,30 @@ function WeekGrid({
                         <span className="block sm:hidden w-3 h-3 rounded-sm bg-primary/80 mx-auto" />
                         {/* Desktop: name text */}
                         {selectedSlot?.name && (
-                          <span className="hidden sm:block text-[8px] font-bold text-primary truncate px-0.5 leading-none">
-                            {selectedSlot.name}
+                          <span className="hidden sm:flex items-center justify-center text-[14px] font-semibold text-primary truncate px-1 leading-none">
+                            {formatNameInitials(selectedSlot.name)}
                           </span>
                         )}
                       </>
                     )}
                     {!isSelected && slot?.patient && (
                       <div className="absolute inset-0 pointer-events-none">
-                        {hasConfirmedAllergen(slot.patient.allergies) && (
-                          <AllergyShield
-                            size={10}
-                            style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }}
-                            className="absolute left-[8px] top-1/2 -translate-y-1/2 shrink-0"
-                          />
-                        )}
-                        {isNoShow && (
+                        {isNoShow ? (
                           <span className="hidden sm:flex absolute inset-0 items-center justify-center text-[9px] font-extrabold text-status-risk z-10">
                             Н/З
+                          </span>
+                        ) : (
+                          <span className="hidden sm:flex absolute inset-0 items-center justify-center gap-1 px-[5px] z-10 overflow-hidden">
+                            {hasConfirmedAllergen(slot.patient.allergies) && (
+                              <AllergyShield
+                                size={10}
+                                style={{ filter: "drop-shadow(0 0 3px rgba(239,68,68,0.7))" }}
+                                className="shrink-0"
+                              />
+                            )}
+                            <span className="text-[14px] font-semibold text-foreground truncate leading-none">
+                              {formatNameInitials(slot.patient.name, slot.patient.patronymic)}
+                            </span>
                           </span>
                         )}
                       </div>
@@ -648,11 +660,6 @@ function DayGrid({
   };
 
   const matchRef = useRef<HTMLDivElement | null>(null);
-  const [activePopover, setActivePopover] = useState<{ key: string; rect: DOMRect } | null>(null);
-
-  useEffect(() => {
-    setActivePopover(null);
-  }, [date, searchQuery, selectedSlot, realPatients]);
 
   useEffect(() => {
     if (searchQuery.trim() && matchRef.current) {
@@ -666,7 +673,6 @@ function DayGrid({
         const isSearchMatch = !!(searchQuery.trim() && slot.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()));
         const isSelected = !slot.patient && !!selectedSlot && dateToStr(date) === selectedSlot.dateStr && slot.hour === selectedSlot.hour;
         const isNoShow = !!slot.patient?.noShow || ((slot.patient?.status as string) === "no_show");
-        const popoverKey = `${slot.hour}`;
         const todayAtStart = new Date();
         todayAtStart.setHours(0, 0, 0, 0);
         const dateAtStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -678,12 +684,10 @@ function DayGrid({
               <span key={searchQuery} className="absolute inset-0 animate-flash-yellow rounded-lg pointer-events-none z-[1]" />
             )}
             <button
-              onClick={(e) => {
+              onClick={() => {
                 if (slot.patient) {
-                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                  setActivePopover(activePopover?.key === popoverKey ? null : { key: popoverKey, rect });
+                  onPatientClick?.({ ...slot.patient, time: `${String(slot.hour).padStart(2, "0")}:00`, date: dateToStr(date) });
                 } else {
-                  setActivePopover(null);
                   onSlotClick(date, slot.hour);
                 }
               }}
@@ -729,8 +733,8 @@ function DayGrid({
                   {hasConfirmedAllergen(slot.patient.allergies) && (
                     <AllergyShield size={15} style={{ filter: "drop-shadow(0 0 5px rgba(239,68,68,0.7))" }} className="shrink-0" />
                   )}
-                  <span className="text-[16px] font-[500] text-foreground truncate min-w-0">
-                    {slot.patient.name}{slot.patient.patronymic ? ` ${slot.patient.patronymic}` : ""}
+                  <span className="text-[15px] font-semibold text-foreground truncate min-w-0">
+                    {formatNameInitials(slot.patient.name, slot.patient.patronymic)}
                   </span>
                   {isNoShow && (
                     <span className="shrink-0 text-xs font-extrabold text-status-risk">Н/З</span>
@@ -747,23 +751,13 @@ function DayGrid({
                   )}
                 >
                   {isSelected && selectedSlot?.name ? (
-                    <span className="truncate text-[16px] font-[500] text-primary">{selectedSlot.name}</span>
+                    <span className="truncate text-[15px] font-semibold text-primary">{formatNameInitials(selectedSlot.name)}</span>
                   ) : (
                     <span className="text-[16px] font-[500] text-[#9CA3AF]">вільно</span>
                   )}
                 </div>
               )}
             </button>
-            {slot.patient && activePopover?.key === popoverKey && (
-              <SlotPopover
-                slot={slot.patient}
-                hour={slot.hour}
-                dateStr={dateToStr(date)}
-                onClose={() => setActivePopover(null)}
-                onPatientClick={onPatientClick}
-                anchorRect={activePopover.rect}
-              />
-            )}
           </div>
         );
       })}
