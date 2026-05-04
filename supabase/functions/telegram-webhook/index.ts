@@ -9,6 +9,7 @@ import {
   buildHasQuestionText,
   buildGreetingText,
   buildReadyButtonText,
+  stripHtml,
   BLOCK_KEY_TO_CONTEXT,
 } from "../_shared/messages.ts";
 import { buildScheduleRows } from "../_shared/scheduleBuilder.ts";
@@ -142,12 +143,39 @@ Deno.serve(async (req) => {
           v.visit_date,
           v.visit_time
         );
+        const readyBtnText = buildReadyButtonText(patient.patronymic);
         await sendMessage(chatId, greetingText, {
           inline_keyboard: [[
-            { text: buildReadyButtonText(patient.patronymic), callback_data: `start_prep:yes:${v.id}` },
+            { text: readyBtnText, callback_data: `start_prep:yes:${v.id}` },
             { text: "Є запитання", callback_data: `start_prep:no:${v.id}` },
           ]],
         });
+
+        // Save greeting to assistant_chats so dashboard shows it via Realtime.
+        // Without this the first button tap creates a session with no greeting.
+        await db.from("assistant_chats").upsert(
+          {
+            id: v.id,
+            patient_id: patient.id,
+            visit_date: v.visit_date,
+            messages: [{
+              sender: "ai",
+              text: stripHtml(greetingText),
+              time: kyivTime(),
+              quickReply: {
+                yes: readyBtnText,
+                no: "Є запитання",
+                context: "start_prep",
+              },
+            }],
+            welcome_sent: true,
+            waiting_for_diet_ack: false,
+            diet_instruction_sent: false,
+            waiting_for_step2_ack: false,
+            step2_ack_result: "none",
+          },
+          { onConflict: "id" }
+        );
       } else {
         console.warn(`[webhook] no upcoming visits found for patient ${patient.id}`);
       }
@@ -242,9 +270,10 @@ Deno.serve(async (req) => {
     let visitUpdates: Record<string, unknown> = {};
     const aiMessages: Array<{ text: string; quickReply?: unknown }> = [];
 
-    // Helper: push an AI message to the list (will be added to session + sent via Telegram)
+    // Helper: push an AI message to the list.
+    // text is HTML (for Telegram) — stripped to **markdown** before dashboard storage.
     function pushAiMsg(text: string, quickReply?: unknown) {
-      aiMessages.push({ text, quickReply });
+      aiMessages.push({ text: stripHtml(text), quickReply });
     }
 
     if (context === "start_prep" && answer === "yes") {
@@ -390,7 +419,28 @@ Deno.serve(async (req) => {
       visitUpdates = { status: "ready" };
     }
 
-    // has_question, diet_ready, diet_on_track, prep_ready, day_plan_understood,
+    // "Є запитання" tapped on a scheduled message (block7K / block8K / block9K).
+    // Set status to risk and send the hasQuestion message so the patient gets
+    // the "Питання вирішено. Розпочати!" button to continue after calling the doctor.
+    if (context === "has_question") {
+      visitUpdates = { status: "risk" };
+      const questionText = buildHasQuestionText(addr);
+      const tgMarkup = {
+        inline_keyboard: [[
+          {
+            text: "Питання вирішено. Розпочати!",
+            callback_data: `question_resolved:yes:${visitId}`,
+          },
+        ]],
+      };
+      await sendMessage(chatId, questionText, tgMarkup);
+      pushAiMsg(questionText, {
+        yes: "Питання вирішено. Розпочати!",
+        context: "question_resolved",
+      });
+    }
+
+    // diet_ready, diet_on_track, prep_ready, day_plan_understood,
     // day_before_confirm — update session only, no automatic next message
 
     // Apply visit updates

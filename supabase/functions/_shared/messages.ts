@@ -15,6 +15,17 @@ function md(text: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
 }
 
+// Reverses md() + escapeHtml() for dashboard storage.
+// assistant_chats uses **markdown**, Telegram uses HTML — these are separate.
+export function stripHtml(text: string): string {
+  return text
+    .replace(/<b><i>([^<]+)<\/i><\/b>/g, "***$1***")
+    .replace(/<b>([^<]+)<\/b>/g, "**$1**")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 // Returns "Пане Іване Петровичу" / "Пані Наталіє Іванівно" (HTML-escaped)
 export function buildAddress(name: string, patronymic: string | null): string {
   const parts = (name || "").trim().split(/\s+/);
@@ -316,11 +327,12 @@ export function buildHasQuestionText(addr: string): string {
 }
 
 // Gender-aware ready button text derived from Ukrainian patronymic suffix.
-// "ович" → male; "івна"/"ївна" → female; otherwise neutral fallback.
+// Male:   "ович" (Петрович), "євич" (Андрієвич)
+// Female: "івна" (Петрівна), "ївна" (Андріївна), "євна" (rare forms)
 export function buildReadyButtonText(patronymic: string | null): string {
   const p = (patronymic || "").trim();
-  if (/ович$/i.test(p)) return "Я готовий";
-  if (/[іи]вна$/i.test(p)) return "Я готова";
+  if (/ович$|євич$/i.test(p)) return "Я готовий";
+  if (/івна$|ївна$|євна$/i.test(p)) return "Я готова";
   return "Я готовий/а";
 }
 

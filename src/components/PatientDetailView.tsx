@@ -857,6 +857,39 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return unsub;
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Mobile resume: re-fetch assistant_chats when tab becomes visible or device comes online ──
+  // Supabase Realtime WebSockets are killed by mobile OS when the screen locks or the
+  // browser tab is backgrounded. Supabase auto-reconnects the socket, but missed events
+  // are never replayed. This handler catches up by doing a one-shot DB read on resume —
+  // the same pattern Index.tsx uses for the patient list (visibilitychange + online).
+  useEffect(() => {
+    if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
+
+    const reload = async () => {
+      const session = await loadAssistantSessionDB(patient.id);
+      if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
+      if (session.messages.length < emulatedMessagesRef.current.length) return;
+      setEmulatedMessages(session.messages as ChatMessage[]);
+      setWaitingForDietAck(session.waiting_for_diet_ack);
+      setDietInstructionSent(session.diet_instruction_sent);
+      setWaitingForStep2Ack(session.waiting_for_step2_ack);
+      setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
+      setWelcomeSent(session.welcome_sent);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void reload();
+    };
+    const onOnline = () => void reload();
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", onOnline);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Load Telegram link status on mount ─────────────────────────────────────
   useEffect(() => {
     if (!isSupabaseDataMode || !patient.patientDbId) return;
