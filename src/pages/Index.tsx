@@ -737,6 +737,7 @@ export default function Index() {
   });
   const patientsRef = useRef<Patient[]>(patients);
   const selectedPatientRef = useRef<Patient | null>(null);
+  const pendingDeleteIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     patientsRef.current = patients;
@@ -783,11 +784,16 @@ export default function Index() {
       }
 
       const normalized = data as Patient[];
-      const nextSerialized = JSON.stringify(normalized);
+      // Strip any patients whose delete is still in flight so a visibility/focus
+      // reset of lastFetchRef cannot resurrect a card that was just deleted.
+      const filtered = pendingDeleteIdsRef.current.size > 0
+        ? normalized.filter((p) => !pendingDeleteIdsRef.current.has(p.id))
+        : normalized;
+      const nextSerialized = JSON.stringify(filtered);
       if (nextSerialized === lastFetchRef.current) return;
 
-      console.log(`🔄 Supabase sync (${reason}):`, normalized.length, "patients");
-      setPatients(normalized);
+      console.log(`🔄 Supabase sync (${reason}):`, filtered.length, "patients");
+      setPatients(filtered);
       lastFetchRef.current = nextSerialized;
 
       const activeSelected = selectedPatientRef.current;
@@ -1252,11 +1258,15 @@ export default function Index() {
     const resolvedId = target?.id ?? patientId;
     const patientName = target?.name ?? '';
 
-    // 1. Close UI immediately — card disappears, list cleans up
+    // 1. Mark as pending-delete so any re-fetch during the async DB operation
+    //    does not resurrect the card (e.g. visibility/focus resets lastFetchRef).
+    pendingDeleteIdsRef.current.add(resolvedId);
+
+    // 2. Close UI immediately — card disappears, list cleans up
     setSelectedPatient(null);
     setPatients((prev) => prev.filter((p) => p.id !== resolvedId));
 
-    // 2. Await full deep-delete: Storage files + visits + patient row
+    // 3. Await full deep-delete: Storage files + visits + patient row
     await toast.promise(
       deletePatientVisitFromSupabase(resolvedId),
       {
@@ -1265,6 +1275,9 @@ export default function Index() {
         error: 'Помилка при видаленні — перевірте консоль',
       }
     );
+
+    // 4. Release the guard — card will no longer be suppressed in future fetches
+    pendingDeleteIdsRef.current.delete(resolvedId);
   }, []);
 
   // Called when PatientDetailView reschedules a completed visit.
