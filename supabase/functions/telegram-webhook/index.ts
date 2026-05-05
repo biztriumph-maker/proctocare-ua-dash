@@ -374,6 +374,7 @@ Deno.serve(async (req) => {
     if (context === "diet_confirm" && answer === "yes") {
       visitUpdates = { status: "yellow" };
       const procGroup = classifyProcedureGroup(visit.procedure ?? "");
+      if (procGroup === "G") dietInstructionSentNow = true;
 
       if (procGroup) {
         // Fetch latest drug_choice in case it was just set by drug_choice handler
