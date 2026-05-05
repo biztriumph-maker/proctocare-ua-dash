@@ -1267,6 +1267,8 @@ export default function Index() {
 
     // 2. Close UI immediately — card disappears, list cleans up
     setSelectedPatient(null);
+    setView("calendar");
+    setShowAgentMode(false);
     setPatients((prev) => prev.filter((p) => p.id !== resolvedId));
 
     // 3. Await full deep-delete: Storage files + visits + patient row
