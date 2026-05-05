@@ -845,6 +845,9 @@ export default function Index() {
             if (arePatientsEquivalentForView(prev, withAllergies)) return prev;
             return withAllergies;
           });
+        } else {
+          // Patient no longer exists in DB — deleted from another device
+          setSelectedPatient(null);
         }
       }
     } catch (error) {
