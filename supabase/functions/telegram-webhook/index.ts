@@ -4,6 +4,7 @@ import { sendMessage, answerCallbackQuery, editMessageReplyMarkup } from "../_sh
 import {
   buildAddress,
   buildDrugChoiceText,
+  buildMessagePayload,
   buildRoadmapKText,
   buildRoadmapGText,
   buildHasQuestionText,
@@ -34,6 +35,13 @@ const REPLY_TEXT_MAP: Record<string, string> = {
   "departure_g:yes":         "Виїжджаю",
   "has_question:no":         "Є запитання",
 };
+
+function daysUntilVisit(visitDateIso: string): number {
+  const todayKyiv = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kiev" }).format(new Date());
+  const todayMs = new Date(todayKyiv + "T00:00:00Z").getTime();
+  const visitMs = new Date(visitDateIso + "T00:00:00Z").getTime();
+  return Math.round((visitMs - todayMs) / 86_400_000);
+}
 
 function kyivTime(): string {
   const now = new Date();
@@ -346,7 +354,8 @@ Deno.serve(async (req) => {
       visitUpdates = { drug_choice: choice };
       dietInstructionSentNow = true;
 
-      const roadmapK = buildRoadmapKText();
+      const days = daysUntilVisit(visit.visit_date);
+      const roadmapK = buildRoadmapKText(days);
       const tgMarkup = {
         inline_keyboard: [[
           {
@@ -387,6 +396,51 @@ Deno.serve(async (req) => {
             .from("message_schedule")
             .upsert(scheduleRows, { onConflict: "visit_id,block_key", ignoreDuplicates: true });
           if (schedErr) console.error("[webhook] schedule insert error:", schedErr);
+        }
+
+        // Immediately send overdue blocks for late-registering patients.
+        // block7K says "tomorrow we start the diet" — stale if diet day has passed, skip it.
+        const SKIP_WHEN_LATE = new Set(["block7K"]);
+        const nowTime = new Date();
+        const visitForPayload = {
+          visit_id: visitId,
+          patient_id: pat.id,
+          visit_date: visit.visit_date,
+          visit_time: visit.visit_time ?? null,
+          procedure: visit.procedure ?? null,
+          drug_choice: freshVisit?.drug_choice ?? null,
+          telegram_id: chatId,
+          patient_name: pat.name,
+          patient_patronymic: pat.patronymic,
+        };
+        for (const row of scheduleRows) {
+          if (SKIP_WHEN_LATE.has(row.block_key)) continue;
+          if (new Date(row.scheduled_at) < nowTime) {
+            const payload = buildMessagePayload(row.block_key, visitForPayload);
+            if (payload) {
+              try {
+                await sendMessage(chatId, payload.text, payload.reply_markup);
+                await db
+                  .from("message_schedule")
+                  .update({ sent_at: nowTime.toISOString() })
+                  .eq("visit_id", visitId)
+                  .eq("block_key", row.block_key);
+                const frontendContext = BLOCK_KEY_TO_CONTEXT[row.block_key];
+                const buttons = payload.reply_markup?.inline_keyboard?.[0];
+                const quickReply =
+                  frontendContext && buttons
+                    ? {
+                        yes: buttons[0]?.text,
+                        ...(buttons[1] ? { no: buttons[1].text } : {}),
+                        context: frontendContext,
+                      }
+                    : undefined;
+                pushAiMsg(payload.text, quickReply);
+              } catch (e) {
+                console.error(`[webhook] immediate catch-up send failed for ${row.block_key}:`, e);
+              }
+            }
+          }
         }
       }
     }
