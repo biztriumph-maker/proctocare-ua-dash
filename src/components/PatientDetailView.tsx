@@ -13,6 +13,7 @@ import {
   subscribeToAssistantSessionDB,
   generateTelegramToken,
   loadTelegramStatus,
+  suppressNextRealtimeReload,
 } from "@/lib/supabaseSync";
 import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -488,7 +489,7 @@ function getPreparationProgress(
   if (group === 'G') {
     const steps = [
       { label: "Зв'язок встановлено", done: contactMade },
-      { label: "Легка вечеря",        done: status === "ready" },
+      { label: "Легка вечеря",        done: dietInstructionSent || status === "ready" },
       { label: "Виїзд",               done: status === "ready" },
     ];
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
@@ -1261,6 +1262,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     // ── Блок 6-К підтверджено: пацієнт натиснув "План отримав, усе зрозуміло" ──
     // Explicitly lock YELLOW to prevent stale Realtime 'risk' echo from setting RED
     if (context === "diet_confirm") {
+      if (classifyProcedureGroup(patient.procedure || "") === 'G') setDietInstructionSent(true);
       setStep2AckResult("confirmed");
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
       if (useDB) {
@@ -1320,6 +1322,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const procGroup = classifyProcedureGroup(patient.procedure || "");
       // Block realtime 'risk' echo synchronously — before any async work
       questionResolvedInProgressRef.current = true;
+      suppressNextRealtimeReload(2000);
+      setTimeout(() => { questionResolvedInProgressRef.current = false; }, 2000);
       setStep2AckResult("none");
       setHideInput(false);
       onUpdatePatient?.({ status: "yellow" as PatientStatus, aiSummary: AI_SUMMARY_BY_STATUS.yellow });
@@ -1340,7 +1344,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         if (drugChoiceText) {
           typingTimerRef.current = setTimeout(() => {
             setIsTyping(false);
-            questionResolvedInProgressRef.current = false;
             setEmulatedMessages((prev) => {
               if (prev.some((m) => m.quickReply?.context === "drug_choice")) return prev;
               return [
@@ -1352,14 +1355,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           }, 800);
         } else {
           setIsTyping(false);
-          questionResolvedInProgressRef.current = false;
         }
       } else if (procGroup === 'G') {
         const gBlock = buildNextGBlock(patient, replyTime);
         if (gBlock) {
           typingTimerRef.current = setTimeout(() => {
             setIsTyping(false);
-            questionResolvedInProgressRef.current = false;
             setEmulatedMessages(prev => {
               if (prev.some(m => m.sender === 'ai' && m.text === gBlock.text)) return prev;
               return [...prev, gBlock];
@@ -1367,11 +1368,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           }, 800);
         } else {
           setIsTyping(false);
-          questionResolvedInProgressRef.current = false;
         }
       } else {
         setIsTyping(false);
-        questionResolvedInProgressRef.current = false;
       }
       return;
     }

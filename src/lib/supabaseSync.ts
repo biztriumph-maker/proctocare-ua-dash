@@ -116,6 +116,11 @@ export async function replacePatientsSnapshot(patients: Array<Record<string, unk
   });
 }
 
+let suppressReloadUntil = 0;
+export function suppressNextRealtimeReload(ms: number) {
+  suppressReloadUntil = Date.now() + ms;
+}
+
 export function subscribeToPatientsRealtime(onChange: () => void): () => void {
   if (!USE_SUPABASE) {
     return () => {};
@@ -124,6 +129,7 @@ export function subscribeToPatientsRealtime(onChange: () => void): () => void {
   let notifyTimer: ReturnType<typeof setTimeout> | null = null;
 
   const notify = () => {
+    if (Date.now() < suppressReloadUntil) return;
     if (notifyTimer) clearTimeout(notifyTimer);
     notifyTimer = setTimeout(() => {
       notifyTimer = null;
