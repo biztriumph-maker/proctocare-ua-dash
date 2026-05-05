@@ -905,6 +905,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   // status becomes RED and UI renders correctly without requiring another click.
   useEffect(() => {
     if (step2AckResult !== "none") return;
+    // Skip if status is already yellow — avoids reverting during Telegram question_resolved transition
+    // where applySession() may load old messages before assistant_chats is updated by the webhook.
+    if (patientRef.current.status === 'yellow') return;
     const inQuestion = emulatedMessages.some(
       m => m.sender === "ai" && m.quickReply?.context === "question_resolved"
     );

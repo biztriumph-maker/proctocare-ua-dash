@@ -455,15 +455,6 @@ Deno.serve(async (req) => {
     // diet_ready, diet_on_track, prep_ready, day_plan_understood,
     // day_before_confirm — update session only, no automatic next message
 
-    // Apply visit updates
-    if (Object.keys(visitUpdates).length > 0) {
-      const { error: vErr } = await db
-        .from("visits")
-        .update(visitUpdates)
-        .eq("id", visitId);
-      if (vErr) console.error("[webhook] visit update error:", vErr);
-    }
-
     // Append AI messages to session
     for (const aiMsg of aiMessages) {
       updatedMessages.push({
@@ -474,7 +465,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Upsert assistant_chats — triggers Supabase Realtime → dashboard updates
+    // Upsert assistant_chats BEFORE updating visits status.
+    // This ensures the dashboard's applySession() always reads the new messages
+    // (with question_resolved quickReply already stripped) when the visits Realtime
+    // event fires, preventing the normalization effect from reverting status to risk.
     console.log("[webhook] updatedMessages count:", updatedMessages.length);
     console.log("[webhook] visitId:", visitId);
     const { error: sessErr } = await db.from("assistant_chats").upsert(
@@ -493,6 +487,15 @@ Deno.serve(async (req) => {
     );
     console.log("[webhook] sessErr after upsert:", sessErr);
     if (sessErr) console.error("[webhook] session upsert error:", sessErr);
+
+    // Apply visit updates after assistant_chats is committed
+    if (Object.keys(visitUpdates).length > 0) {
+      const { error: vErr } = await db
+        .from("visits")
+        .update(visitUpdates)
+        .eq("id", visitId);
+      if (vErr) console.error("[webhook] visit update error:", vErr);
+    }
 
     return new Response("ok");
   }
