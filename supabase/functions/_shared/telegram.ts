@@ -45,3 +45,15 @@ export async function answerCallbackQuery(
     text: text ?? "",
   });
 }
+
+export async function editMessageReplyMarkup(
+  chatId: number,
+  messageId: number,
+  replyMarkup: unknown
+): Promise<void> {
+  await sendTelegramRequest("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: replyMarkup,
+  });
+}

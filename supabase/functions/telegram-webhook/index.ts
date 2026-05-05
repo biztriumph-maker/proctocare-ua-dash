@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { TelegramUpdate } from "../_shared/types.ts";
-import { sendMessage, answerCallbackQuery } from "../_shared/telegram.ts";
+import { sendMessage, answerCallbackQuery, editMessageReplyMarkup } from "../_shared/telegram.ts";
 import {
   buildAddress,
   buildDrugChoiceText,
@@ -196,6 +196,16 @@ Deno.serve(async (req) => {
 
     if (!chatId) return new Response("ok");
 
+    // Remove inline buttons immediately — prevents patient from tapping twice.
+    // Non-critical: wrapped in try/catch so a stale message_id never breaks the flow.
+    if (cq.message?.message_id) {
+      try {
+        await editMessageReplyMarkup(chatId, cq.message.message_id, { inline_keyboard: [] });
+      } catch (e) {
+        console.warn("[webhook] editMessageReplyMarkup failed:", e);
+      }
+    }
+
     const data = cq.data ?? "";
     // Format: "{context}:{answer}:{visitId}"
     const colonIdx1 = data.indexOf(":");
@@ -269,6 +279,7 @@ Deno.serve(async (req) => {
     // ── Per-context logic ────────────────────────────────────────────────────
     let visitUpdates: Record<string, unknown> = {};
     const aiMessages: Array<{ text: string; quickReply?: unknown }> = [];
+    let dietInstructionSentNow = false;
 
     // Helper: push an AI message to the list.
     // text is HTML (for Telegram) — stripped to **markdown** before dashboard storage.
@@ -333,6 +344,7 @@ Deno.serve(async (req) => {
     if (context === "drug_choice") {
       const choice = answer === "yes" ? "fortrans" : "izyklin";
       visitUpdates = { drug_choice: choice };
+      dietInstructionSentNow = true;
 
       const roadmapK = buildRoadmapKText();
       const tgMarkup = {
@@ -463,6 +475,8 @@ Deno.serve(async (req) => {
     }
 
     // Upsert assistant_chats — triggers Supabase Realtime → dashboard updates
+    console.log("[webhook] updatedMessages count:", updatedMessages.length);
+    console.log("[webhook] visitId:", visitId);
     const { error: sessErr } = await db.from("assistant_chats").upsert(
       {
         id: visitId,
@@ -471,12 +485,13 @@ Deno.serve(async (req) => {
         messages: updatedMessages,
         welcome_sent: true,
         waiting_for_diet_ack: session?.waiting_for_diet_ack ?? false,
-        diet_instruction_sent: session?.diet_instruction_sent ?? false,
+        diet_instruction_sent: dietInstructionSentNow || (session?.diet_instruction_sent ?? false),
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
         step2_ack_result: session?.step2_ack_result ?? "none",
       },
       { onConflict: "id" }
     );
+    console.log("[webhook] sessErr after upsert:", sessErr);
     if (sessErr) console.error("[webhook] session upsert error:", sessErr);
 
     return new Response("ok");

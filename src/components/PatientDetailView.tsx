@@ -831,7 +831,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
       setEmulatedMessages(session.messages as ChatMessage[]);
       setWaitingForDietAck(session.waiting_for_diet_ack);
-      setDietInstructionSent(session.diet_instruction_sent);
+      setDietInstructionSent(session.diet_instruction_sent || !!patient.drugChoice);
       setWaitingForStep2Ack(session.waiting_for_step2_ack);
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
@@ -849,7 +849,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (session.messages.length < emulatedMessagesRef.current.length) return;
       setEmulatedMessages(session.messages as ChatMessage[]);
       setWaitingForDietAck(session.waiting_for_diet_ack);
-      setDietInstructionSent(session.diet_instruction_sent);
+      setDietInstructionSent(session.diet_instruction_sent || !!patientRef.current.drugChoice);
       setWaitingForStep2Ack(session.waiting_for_step2_ack);
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
@@ -871,7 +871,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (session.messages.length < emulatedMessagesRef.current.length) return;
       setEmulatedMessages(session.messages as ChatMessage[]);
       setWaitingForDietAck(session.waiting_for_diet_ack);
-      setDietInstructionSent(session.diet_instruction_sent);
+      setDietInstructionSent(session.diet_instruction_sent || !!patientRef.current.drugChoice);
       setWaitingForStep2Ack(session.waiting_for_step2_ack);
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
