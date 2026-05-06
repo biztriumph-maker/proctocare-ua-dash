@@ -904,7 +904,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     loadTelegramStatus(patient.patientDbId).then((status) => {
       setTgStatus((prev) => ({ ...prev, ...status }));
     });
-  }, [patient.patientDbId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [patient.patientDbId, patient.telegramLinked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Normalize step2AckResult from loaded messages.
   // Old sessions may have step2AckResult="none" saved in DB but messages already
