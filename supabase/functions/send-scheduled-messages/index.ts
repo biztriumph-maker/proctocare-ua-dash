@@ -141,7 +141,7 @@ Deno.serve(async (_req) => {
     // Append message to assistant_chats so the dashboard shows it in chat history
     const { data: session } = await db
       .from("assistant_chats")
-      .select("messages, waiting_for_diet_ack, diet_instruction_sent, waiting_for_step2_ack, step2_ack_result, welcome_sent")
+      .select("messages, waiting_for_diet_ack, diet_instruction_sent, waiting_for_step2_ack, step2_ack_result, welcome_sent, departure_message_sent")
       .eq("id", row.visit_id)
       .maybeSingle();
 
@@ -167,7 +167,7 @@ Deno.serve(async (_req) => {
       ...(quickReply ? { quickReply } : {}),
     };
 
-    await db.from("assistant_chats").upsert(
+    const { error: chatErr } = await db.from("assistant_chats").upsert(
       {
         id: row.visit_id,
         patient_id: patient.id,
@@ -178,9 +178,17 @@ Deno.serve(async (_req) => {
         diet_instruction_sent: session?.diet_instruction_sent ?? false,
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
         step2_ack_result: session?.step2_ack_result ?? "none",
+        departure_message_sent: row.block_key === "block12G_morning"
+          ? true
+          : (session?.departure_message_sent ?? false),
       },
       { onConflict: "id" }
     );
+
+    if (chatErr) {
+      errors.push(`assistant_chats upsert failed for row ${row.id}: ${chatErr.message}`);
+      continue;
+    }
 
     sent++;
   }

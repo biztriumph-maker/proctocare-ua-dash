@@ -24,7 +24,7 @@ export type EventLog = {
   status: "pending" | "completed" | "warning" | "error";
 };
 
-type Preparation = { percent: number; steps: { label: string; done: boolean }[] };
+type Preparation = { percent: number; steps: { label: string; done: boolean; alert?: boolean }[] };
 
 // ── Bold text renderer ────────────────────────────────────────────────────────
 
@@ -159,10 +159,11 @@ export function LinearProgressBar({
   const getSegmentColor = (i: number): string => {
     const isDone   = preparation.steps[i]?.done ?? false;
     const isFailed = step2AckResult === "question" && i === lastStepIdx;
+    const isAlert  = !!(preparation.steps[i]?.alert) && !isDone && !isFailed;
 
-    if (isFailed)              return "bg-red-500";
+    if (isFailed || isAlert)         return "bg-red-500";
     if (isDone && i === lastStepIdx) return "bg-green-500";
-    if (isDone)                return "bg-yellow-400";
+    if (isDone)                      return "bg-yellow-400";
     return "bg-gray-200";
   };
 

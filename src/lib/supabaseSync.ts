@@ -652,6 +652,7 @@ export type AssistantSessionRow = {
   waiting_for_step2_ack: boolean;
   step2_ack_result: string;
   welcome_sent: boolean;
+  departure_message_sent: boolean;
   saved_at?: string;
 };
 
