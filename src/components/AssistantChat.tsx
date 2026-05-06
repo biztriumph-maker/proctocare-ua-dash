@@ -32,10 +32,13 @@ type Preparation = { percent: number; steps: { label: string; done: boolean; ale
 const PHONE_RE = /^[\d\s\-+().]{7,20}$/;
 
 export function renderBoldText(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*(?!\*)[^*]+\*(?!\*))/g);
+  const parts = text.split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*(?!\*)[^*]+\*(?!\*))/g);
   return (
     <>
       {parts.map((part, i) => {
+        if (part.startsWith("***") && part.endsWith("***")) {
+          return <strong key={i}>{part.slice(3, -3)}</strong>;
+        }
         if (part.startsWith("**") && part.endsWith("**")) {
           const inner = part.slice(2, -2);
           return PHONE_RE.test(inner.trim())
