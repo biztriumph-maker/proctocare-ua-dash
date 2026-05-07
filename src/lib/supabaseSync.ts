@@ -30,6 +30,7 @@ export type PatientRow = {
   is_test?: boolean;
   telegram_id?: number | null;
   telegram_token?: string | null;
+  web_token?: string | null;
 };
 
 export type VisitRow = {
@@ -80,6 +81,7 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     protocolHistory: visit.protocol_history ?? undefined,
     drugChoice: visit.drug_choice,
     telegramLinked: !!p.telegram_id,
+    webToken: p.web_token ?? null,
   };
 }
 
@@ -92,7 +94,7 @@ export async function loadPatientsFromSupabase() {
 
   const { data, error } = await supabase
     .from('visits')
-    .select(`*, patients ( id, name, patronymic, phone, birth_date, allergies, diagnosis, is_test, telegram_id )`)
+    .select(`*, patients ( id, name, patronymic, phone, birth_date, allergies, diagnosis, is_test, telegram_id, web_token )`)
     .order('visit_date', { ascending: true })
     .order('visit_time', { ascending: true });
 

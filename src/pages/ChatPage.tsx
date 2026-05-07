@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type QuickReply = {
+  yes: string;
+  no?: string;
+  context: string;
+};
+
+type ChatMessage = {
+  sender: "ai" | "patient" | "doctor";
+  text: string;
+  time: string;
+  quickReply?: QuickReply;
+};
+
+type VisitRow = {
+  id: string;
+  visit_date: string;
+  visit_time: string | null;
+  procedure: string | null;
+  patient_id: string;
+};
+
+// ── Markdown renderer (bold / bold-italic only) ───────────────────────────────
+
+function renderMarkdown(text: string): string {
+  return text
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export default function ChatPage() {
+  const { token } = useParams<{ token: string }>();
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sending, setSending] = useState(false);
+
+  const visitIdRef = useRef<string | null>(null);
+  const patientIdRef = useRef<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // ── On mount: resolve patient + visit + session ────────────────────────────
+  useEffect(() => {
+    if (!token) { setError("Посилання недійсне."); setLoading(false); return; }
+
+    async function init() {
+      // 1. Resolve patient by web_token
+      const { data: patient, error: pErr } = await supabase
+        .from("patients")
+        .select("id, name, patronymic")
+        .eq("web_token", token)
+        .maybeSingle();
+
+      if (pErr || !patient) {
+        setError("Посилання недійсне або застаріле. Зверніться до лікаря.");
+        setLoading(false);
+        return;
+      }
+
+      patientIdRef.current = patient.id;
+
+      // 2. Find the active (non-completed) visit, closest to today
+      const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Kiev" }).format(new Date());
+      const { data: visits, error: vErr } = await supabase
+        .from("visits")
+        .select("id, visit_date, visit_time, procedure, patient_id")
+        .eq("patient_id", patient.id)
+        .or("completed.is.null,completed.eq.false")
+        .or("no_show.is.null,no_show.eq.false")
+        .gte("visit_date", todayIso)
+        .order("visit_date", { ascending: true })
+        .limit(1);
+
+      if (vErr || !visits || visits.length === 0) {
+        setError("Активний запис не знайдено. Зверніться до лікаря.");
+        setLoading(false);
+        return;
+      }
+
+      const visit: VisitRow = visits[0];
+      visitIdRef.current = visit.id;
+
+      // 3. Load assistant_chats session
+      const { data: session } = await supabase
+        .from("assistant_chats")
+        .select("messages")
+        .eq("id", visit.id)
+        .maybeSingle();
+
+      const msgs: ChatMessage[] = Array.isArray(session?.messages) ? session.messages as ChatMessage[] : [];
+      setMessages(msgs);
+      setLoading(false);
+
+      // 4. Subscribe to Realtime on assistant_chats for this visit
+      const channel = supabase
+        .channel(`session-${visit.id}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "assistant_chats", filter: `id=eq.${visit.id}` },
+          (payload) => {
+            const newMsgs = (payload.new as { messages?: ChatMessage[] })?.messages;
+            if (Array.isArray(newMsgs)) setMessages(newMsgs);
+          }
+        )
+        .subscribe();
+
+      return () => { void supabase.removeChannel(channel); };
+    }
+
+    init().catch((e) => {
+      console.error("[ChatPage] init error:", e);
+      setError("Сталася помилка. Спробуйте ще раз.");
+      setLoading(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // ── Handle quick reply button press ───────────────────────────────────────
+  const handleReply = async (context: string, answer: string) => {
+    if (sending || !visitIdRef.current || !token) return;
+    setSending(true);
+    try {
+      const res = await supabase.functions.invoke("web-webhook", {
+        body: { context, answer, visitId: visitIdRef.current, webToken: token },
+      });
+      if (res.error) {
+        console.error("[ChatPage] web-webhook error:", res.error);
+      } else if (Array.isArray(res.data?.messages)) {
+        setMessages(res.data.messages as ChatMessage[]);
+      }
+    } catch (e) {
+      console.error("[ChatPage] handleReply error:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ── Derive last quick-reply buttons (only from last AI message) ────────────
+  const lastAiIdx = [...messages].map((m, i) => (m.sender === "ai" ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+  const activeQuickReply = lastAiIdx >= 0 ? messages[lastAiIdx].quickReply : undefined;
+  // Hide buttons if patient already replied after the last AI message
+  const patientRepliedAfter = lastAiIdx >= 0 && messages.slice(lastAiIdx + 1).some((m) => m.sender === "patient");
+  const showButtons = !!activeQuickReply && !patientRepliedAfter && !sending;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-500 text-sm">Завантаження...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 px-6">
+        <div className="text-center">
+          <div className="text-2xl mb-2">⚠️</div>
+          <p className="text-gray-700 text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-50 max-w-lg mx-auto">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
+        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+          ЛА
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Асистент лікаря</p>
+          <p className="text-xs text-gray-400">Луцишин Юрій Андрійович</p>
+        </div>
+      </div>
+
+      {/* Message list */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {messages.length === 0 && (
+          <p className="text-center text-gray-400 text-sm mt-8">
+            Очікуйте першого повідомлення від асистента.
+          </p>
+        )}
+        {messages.map((msg, idx) => {
+          const isAi = msg.sender === "ai";
+          const isPatient = msg.sender === "patient";
+          return (
+            <div key={idx} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  isAi
+                    ? "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
+                    : isPatient
+                      ? "bg-blue-600 text-white rounded-tr-sm"
+                      : "bg-gray-100 text-gray-700 rounded-tl-sm"
+                }`}
+              >
+                <span
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                />
+                {msg.time && (
+                  <p className={`text-[10px] mt-1 ${isPatient ? "text-blue-200" : "text-gray-400"}`}>
+                    {msg.time}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Quick reply buttons */}
+      {showButtons && activeQuickReply && (
+        <div className="px-4 py-3 bg-white border-t border-gray-200 space-y-2 shrink-0">
+          <button
+            onClick={() => handleReply(activeQuickReply.context, "yes")}
+            disabled={sending}
+            className="w-full py-3 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
+          >
+            {activeQuickReply.yes}
+          </button>
+          {activeQuickReply.no && (
+            <button
+              onClick={() => handleReply(activeQuickReply.context, "no")}
+              disabled={sending}
+              className="w-full py-3 px-4 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
+            >
+              {activeQuickReply.no}
+            </button>
+          )}
+        </div>
+      )}
+
+      {sending && (
+        <div className="px-4 py-2 bg-white border-t border-gray-200 text-center text-xs text-gray-400 shrink-0">
+          Надсилання...
+        </div>
+      )}
+    </div>
+  );
+}

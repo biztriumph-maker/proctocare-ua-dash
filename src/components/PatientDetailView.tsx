@@ -15,7 +15,7 @@ import {
   loadTelegramStatus,
   suppressNextRealtimeReload,
 } from "@/lib/supabaseSync";
-import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -2058,7 +2058,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                 <div className="flex flex-col">
                   {/* ── Telegram strip ── */}
                   {isSupabaseDataMode && (
-                    <div className="px-4 pt-3 pb-2.5 border-b border-border">
+                    <div className="px-4 pt-3 pb-2.5 border-b border-border space-y-1.5">
                       {tgStatus.telegramId && emulatedMessages.some(m => m.sender === "patient") ? (
                         <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
@@ -2079,6 +2079,21 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                           >
                             {tgStatus.loading ? <Loader2 size={11} className="animate-spin" /> : <Copy size={11} />}
                             Копіювати посилання
+                          </button>
+                        </div>
+                      )}
+                      {patient.webToken && (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Globe size={12} className="text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
+                            {`${window.location.origin}/chat/${patient.webToken}`}
+                          </span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
+                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
+                          >
+                            <Copy size={11} />
+                            Веб-чат
                           </button>
                         </div>
                       )}
@@ -2179,7 +2194,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
               >
                 {/* ── Telegram strip ── */}
                 {isSupabaseDataMode && (
-                  <div className="px-4 pt-3 pb-2.5 border-b border-border">
+                  <div className="px-4 pt-3 pb-2.5 border-b border-border space-y-1.5">
                     {tgStatus.telegramId && emulatedMessages.some(m => m.sender === "patient") ? (
                       <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
@@ -2200,6 +2215,21 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                         >
                           {tgStatus.loading ? <Loader2 size={11} className="animate-spin" /> : <Copy size={11} />}
                           Копіювати посилання
+                        </button>
+                      </div>
+                    )}
+                    {patient.webToken && (
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Globe size={12} className="text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
+                          {`${window.location.origin}/chat/${patient.webToken}`}
+                        </span>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
+                          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
+                        >
+                          <Copy size={11} />
+                          Веб-чат
                         </button>
                       </div>
                     )}
