@@ -1599,14 +1599,26 @@ export default function Index() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {agentAlertPatients.map((patient, i) => (
-                        <PatientCard
-                          key={patient.id}
-                          patient={patient}
-                          index={i}
-                          onClick={handlePatientClick}
-                        />
-                      ))}
+                      {agentAlertPatients.map((patient, i) => {
+                        const isDepartureAlert =
+                          patient.status === "risk" &&
+                          patient.date === todayIso &&
+                          !!patient.telegramLinked;
+                        return (
+                          <div key={patient.id}>
+                            {isDepartureAlert && (
+                              <p className="text-xs font-semibold text-red-600 px-1 mb-1">
+                                Виїзд не підтверджено
+                              </p>
+                            )}
+                            <PatientCard
+                              patient={patient}
+                              index={i}
+                              onClick={handlePatientClick}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </>

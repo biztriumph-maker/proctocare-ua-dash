@@ -190,6 +190,20 @@ Deno.serve(async (_req) => {
       continue;
     }
 
+    // Morning message sent — patient hasn't confirmed departure yet, flag as risk
+    // so the doctor sees a red card in Оперативка / Агент immediately.
+    // Only applies to Group Г morning block; skipped if patient already clicked Виїжджаю.
+    if (row.block_key === "block12G_morning") {
+      const { error: visitRiskErr } = await db
+        .from("visits")
+        .update({ status: "risk" })
+        .eq("id", row.visit_id)
+        .neq("status", "ready");
+      if (visitRiskErr) {
+        console.warn(`[scheduler] visit risk update failed for ${row.visit_id}: ${visitRiskErr.message}`);
+      }
+    }
+
     sent++;
   }
 

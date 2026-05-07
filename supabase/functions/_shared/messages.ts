@@ -43,7 +43,7 @@ export function getClinicAddress(visitDate: string): string {
   const dow = new Date(visitDate + "T00:00:00Z").getUTCDay();
   if (dow === 3) return "вул. Юрія Руфа 35в, Центр «МеДіС»";
   if (dow === 6) return ""; // Saturday — special arrangement, no address sent
-  return "вул. Пекарська 696, 2 поверх, 231 каб.";
+  return "вул. Пекарська 69Б, 2 поверх, 231 каб.";
 }
 
 // callback_data: "{context}:{answer}:{visitId}"
