@@ -945,7 +945,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     // where applySession() may load old messages before assistant_chats is updated by the webhook.
     if (patientRef.current.status === 'yellow') return;
     const inQuestion = emulatedMessages.some(
-      m => m.sender === "ai" && m.quickReply?.context === "question_resolved"
+      (m, idx) =>
+        m.sender === "ai" &&
+        m.quickReply?.context === "question_resolved" &&
+        !emulatedMessages.slice(idx + 1).some((m2) => m2.sender === "patient")
     );
     if (!inQuestion) return;
     setStep2AckResult("question");

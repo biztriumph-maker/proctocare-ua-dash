@@ -499,7 +499,7 @@ Deno.serve(async (req) => {
     // After departure, always reset step2_ack_result so the doctor's UI never
     // shows the card as RED due to a stale "question" flag from an earlier flow.
     const step2AckResultForUpsert =
-      (context === "departure_k" || context === "departure_g")
+      (context === "departure_k" || context === "departure_g" || context === "question_resolved")
         ? "none"
         : (session?.step2_ack_result ?? "none");
 
