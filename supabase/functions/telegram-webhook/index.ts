@@ -537,11 +537,15 @@ Deno.serve(async (req) => {
         diet_instruction_sent: dietInstructionSentNow || (session?.diet_instruction_sent ?? false),
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
         step2_ack_result: session?.step2_ack_result ?? "none",
+        saved_at: new Date().toISOString(),
       },
       { onConflict: "id" }
     );
-    console.log("[webhook] sessErr after upsert:", sessErr);
-    if (sessErr) console.error("[webhook] session upsert error:", sessErr);
+    if (sessErr) {
+      console.error("[webhook] CRITICAL: assistant_chats upsert failed:", JSON.stringify(sessErr));
+    } else {
+      console.log("[webhook] assistant_chats upsert OK, msgs:", updatedMessages.length);
+    }
 
     // Apply visit updates after assistant_chats is committed
     if (Object.keys(visitUpdates).length > 0) {
