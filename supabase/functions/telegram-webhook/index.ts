@@ -445,6 +445,15 @@ Deno.serve(async (req) => {
             }
           }
         }
+
+        if (departureMsgSentNow) {
+          const { error: riskErr } = await db
+            .from("visits")
+            .update({ status: "risk" })
+            .eq("id", visitId)
+            .neq("status", "ready");
+          if (riskErr) console.warn("[webhook] risk update failed:", riskErr);
+        }
       }
     }
 
