@@ -238,7 +238,7 @@ export function usePatientContext(patient: Patient, allPatients: Patient[] = [])
         map[displayDate] = "no-show";
         continue;
       }
-      if (visit.completed || visit.status === "ready" || visit.status === "completed") {
+      if (visit.completed || visit.status === "ready" || (visit.status as string) === "completed") {
         if (!map[displayDate]) map[displayDate] = "completed";
       }
     }
@@ -246,9 +246,12 @@ export function usePatientContext(patient: Patient, allPatients: Patient[] = [])
   }, [relatedVisits, activeVisitIso]);
 
   const todayIso = getTodayIsoKyiv();
+  // "ready" alone = patient is in transit TODAY — do NOT treat as completed.
+  // Only archive if the doctor explicitly closed the visit (completed=true),
+  // or if the visit date is strictly in the past (yesterday or older) and status=ready.
   const isCompletedPastVisit =
-    (patient.completed || patient.status === "ready") &&
-    (!patient.date || patient.date <= todayIso);
+    (patient.completed && (!patient.date || patient.date <= todayIso)) ||
+    (patient.status === "ready" && !!patient.date && patient.date < todayIso);
   const isNoShowPast =
     !!patient.noShow && (!patient.date || patient.date <= todayIso);
   const shouldClearVisitFields = isCompletedPastVisit || isNoShowPast;
@@ -256,10 +259,11 @@ export function usePatientContext(patient: Patient, allPatients: Patient[] = [])
   const currentVisitOutcome: "completed" | "no-show" | undefined =
     patient.noShow && (!patient.date || patient.date <= todayIso)
       ? "no-show"
-      : (patient.completed || patient.status === "ready" || patient.status === "completed") &&
-          (!patient.date || patient.date <= todayIso)
+      : patient.completed && (!patient.date || patient.date <= todayIso)
         ? "completed"
-        : undefined;
+        : patient.status === "ready" && !!patient.date && patient.date < todayIso
+          ? "completed"
+          : undefined;
 
   // Collect protocols and files from other completed visits of this patient.
   const { relatedCompletedProtocols, relatedFiles } = useMemo(() => {
