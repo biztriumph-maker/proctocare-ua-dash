@@ -1908,7 +1908,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                   {isRepeatPatient ? "Повторний" : "Новий"}
                 </span>
-                {!(patient.completed || patient.status === "ready") && localServices.length > 0 && (
+                {!patient.completed && localServices.length > 0 && (
                   <span
                     className="text-xs font-medium px-2 py-0.5 rounded-full"
                     style={{ backgroundColor: serviceCategory.bgColor, color: serviceCategory.color }}
