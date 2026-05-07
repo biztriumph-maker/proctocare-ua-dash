@@ -628,6 +628,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   // window after "Питання вирішено" — the device that pressed the button sets this
   // to true synchronously, so the incoming realtime event is ignored.
   const questionResolvedInProgressRef = useRef(false);
+  // Prevents applyRemoteTransition from reverting to 'risk' for 4s after 'ready' is
+  // received — guards against stale scheduler 'risk' echoes after patient confirms departure.
+  const departureConfirmedInProgressRef = useRef(false);
   const patientRef = useRef(patient);
   // Guard: don't upsert assistant_chats before the initial DB load completes.
   // Without this, stale localStorage data (N-1 messages) can arrive at Supabase
@@ -730,14 +733,20 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const newStatus = row.status     as string | null | undefined;
 
       // Propagate status to parent list so the card reflects changes from other devices.
-      // Never revert to 'risk' while this device is actively resolving a question —
-      // that would undo the optimistic yellow update and cause visible flicker.
+      // Never revert to 'risk' while this device is actively resolving a question or
+      // within 4s of receiving 'ready' (departure confirmed) — guards against stale
+      // scheduler echoes that would cause the card to flicker red after departure.
       const validStatuses = ['planning', 'progress', 'yellow', 'risk', 'ready'];
       if (newStatus && validStatuses.includes(newStatus) && newStatus !== patientRef.current.status) {
-        if (newStatus === 'risk' && questionResolvedInProgressRef.current) {
-          // Ignore stale risk echo during question resolution window
+        if (newStatus === 'risk' && (questionResolvedInProgressRef.current || departureConfirmedInProgressRef.current)) {
+          // Ignore stale risk echo during question/departure resolution window
         } else {
           onUpdatePatient?.({ status: newStatus as PatientStatus });
+          if (newStatus === 'ready') {
+            departureConfirmedInProgressRef.current = true;
+            suppressNextRealtimeReload(4000);
+            setTimeout(() => { departureConfirmedInProgressRef.current = false; }, 4000);
+          }
         }
       }
 
@@ -752,8 +761,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       }
 
       // Status → 'risk': update step2AckResult flag.
-      // Skip if this device is currently resolving the question to avoid race condition.
-      if (newStatus === 'risk' && step2AckResultRef.current !== 'question' && !questionResolvedInProgressRef.current) {
+      // Skip if this device is currently resolving the question or in departure window.
+      if (newStatus === 'risk' && step2AckResultRef.current !== 'question' && !questionResolvedInProgressRef.current && !departureConfirmedInProgressRef.current) {
         setStep2AckResult('question');
         return;
       }
