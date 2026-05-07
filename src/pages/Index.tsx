@@ -1547,7 +1547,7 @@ export default function Index() {
           {/* Завтра — активна (синя) коли showTomorrow */}
           {view === "operational" && (
             <button
-              onClick={() => { setView("operational"); setShowTomorrow(true); setShowOverdue(false); }}
+              onClick={() => { setView("operational"); setShowTomorrow(true); setShowOverdue(false); setShowAgentMode(false); }}
               className={cn(
                 "h-[50px] flex flex-1 items-center justify-center gap-2 rounded-2xl border text-[16px] font-[500] tracking-[0.02em] transition-all duration-300 active:scale-[0.97]",
                 showTomorrow
