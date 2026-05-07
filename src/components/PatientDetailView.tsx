@@ -1043,7 +1043,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   useEffect(() => {
     const nextProfile = getMockProfile(patient);
-    const nextCompletedPast = (patient.completed || patient.status === "ready")
+    const nextCompletedPast = patient.completed
       && (!patient.date || patient.date <= getTodayIsoKyiv());
     const nextNoShowPast = !!patient.noShow
       && (!patient.date || patient.date <= getTodayIsoKyiv());
@@ -1741,7 +1741,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     const formatted = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 
     // — Completed/ready visit: create a FRESH visit record so the archive stays intact.
-    const isCompletedVisit = patient.completed || patient.status === "ready";
+    const isCompletedVisit = patient.completed;
     if (isCompletedVisit && onCreateNewVisit) {
       if (fields.protocol.trim() && onUpdatePatient) {
         onUpdatePatient({ protocol: fields.protocol.trim() });
@@ -1828,7 +1828,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       if (fields.notes !== (patient.notes || "")) updates.notes = fields.notes;
       // For completed past visits: only save protocol if doctor explicitly typed/copied something
       // (fields.protocol is non-empty). Never write "" over a saved archived conclusion.
-      const isCompletedPast = (patient.completed || patient.status === "ready")
+      const isCompletedPast = patient.completed
         && (!patient.date || patient.date <= getTodayIsoKyiv());
       const protocolChanged = fields.protocol !== (patient.protocol || "");
       if (isCompletedPast ? (fields.protocol.trim() && protocolChanged) : protocolChanged) {
