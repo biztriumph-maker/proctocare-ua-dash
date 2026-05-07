@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage } from "../_shared/telegram.ts";
-import { buildMessagePayload, BLOCK_KEY_TO_CONTEXT } from "../_shared/messages.ts";
+import { buildMessagePayload, BLOCK_KEY_TO_CONTEXT, stripHtml } from "../_shared/messages.ts";
 import type { VisitWithPatient } from "../_shared/types.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -162,7 +162,7 @@ Deno.serve(async (_req) => {
 
     const newMsg = {
       sender: "ai",
-      text: payload.text,
+      text: stripHtml(payload.text),
       time: timeStr,
       ...(quickReply ? { quickReply } : {}),
     };

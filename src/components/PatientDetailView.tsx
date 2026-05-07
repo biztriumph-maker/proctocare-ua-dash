@@ -629,6 +629,10 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   // to true synchronously, so the incoming realtime event is ignored.
   const questionResolvedInProgressRef = useRef(false);
   const patientRef = useRef(patient);
+  // Guard: don't upsert assistant_chats before the initial DB load completes.
+  // Without this, stale localStorage data (N-1 messages) can arrive at Supabase
+  // AFTER a scheduler write (N messages) and revert the row to the shorter array.
+  const dbSessionLoadedRef = useRef<string | null>(null);
 
   useEffect(() => {
     const restored = getAssistantSession(patient.id, activeVisitIso);
@@ -697,8 +701,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       welcomeSent,
       drugChoice,
     });
-    // Sync session to Supabase so other devices get the update via Realtime
-    if (isSupabaseDataMode && !patient.id.startsWith('new-') && patient.patientDbId && welcomeSent) {
+    // Sync session to Supabase so other devices get the update via Realtime.
+    // Skip if the DB load hasn't completed yet — prevents a stale localStorage
+    // write from racing with (and overwriting) a fresher scheduler write.
+    if (isSupabaseDataMode && !patient.id.startsWith('new-') && patient.patientDbId && welcomeSent
+        && dbSessionLoadedRef.current === patient.id) {
       void upsertAssistantSession(patient.id, patient.patientDbId, activeVisitIso, {
         messages: emulatedMessages,
         waitingForDietAck,
@@ -831,8 +838,14 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
   // ── Load session from DB on mount ──────────────────────────────────────────
   useEffect(() => {
-    if (!isSupabaseDataMode || patient.id.startsWith("new-")) return;
+    if (!isSupabaseDataMode || patient.id.startsWith("new-")) {
+      dbSessionLoadedRef.current = patient.id; // non-DB mode: unlock upserts immediately
+      return;
+    }
+    dbSessionLoadedRef.current = null; // reset guard for the incoming patient
+    const loadingFor = patient.id;
     loadAssistantSessionDB(patient.id).then((session) => {
+      dbSessionLoadedRef.current = loadingFor; // unlock upserts regardless of result
       if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
       setEmulatedMessages(session.messages as ChatMessage[]);
       setWaitingForDietAck(session.waiting_for_diet_ack);
