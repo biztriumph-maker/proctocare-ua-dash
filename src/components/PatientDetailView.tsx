@@ -2059,7 +2059,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   {/* ── Telegram strip ── */}
                   {isSupabaseDataMode && (
                     <div className="px-4 pt-3 pb-2.5 border-b border-border">
-                      {tgStatus.telegramId ? (
+                      {tgStatus.telegramId && emulatedMessages.some(m => m.sender === "patient") ? (
                         <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                           Telegram підключено
@@ -2180,7 +2180,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                 {/* ── Telegram strip ── */}
                 {isSupabaseDataMode && (
                   <div className="px-4 pt-3 pb-2.5 border-b border-border">
-                    {tgStatus.telegramId ? (
+                    {tgStatus.telegramId && emulatedMessages.some(m => m.sender === "patient") ? (
                       <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                         Telegram підключено
