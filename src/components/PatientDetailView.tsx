@@ -508,11 +508,12 @@ function getPreparationProgress(
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
   }
 
-  // Fallback — невідома процедура: 3 точки (за зразком Г)
+  // Fallback — unknown procedure: use Г-style steps (Легка вечеря) so an empty
+  // procedure field doesn't accidentally show Group К tabs ("Підготовка до очищення").
   const steps = [
     { label: "Зв'язок встановлено", done: contactMade },
-    { label: "Підготовка",          done: dietInstructionSent || status === "ready" },
-    { label: "Виїзд",               done: status === "ready" },
+    { label: "Легка вечеря",        done: dietInstructionSent || status === "ready" },
+    { label: "Виїзд",               done: status === "ready", alert: departureMsgSent && status !== "ready" },
   ];
   return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
 }
@@ -875,7 +876,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       // overwrite a longer local state — it would restore old quickReply buttons and
       // cause visible flicker after "Є запитання" or any other optimistic update.
       if (session.messages.length < emulatedMessagesRef.current.length) return;
-      setEmulatedMessages(session.messages as ChatMessage[]);
+      // Deep equality guard: skip setEmulatedMessages when content is identical.
+      // Prevents the write→Realtime→setState→write infinite loop caused by
+      // upsertAssistantSession firing on every new array reference from Realtime.
+      if (JSON.stringify(session.messages) !== JSON.stringify(emulatedMessagesRef.current)) {
+        setEmulatedMessages(session.messages as ChatMessage[]);
+      }
       setWaitingForDietAck(session.waiting_for_diet_ack);
       setDietInstructionSent(session.diet_instruction_sent || !!patientRef.current.drugChoice);
       setWaitingForStep2Ack(session.waiting_for_step2_ack);
@@ -966,6 +972,11 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   useEffect(() => {
     if (!onUpdatePatient) return;
     if (patient.status === effectiveStatus) return;
+    // Never downgrade a "ready" patient to risk/yellow via local state.
+    // step2AckResult can persist as "question" after a question flow even after
+    // the patient has confirmed departure — guard prevents it from overwriting
+    // the correct "ready" status in the DB.
+    if (patient.status === 'ready') return;
 
     const aiSummaryByStatus: Record<PatientStatus, string> = AI_SUMMARY_BY_STATUS;
 

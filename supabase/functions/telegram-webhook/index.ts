@@ -485,6 +485,12 @@ Deno.serve(async (req) => {
     if (context === "departure_k" || context === "departure_g") {
       visitUpdates = { status: "ready" };
     }
+    // After departure, always reset step2_ack_result so the doctor's UI never
+    // shows the card as RED due to a stale "question" flag from an earlier flow.
+    const step2AckResultForUpsert =
+      (context === "departure_k" || context === "departure_g")
+        ? "none"
+        : (session?.step2_ack_result ?? "none");
 
     // "Є запитання" tapped on a scheduled message (block7K / block8K / block9K).
     // Set status to risk and send the hasQuestion message so the patient gets
@@ -536,7 +542,7 @@ Deno.serve(async (req) => {
         waiting_for_diet_ack: session?.waiting_for_diet_ack ?? false,
         diet_instruction_sent: dietInstructionSentNow || (session?.diet_instruction_sent ?? false),
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
-        step2_ack_result: session?.step2_ack_result ?? "none",
+        step2_ack_result: step2AckResultForUpsert,
         saved_at: new Date().toISOString(),
       },
       { onConflict: "id" }
