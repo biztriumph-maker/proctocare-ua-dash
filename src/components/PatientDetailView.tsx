@@ -1473,12 +1473,12 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     // completed=true in DB must not pollute lastVisit or archive logic.
     const closedCurrentVisitIso = patient.date
       && patient.date <= getTodayIsoKyiv()
-      && (patient.completed || patient.status === "ready" || (patient.status as string) === "completed" || patient.noShow)
+      && (patient.completed || (patient.status as string) === "completed" || patient.noShow)
       ? patient.date
       : undefined;
     const closedCurrentVisitOutcome: "completed" | "no-show" | undefined = patient.noShow
       ? "no-show"
-      : ((patient.completed || patient.status === "ready" || (patient.status as string) === "completed") ? "completed" : undefined);
+      : ((patient.completed || (patient.status as string) === "completed") ? "completed" : undefined);
 
     const visitByIso = new Map<string, Patient>();
     for (const visit of relatedVisits) {
@@ -1489,8 +1489,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         continue;
       }
 
-      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || existing.status === "ready" || (existing.status as string) === "completed") ? 2 : 0);
-      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || visit.status === "ready" || (visit.status as string) === "completed") ? 2 : 0);
+      const existingRank = (existing.noShow ? 0 : 1) + ((existing.completed || (existing.status as string) === "completed") ? 2 : 0);
+      const currentRank = (visit.noShow ? 0 : 1) + ((visit.completed || (visit.status as string) === "completed") ? 2 : 0);
       if (currentRank >= existingRank) visitByIso.set(visit.date, visit);
     }
 
@@ -1501,7 +1501,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready" && (linkedVisit.status as string) !== "completed") continue;
+        if (!linkedVisit.completed && (linkedVisit.status as string) !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1510,7 +1510,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       const linkedVisit = visitByIso.get(h.date);
       if (linkedVisit) {
         if (linkedVisit.noShow) continue;
-        if (!linkedVisit.completed && linkedVisit.status !== "ready" && (linkedVisit.status as string) !== "completed") continue;
+        if (!linkedVisit.completed && (linkedVisit.status as string) !== "completed") continue;
       }
       archivedDateCandidates.add(h.date);
     }
@@ -1528,7 +1528,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             ? closedCurrentVisitOutcome
             : (visitByIso.get(bestIso)?.noShow
                 ? "no-show"
-                : ((visitByIso.get(bestIso)?.completed || visitByIso.get(bestIso)?.status === "ready" || (visitByIso.get(bestIso)?.status as string) === "completed")
+                : ((visitByIso.get(bestIso)?.completed || (visitByIso.get(bestIso)?.status as string) === "completed")
                   ? "completed"
                   : undefined)))
         : undefined;
@@ -1538,7 +1538,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const mergedProfile = { ...profile, ...fields, lastVisit: derivedLastVisitInfo.lastVisit || profile.lastVisit };
   const isLastVisitNoShow = derivedLastVisitInfo.outcome === "no-show";
   // A visit that has been completed counts as a past visit — so the patient is always "repeat" after first visit
-  const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 || !!(patient.completed || patient.status === "ready");
+  const isRepeatPatient = !patient.fromForm || hasPastVisitFromAll || mergedProcedureHistory.length > 0 || mergedProtocolHistory.length > 0 || !!patient.completed;
 
   const hasUnsavedChanges = 
     fields.notes !== initialNotes || 
