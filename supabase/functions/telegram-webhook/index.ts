@@ -288,6 +288,7 @@ Deno.serve(async (req) => {
     let visitUpdates: Record<string, unknown> = {};
     const aiMessages: Array<{ text: string; quickReply?: unknown }> = [];
     let dietInstructionSentNow = false;
+    let departureMsgSentNow = false;
 
     // Helper: push an AI message to the list.
     // text is HTML (for Telegram) — stripped to **markdown** before dashboard storage.
@@ -437,6 +438,7 @@ Deno.serve(async (req) => {
                       }
                     : undefined;
                 pushAiMsg(payload.text, quickReply);
+                if (row.block_key === "block12G_morning") departureMsgSentNow = true;
               } catch (e) {
                 console.error(`[webhook] immediate catch-up send failed for ${row.block_key}:`, e);
               }
@@ -543,6 +545,7 @@ Deno.serve(async (req) => {
         diet_instruction_sent: dietInstructionSentNow || (session?.diet_instruction_sent ?? false),
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
         step2_ack_result: step2AckResultForUpsert,
+        departure_message_sent: departureMsgSentNow || (session?.departure_message_sent ?? false),
         saved_at: new Date().toISOString(),
       },
       { onConflict: "id" }
