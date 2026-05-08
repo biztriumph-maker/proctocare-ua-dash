@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import DOMPurify from "dompurify";
 import imageCompression from "browser-image-compression";
 import { X, FileText, Upload, Eye, Trash2, FileImage, Link, Play, ChevronRight, ChevronDown, Loader2, Pencil, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -411,7 +412,7 @@ function DocxPreviewModal({ file, onClose }: { file: { name: string; blob: Blob 
           ) : error ? (
             <div className="h-full flex items-center justify-center text-sm text-destructive font-semibold">{error}</div>
           ) : (
-            <article className="mx-auto max-w-3xl bg-white rounded-lg shadow-sm p-8 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
+            <article className="mx-auto max-w-3xl bg-white rounded-lg shadow-sm p-8 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} />
           )}
         </div>
       </div>

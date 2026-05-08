@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { supabase } from "@/lib/supabaseClient";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -222,7 +223,7 @@ export default function ChatPage() {
                 }`}
               >
                 <span
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(msg.text)) }}
                 />
                 {msg.time && (
                   <p className={`text-[10px] mt-1 ${isPatient ? "text-blue-200" : "text-gray-400"}`}>
