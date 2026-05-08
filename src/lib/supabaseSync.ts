@@ -869,6 +869,24 @@ export async function deleteFileFromSupabaseStorage(fileUrl: string): Promise<vo
   }
 }
 
+// ── Audit log ─────────────────────────────────────────────────────────────────
+export async function logAudit(
+  action: string,
+  opts?: { patientId?: string; resource?: string; metadata?: object }
+): Promise<void> {
+  if (!USE_SUPABASE) return;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('audit_logs').insert({
+      user_id:    user?.id ?? null,
+      action,
+      patient_id: opts?.patientId ?? null,
+      resource:   opts?.resource  ?? null,
+      metadata:   opts?.metadata  ?? null,
+    });
+  } catch { /* fire-and-forget — never blocks UI */ }
+}
+
 // Відкликати web-доступ пацієнта (встановлює web_token_revoked = true)
 export async function revokePatientWebToken(patientDbId: string): Promise<boolean> {
   if (!USE_SUPABASE) return false;

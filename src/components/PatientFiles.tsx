@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl, refreshStorageSignedUrl } from "@/lib/supabaseSync";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl, refreshStorageSignedUrl, logAudit } from "@/lib/supabaseSync";
 import { toast } from "sonner";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -701,6 +701,7 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
           const url = await uploadFileToSupabaseStorage(visitId, fileToUpload);
           if (url) {
             publicUrl = url;
+            void logAudit('file_uploaded', { patientId: visitId, resource: file.name });
           } else {
             console.warn('[FileUpload] ⚠️ Supabase returned null — file will be local only (check [Storage] errors above)');
           }
@@ -838,10 +839,12 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
           ? await getBlobFromStorage(file.storageKey).catch(() => null)
           : null;
         if (!blob && viewUrl) {
+          console.log('Fetching DOCX from:', viewUrl);
           try {
             const res = await fetch(viewUrl, { cache: 'no-store' });
             if (res.ok) blob = await res.blob();
-          } catch { /* silent */ }
+            else console.error('DOCX fetch error: HTTP', res.status, res.statusText);
+          } catch (err) { console.error('DOCX fetch error:', err); }
         }
         if (blob) { setPreview({ kind: 'docx', name: file.name, blob }); return; }
         setPreview({ kind: 'unsupported', name: file.name, message: 'Не вдалося завантажити DOCX для перегляду. Спробуйте ще раз.' }); return;
@@ -887,6 +890,7 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
                 }
                 if (fileToDelete?.url) {
                   void deleteFileFromSupabaseStorage(fileToDelete.url);
+                  void logAudit('file_deleted', { patientId: visitId, resource: fileToDelete.name });
                 }
                 onFilesChange(files.filter(x => x.id !== confirmDeleteFile));
                 setConfirmDeleteFile(null);

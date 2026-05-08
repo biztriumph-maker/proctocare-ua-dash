@@ -16,7 +16,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
-import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, createNewVisitForExistingPatient, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode } from "@/lib/supabaseSync";
+import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, createNewVisitForExistingPatient, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode, logAudit } from "@/lib/supabaseSync";
 import { supabase } from "@/lib/supabaseClient";
 
 const today = new Date();
@@ -1101,6 +1101,7 @@ export default function Index() {
   { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined },
   entry.existingPatientDbId || undefined
 );
+      void logAudit('patient_created', { patientId: newId, resource: entry.name });
     setShowForm(false);
     setPatients((prev) => [...prev, newPatient]);
     setSelectedPatient(newPatient);
@@ -1283,6 +1284,8 @@ export default function Index() {
         error: 'Помилка при видаленні — перевірте консоль',
       }
     );
+
+    void logAudit('patient_deleted', { patientId: resolvedId, resource: patientName });
 
     // 4. Release the guard — card will no longer be suppressed in future fetches
     pendingDeleteIdsRef.current.delete(resolvedId);
@@ -1987,6 +1990,7 @@ export default function Index() {
             // concurrent changes from another device and avoid overwriting newer data.
             void updatePatientInSupabase(selectedPatient.id, updates).then(() => {
               void refreshPatientsFromSupabase("post-save");
+              void logAudit('patient_updated', { patientId: selectedPatient.id });
             });
           }}
           onCreateNewVisit={handleCreateNewVisit}

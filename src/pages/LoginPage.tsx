@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
+import { logAudit } from "@/lib/supabaseSync";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -19,6 +20,7 @@ export default function LoginPage() {
     if (error) {
       setError("Невірний email або пароль");
     } else {
+      void logAudit('login');
       navigate("/");
     }
   };
