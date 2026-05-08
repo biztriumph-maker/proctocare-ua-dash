@@ -56,6 +56,8 @@ export interface Patient {
   drugChoice?: 'fortrans' | 'izyklin';
   telegramLinked?: boolean;
   webToken?: string | null;
+  webTokenRevoked?: boolean;
+  webTokenExpiresAt?: string | null;
 }
 
 interface PatientCardProps {

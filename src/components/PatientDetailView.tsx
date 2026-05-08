@@ -14,8 +14,9 @@ import {
   generateTelegramToken,
   loadTelegramStatus,
   suppressNextRealtimeReload,
+  revokePatientWebToken,
 } from "@/lib/supabaseSync";
-import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy, Globe } from "lucide-react";
+import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy, Globe, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { correctNameSpelling } from "@/lib/nameCorrection";
 import type { Patient, PatientStatus, HistoryEntry } from "./PatientCard";
@@ -2083,17 +2084,39 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                       )}
                       {patient.webToken && (
                         <div className="flex items-center gap-2 min-w-0">
-                          <Globe size={12} className="text-muted-foreground shrink-0" />
+                          <Globe size={12} className={patient.webTokenRevoked ? "text-red-400 shrink-0" : "text-muted-foreground shrink-0"} />
                           <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
                             {`${window.location.origin}/chat/${patient.webToken}`}
                           </span>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
-                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
-                          >
-                            <Copy size={11} />
-                            Веб-чат
-                          </button>
+                          {patient.webTokenRevoked ? (
+                            <span className="flex items-center gap-1 text-xs text-red-500 whitespace-nowrap shrink-0">
+                              <Ban size={11} />
+                              Скасовано
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
+                                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
+                              >
+                                <Copy size={11} />
+                                Веб-чат
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!patient.patientDbId) return;
+                                  const ok = await revokePatientWebToken(patient.patientDbId);
+                                  if (ok) { onUpdatePatient?.({ webTokenRevoked: true }); toast.success("Доступ скасовано"); }
+                                  else toast.error("Помилка скасування доступу");
+                                }}
+                                className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 whitespace-nowrap transition-colors shrink-0"
+                                title="Скинути доступ пацієнта до веб-чату"
+                              >
+                                <Ban size={11} />
+                                Скинути
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2219,17 +2242,39 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                     )}
                     {patient.webToken && (
                       <div className="flex items-center gap-2 min-w-0">
-                        <Globe size={12} className="text-muted-foreground shrink-0" />
+                        <Globe size={12} className={patient.webTokenRevoked ? "text-red-400 shrink-0" : "text-muted-foreground shrink-0"} />
                         <span className="text-xs text-muted-foreground font-mono truncate flex-1 min-w-0 select-all">
                           {`${window.location.origin}/chat/${patient.webToken}`}
                         </span>
-                        <button
-                          onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
-                          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
-                        >
-                          <Copy size={11} />
-                          Веб-чат
-                        </button>
+                        {patient.webTokenRevoked ? (
+                          <span className="flex items-center gap-1 text-xs text-red-500 whitespace-nowrap shrink-0">
+                            <Ban size={11} />
+                            Скасовано
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${patient.webToken}`).then(() => toast.success("Скопійовано"))}
+                              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap transition-colors shrink-0"
+                            >
+                              <Copy size={11} />
+                              Веб-чат
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!patient.patientDbId) return;
+                                const ok = await revokePatientWebToken(patient.patientDbId);
+                                if (ok) { onUpdatePatient?.({ webTokenRevoked: true }); toast.success("Доступ скасовано"); }
+                                else toast.error("Помилка скасування доступу");
+                              }}
+                              className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 whitespace-nowrap transition-colors shrink-0"
+                              title="Скинути доступ пацієнта до веб-чату"
+                            >
+                              <Ban size={11} />
+                              Скинути
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

@@ -31,6 +31,8 @@ export type PatientRow = {
   telegram_id?: number | null;
   telegram_token?: string | null;
   web_token?: string | null;
+  web_token_expires_at?: string | null;
+  web_token_revoked?: boolean;
 };
 
 export type VisitRow = {
@@ -82,6 +84,8 @@ export function mapToDashboardPatient(visit: VisitRow & { patients: PatientRow }
     drugChoice: visit.drug_choice,
     telegramLinked: !!p.telegram_id,
     webToken: p.web_token ?? null,
+    webTokenRevoked: p.web_token_revoked ?? false,
+    webTokenExpiresAt: p.web_token_expires_at ?? null,
   };
 }
 
@@ -94,7 +98,7 @@ export async function loadPatientsFromSupabase() {
 
   const { data, error } = await supabase
     .from('visits')
-    .select(`*, patients ( id, name, patronymic, phone, birth_date, allergies, diagnosis, is_test, telegram_id, web_token )`)
+    .select(`*, patients ( id, name, patronymic, phone, birth_date, allergies, diagnosis, is_test, telegram_id, web_token, web_token_expires_at, web_token_revoked )`)
     .order('visit_date', { ascending: true })
     .order('visit_time', { ascending: true });
 
@@ -168,6 +172,12 @@ export function subscribeToPatientsRealtime(onChange: () => void): () => void {
 // Якщо пацієнт знайдений — використовується його реальний UUID, додається лише новий візит.
 // Якщо не знайдений — створюються нові записи з реальними UUID (не new-{timestamp}).
 // existingPatientDbId: якщо відомий заздалегідь (обраний зі списку) — пропускаємо lookup.
+function computeWebTokenExpiry(visitDate: string): string {
+  const d = new Date(visitDate + 'T00:00:00');
+  d.setDate(d.getDate() + 7);
+  return d.toISOString();
+}
+
 export async function savePatientToSupabase(
   patient: PatientRow,
   visit: Omit<VisitRow, 'patient_id'>,
@@ -214,6 +224,10 @@ export async function savePatientToSupabase(
       console.error('Помилка збереження візиту для відомого пацієнта:', visitError);
       return false;
     }
+    await supabase.from('patients').update({
+      web_token_expires_at: computeWebTokenExpiry(visit.visit_date),
+      web_token_revoked: false,
+    }).eq('id', existingPatientDbId);
     return true;
   }
 
@@ -248,6 +262,10 @@ export async function savePatientToSupabase(
       console.error('Помилка збереження візиту для існуючого пацієнта:', visitError);
       return false;
     }
+    await supabase.from('patients').update({
+      web_token_expires_at: computeWebTokenExpiry(visit.visit_date),
+      web_token_revoked: false,
+    }).eq('id', existingPatientId);
     return true;
   }
 
@@ -258,7 +276,7 @@ export async function savePatientToSupabase(
 
   const { error: patientError } = await supabase
     .from('patients')
-    .insert({ ...patient, id: patientUuid });
+    .insert({ ...patient, id: patientUuid, web_token_expires_at: computeWebTokenExpiry(visit.visit_date) });
 
   if (patientError) {
     console.error('Помилка збереження пацієнта:', patientError);
@@ -432,6 +450,11 @@ export async function createNewVisitForExistingPatient(
     console.error('❌ createNewVisitForExistingPatient: insert failed', error);
     return false;
   }
+
+  await supabase.from('patients').update({
+    web_token_expires_at: computeWebTokenExpiry(newVisit.visit_date),
+    web_token_revoked: false,
+  }).eq('id', oldVisit.patient_id);
 
   // If patientUpdates provided (e.g. allergies), repair the patient profile record
   if (patientUpdates && Object.keys(patientUpdates).length > 0) {
@@ -844,6 +867,20 @@ export async function deleteFileFromSupabaseStorage(fileUrl: string): Promise<vo
   } catch (err) {
     console.warn('⚠️ Storage delete exception:', err);
   }
+}
+
+// Відкликати web-доступ пацієнта (встановлює web_token_revoked = true)
+export async function revokePatientWebToken(patientDbId: string): Promise<boolean> {
+  if (!USE_SUPABASE) return false;
+  const { error } = await supabase
+    .from('patients')
+    .update({ web_token_revoked: true })
+    .eq('id', patientDbId);
+  if (error) {
+    console.error('[revokePatientWebToken] error:', error);
+    return false;
+  }
+  return true;
 }
 
 // ─── Telegram Registration ─────────────────────────────────────────────────────

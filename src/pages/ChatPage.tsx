@@ -56,12 +56,24 @@ export default function ChatPage() {
       // 1. Resolve patient by web_token
       const { data: patient, error: pErr } = await supabase
         .from("patients")
-        .select("id, name, patronymic")
+        .select("id, name, patronymic, web_token_revoked, web_token_expires_at")
         .eq("web_token", token)
         .maybeSingle();
 
       if (pErr || !patient) {
         setError("Посилання недійсне або застаріле. Зверніться до лікаря.");
+        setLoading(false);
+        return;
+      }
+
+      if (patient.web_token_revoked) {
+        setError("Доступ до цього чату скасовано лікарем. Зверніться до лікаря.");
+        setLoading(false);
+        return;
+      }
+
+      if (patient.web_token_expires_at && new Date(patient.web_token_expires_at) < new Date()) {
+        setError("Посилання застаріло. Зверніться до лікаря для отримання нового посилання.");
         setLoading(false);
         return;
       }
