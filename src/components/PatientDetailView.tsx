@@ -196,9 +196,8 @@ function buildGreetingMessage(patient: Patient, appointmentIsoDate: string, appo
 
 
 function getReadyButtonText(patient: Patient): string {
-  const parts = patient.name.trim().split(/\s+/);
-  const patronymic = parts[2] ?? "";
-  if (/івна$|овна$|євна$/i.test(patronymic)) return "Я готова";
+  const p = (patient.patronymic || "").trim();
+  if (/івна$|ївна$|євна$/i.test(p)) return "Я готова";
   return "Я готовий";
 }
 

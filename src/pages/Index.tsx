@@ -386,6 +386,7 @@ function arePatientsEquivalentForView(a: Patient, b: Patient): boolean {
     birthDateHistory: a.birthDateHistory,
     protocolHistory: a.protocolHistory,
     procedureHistory: a.procedureHistory,
+    telegramLinked: a.telegramLinked,
   }) === JSON.stringify({
     id: b.id,
     name: b.name,
@@ -410,6 +411,7 @@ function arePatientsEquivalentForView(a: Patient, b: Patient): boolean {
     birthDateHistory: b.birthDateHistory,
     protocolHistory: b.protocolHistory,
     procedureHistory: b.procedureHistory,
+    telegramLinked: b.telegramLinked,
   });
 }
 

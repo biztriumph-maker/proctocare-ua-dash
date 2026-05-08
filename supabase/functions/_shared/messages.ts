@@ -340,7 +340,7 @@ export function buildReadyButtonText(patronymic: string | null): string {
   const p = (patronymic || "").trim();
   if (/ович$|євич$/i.test(p)) return "Я готовий";
   if (/івна$|ївна$|євна$/i.test(p)) return "Я готова";
-  return "Я готовий/а";
+  return "Я готовий";
 }
 
 // Maps block_key → frontend quickReply context string
