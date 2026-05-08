@@ -74,7 +74,6 @@ export function buildMessagePayload(
         reply_markup: {
           inline_keyboard: [[
             { text: "Так, усе готово", callback_data: cb("diet_ready", "yes", vid) },
-            { text: "Є запитання",     callback_data: cb("has_question", "no",  vid) },
           ]],
         },
       };
@@ -92,7 +91,6 @@ export function buildMessagePayload(
         reply_markup: {
           inline_keyboard: [[
             { text: "Дотримуюсь дієти", callback_data: cb("diet_on_track", "yes", vid) },
-            { text: "Є запитання",       callback_data: cb("has_question",  "no",  vid) },
           ]],
         },
       };
@@ -112,7 +110,6 @@ export function buildMessagePayload(
           reply_markup: {
             inline_keyboard: [[
               { text: "Усе готово до завтра", callback_data: cb("prep_ready",   "yes", vid) },
-              { text: "Є запитання",           callback_data: cb("has_question", "no",  vid) },
             ]],
           },
         };
