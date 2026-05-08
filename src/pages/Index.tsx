@@ -1100,8 +1100,7 @@ export default function Index() {
   { id: newId, name: entry.name, patronymic: entry.patronymic, phone: entry.phone, birth_date: entry.birthDate },
   { id: newId, visit_date: entry.date || todayIso, visit_time: entry.time, procedure: newPatient.procedure, status: "planning", ai_summary: newPatient.aiSummary, from_form: true, primary_notes: entry.notes || undefined },
   entry.existingPatientDbId || undefined
-);
-      void logAudit('patient_created', { patientId: newId, resource: entry.name });
+).then(() => { void logAudit('patient_created', { resource: entry.name }); });
     setShowForm(false);
     setPatients((prev) => [...prev, newPatient]);
     setSelectedPatient(newPatient);
