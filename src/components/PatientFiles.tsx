@@ -659,18 +659,15 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
-    console.log('[FileUpload] files selected:', e.target.files.length);
     setIsUploading(true);
 
     try {
       const uploaded = await Promise.all(Array.from(e.target.files).map(async (file) => {
-        console.log('[FileUpload] processing:', file.name, 'size:', file.size, 'type:', file.type);
         const storageKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${file.name}`;
 
         // Compress images before upload
         let fileToUpload: File = file;
         if (file.type.startsWith('image/')) {
-          console.log('[FileUpload] compressing image…', { name: file.name, size: file.size, type: file.type });
           try {
             const compressed = await imageCompression(file, {
               maxSizeMB: 1,
@@ -680,11 +677,6 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
             // Always keep the original MIME type: compressed.type can be '' in some browsers
             const explicitType = file.type || inferMimeFromName(file.name);
             fileToUpload = new File([compressed], file.name, { type: explicitType });
-            console.log('[FileUpload] compressed OK:', {
-              originalSize: file.size,
-              compressedSize: fileToUpload.size,
-              type: fileToUpload.type,
-            });
             if (fileToUpload.size === 0) {
               console.error('[FileUpload] ✗ compression produced empty blob, using original');
               fileToUpload = file;
@@ -695,19 +687,12 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
           }
         } else {
           // PDF / TXT / DOC — skip compressor entirely
-          console.log('[FileUpload] non-image file, skipping compression:', { name: file.name, size: file.size, type: file.type });
         }
 
         // Validate before upload
         if (fileToUpload.size === 0) {
           throw new Error(`Файл порожній (0 байт): ${file.name}`);
         }
-        console.log('[FileUpload] pre-upload check OK:', {
-          name: fileToUpload.name,
-          size: fileToUpload.size,
-          type: fileToUpload.type || '(empty type!)',
-          visitId,
-        });
 
         // Try Supabase Storage first (cross-device access)
         let publicUrl: string | undefined;
@@ -715,7 +700,6 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
           const url = await uploadFileToSupabaseStorage(visitId, fileToUpload);
           if (url) {
             publicUrl = url;
-            console.log('[FileUpload] ✓ Supabase upload OK:', url);
           } else {
             console.warn('[FileUpload] ⚠️ Supabase returned null — file will be local only (check [Storage] errors above)');
           }
@@ -726,9 +710,7 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
         // Always keep IndexedDB copy as local cache / offline fallback
         // NOTE: IndexedDB is non-fatal — Supabase Storage is the source of truth
         try {
-          console.log('[FileUpload] saving to IndexedDB…');
           await putBlobToStorage(storageKey, fileToUpload);
-          console.log('[FileUpload] IndexedDB saved OK');
         } catch (idbErr) {
           console.warn('[FileUpload] ⚠️ IndexedDB save failed (non-fatal, file is in Supabase):', idbErr);
         }
@@ -795,15 +777,11 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
       const isImage = mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
       const isDocx  = mime.includes('officedocument.wordprocessingml.document') || ext === 'docx';
 
-      console.log('[handleViewFile]', { name: file.name, mimeType: file.mimeType, url: file.url, storageKey: file.storageKey, isPdf, isImage, isDocx });
-
       // ── Step 1: resolve the best URL available ──
       let viewUrl = file.url;
       if (!viewUrl && visitId) {
-        console.log('[handleViewFile] URL missing, resolving from Supabase Storage…');
         viewUrl = (await resolveVisitFilePublicUrl(visitId, file.name)) ?? undefined;
         if (viewUrl) {
-          console.log('[handleViewFile] resolved URL:', viewUrl);
           // Persist so next open is instant
           onFilesChange(files.map(f => f.id === file.id ? { ...f, url: viewUrl } : f));
         }
@@ -818,13 +796,11 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
           const blob = await getBlobFromStorage(file.storageKey).catch(() => null);
           if (blob) {
             urlToOpen = URL.createObjectURL(blob);
-            console.log('[handleViewFile] PDF → object URL from IndexedDB blob');
           } else {
             console.warn('[handleViewFile] ⚠️ blob NOT found in IndexedDB for key:', file.storageKey);
           }
         }
         if (urlToOpen) {
-          console.log('[handleViewFile] PDF → window.open', urlToOpen);
           const newWindow = window.open(urlToOpen, '_blank', 'noopener,noreferrer');
           if (newWindow) newWindow.focus();
           return;
@@ -838,7 +814,6 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
       // ── Image → Lightbox (URL-based, no fetch/blob download needed) ──
       if (isImage) {
         if (viewUrl) {
-          console.log('[handleViewFile] Image → Lightbox', viewUrl);
           setPreview({ kind: 'image', name: file.name, url: viewUrl });
           return;
         }

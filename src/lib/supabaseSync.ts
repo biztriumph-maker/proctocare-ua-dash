@@ -338,7 +338,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
     return;
   }
 
-  console.log("💾 Saving updates to Supabase for visitId:", visitId, updates);
+  if (process.env.NODE_ENV !== 'production') console.log("💾 Saving updates to Supabase for visitId:", visitId, updates);
   
   const visitUpdate: Record<string, unknown> = {};
   if ('procedure' in updates) visitUpdate.procedure = updates.procedure;
@@ -356,7 +356,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('drugChoice' in updates) visitUpdate.drug_choice = updates.drugChoice;
 
   if (Object.keys(visitUpdate).length > 0) {
-    console.log("📝 Updating visit:", visitUpdate);
+    if (process.env.NODE_ENV !== 'production') console.log("📝 Updating visit:", visitUpdate);
     const { error } = await supabase.from('visits').update(visitUpdate).eq('id', visitId);
     if (error) {
       console.error('❌ Помилка оновлення візиту:', error);
@@ -374,7 +374,7 @@ export async function updatePatientInSupabase(visitId: string, updates: Record<s
   if ('patronymic' in updates) patientUpdate.patronymic = updates.patronymic;
 
   if (Object.keys(patientUpdate).length > 0) {
-    console.log("👤 Updating patient profile:", patientUpdate);
+    if (process.env.NODE_ENV !== 'production') console.log("👤 Updating patient profile:", patientUpdate);
     const { data } = await supabase.from('visits').select('patient_id').eq('id', visitId).single();
     if (data?.patient_id) {
       const { error } = await supabase.from('patients').update(patientUpdate).eq('id', data.patient_id);

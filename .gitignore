@@ -12,6 +12,21 @@ dist
 dist-ssr
 *.local
 
+# Environment files — never commit secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Runtime state files with patient data
+server/sync-state.json
+
+# Supabase local temp artifacts
+supabase/.temp
+
+# Temp
+tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
