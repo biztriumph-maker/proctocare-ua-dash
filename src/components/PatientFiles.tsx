@@ -412,7 +412,7 @@ function DocxPreviewModal({ file, onClose }: { file: { name: string; blob: Blob 
           ) : error ? (
             <div className="h-full flex items-center justify-center text-sm text-destructive font-semibold">{error}</div>
           ) : (
-            <article className="mx-auto max-w-3xl bg-white rounded-lg shadow-sm p-8 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} />
+            <article className="mx-auto max-w-3xl bg-white rounded-lg shadow-sm p-8 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html, { FORCE_BODY: true, ADD_TAGS: ['style'], ADD_ATTR: ['type'] }) }} />
           )}
         </div>
       </div>
