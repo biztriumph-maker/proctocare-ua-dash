@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl } from "@/lib/supabaseSync";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl, refreshStorageSignedUrl } from "@/lib/supabaseSync";
 import { toast } from "sonner";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -778,13 +778,17 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
       const isDocx  = mime.includes('officedocument.wordprocessingml.document') || ext === 'docx';
 
       // ── Step 1: resolve the best URL available ──
-      let viewUrl = file.url;
+      // For Supabase files always generate a fresh signed URL — stored URLs may be
+      // expired public URLs (pre-migration) or expired signed URLs (900s TTL).
+      let viewUrl: string | undefined;
+      if (file.url?.includes('/storage/v1/object/') && visitId) {
+        viewUrl = (await refreshStorageSignedUrl(file.url)) ?? undefined;
+      }
       if (!viewUrl && visitId) {
         viewUrl = (await resolveVisitFilePublicUrl(visitId, file.name)) ?? undefined;
-        if (viewUrl) {
-          // Persist so next open is instant
-          onFilesChange(files.map(f => f.id === file.id ? { ...f, url: viewUrl } : f));
-        }
+      }
+      if (!viewUrl) {
+        viewUrl = file.url;
       }
 
       // ── PDF → always open in new browser tab (most reliable on iOS/Android/desktop) ──

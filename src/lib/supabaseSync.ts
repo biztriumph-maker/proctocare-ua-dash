@@ -487,13 +487,10 @@ export async function deletePatientVisitFromSupabase(visitId: string) {
         storagePathsFromJsonb.push(f.storageKey);
         continue;
       }
-      // From public URL: extract path after /patient-files/
+      // From URL (public or signed): extract storage path
       if (f.url) {
-        const marker = `/object/public/${PATIENT_FILES_BUCKET}/`;
-        const idx = f.url.indexOf(marker);
-        if (idx >= 0) {
-          storagePathsFromJsonb.push(decodeURIComponent(f.url.slice(idx + marker.length)));
-        }
+        const path = extractStoragePathFromUrl(f.url);
+        if (path) storagePathsFromJsonb.push(path);
       }
     }
   }
@@ -590,10 +587,11 @@ export async function uploadFileToSupabaseStorage(visitId: string, file: File): 
     }
 
     console.log('[Storage] ✓ upload OK, path:', data.path);
-    const { data: urlData } = supabase.storage
+    const { data: signedData, error: signError } = await supabase.storage
       .from(PATIENT_FILES_BUCKET)
-      .getPublicUrl(data.path);
-    return urlData.publicUrl;
+      .createSignedUrl(data.path, 900);
+    if (signError || !signedData?.signedUrl) return null;
+    return signedData.signedUrl;
   } catch (err) {
     console.error('[Storage] ✗ upload threw exception:', err);
     return null;
@@ -615,13 +613,37 @@ export async function resolveVisitFilePublicUrl(visitId: string, fileName: strin
     if (!hit?.name) return null;
 
     const path = `${visitId}/${hit.name}`;
-    const { data: urlData } = supabase.storage
+    const { data: signedData } = await supabase.storage
       .from(PATIENT_FILES_BUCKET)
-      .getPublicUrl(path);
+      .createSignedUrl(path, 900);
 
-    return urlData.publicUrl || null;
+    return signedData?.signedUrl ?? null;
   } catch (err) {
     console.warn('⚠️ Storage resolve URL exception:', err);
+    return null;
+  }
+}
+
+// Extract Supabase storage path from any URL format (public or signed)
+export function extractStoragePathFromUrl(url: string): string | null {
+  const bucketSegment = `/${PATIENT_FILES_BUCKET}/`;
+  const idx = url.indexOf(bucketSegment);
+  if (idx < 0) return null;
+  return decodeURIComponent(url.slice(idx + bucketSegment.length).split('?')[0]);
+}
+
+// Generate a fresh signed URL from an existing Supabase storage URL (handles expiry and public→private migration)
+export async function refreshStorageSignedUrl(url: string): Promise<string | null> {
+  if (!USE_SUPABASE) return null;
+  const path = extractStoragePathFromUrl(url);
+  if (!path) return null;
+  try {
+    const { data, error } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .createSignedUrl(path, 900);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  } catch {
     return null;
   }
 }
@@ -812,14 +834,11 @@ export function subscribeToAssistantChat(
 }
 
 // Видалити файл з Supabase Storage
-export async function deleteFileFromSupabaseStorage(publicUrl: string): Promise<void> {
+export async function deleteFileFromSupabaseStorage(fileUrl: string): Promise<void> {
   if (!USE_SUPABASE) return;
   try {
-    // Extract path from URL: .../storage/v1/object/public/patient-files/{path}
-    const marker = `/object/public/${PATIENT_FILES_BUCKET}/`;
-    const idx = publicUrl.indexOf(marker);
-    if (idx < 0) return;
-    const filePath = decodeURIComponent(publicUrl.slice(idx + marker.length));
+    const filePath = extractStoragePathFromUrl(fileUrl);
+    if (!filePath) return;
     const { error } = await supabase.storage.from(PATIENT_FILES_BUCKET).remove([filePath]);
     if (error) console.warn('⚠️ Storage delete failed:', error.message);
   } catch (err) {
