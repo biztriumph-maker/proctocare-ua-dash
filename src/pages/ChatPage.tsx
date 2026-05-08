@@ -149,12 +149,9 @@ export default function ChatPage() {
     }
   };
 
-  // ── Derive last quick-reply buttons (only from last AI message) ────────────
+  // ── Derive last AI message index ──────────────────────────────────────────
   const lastAiIdx = [...messages].map((m, i) => (m.sender === "ai" ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
-  const activeQuickReply = lastAiIdx >= 0 ? messages[lastAiIdx].quickReply : undefined;
-  // Hide buttons if patient already replied after the last AI message
   const patientRepliedAfter = lastAiIdx >= 0 && messages.slice(lastAiIdx + 1).some((m) => m.sender === "patient");
-  const showButtons = !!activeQuickReply && !patientRepliedAfter && !sending;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -199,8 +196,10 @@ export default function ChatPage() {
         {messages.map((msg, idx) => {
           const isAi = msg.sender === "ai";
           const isPatient = msg.sender === "patient";
+          const isLastAi = isAi && idx === lastAiIdx;
+          const showInlineButtons = isLastAi && !!msg.quickReply && !patientRepliedAfter && !sending;
           return (
-            <div key={idx} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
+            <div key={idx} className={`flex flex-col ${isPatient ? "items-end" : "items-start"}`}>
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                   isAi
@@ -219,39 +218,34 @@ export default function ChatPage() {
                   </p>
                 )}
               </div>
+              {showInlineButtons && msg.quickReply && (
+                <div className="flex flex-col gap-2 mt-2 w-full max-w-[85%]">
+                  <button
+                    onClick={() => handleReply(msg.quickReply!.context, "yes")}
+                    disabled={sending}
+                    className="w-full py-3 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
+                  >
+                    {msg.quickReply.yes}
+                  </button>
+                  {msg.quickReply.no && (
+                    <button
+                      onClick={() => handleReply(msg.quickReply!.context, "no")}
+                      disabled={sending}
+                      className="w-full py-3 px-4 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
+                    >
+                      {msg.quickReply.no}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
+        {sending && (
+          <p className="text-center text-gray-400 text-xs py-1">Надсилання...</p>
+        )}
         <div ref={bottomRef} />
       </div>
-
-      {/* Quick reply buttons */}
-      {showButtons && activeQuickReply && (
-        <div className="px-4 py-3 bg-white border-t border-gray-200 space-y-2 shrink-0">
-          <button
-            onClick={() => handleReply(activeQuickReply.context, "yes")}
-            disabled={sending}
-            className="w-full py-3 px-4 rounded-xl bg-blue-600 text-white text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
-          >
-            {activeQuickReply.yes}
-          </button>
-          {activeQuickReply.no && (
-            <button
-              onClick={() => handleReply(activeQuickReply.context, "no")}
-              disabled={sending}
-              className="w-full py-3 px-4 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
-            >
-              {activeQuickReply.no}
-            </button>
-          )}
-        </div>
-      )}
-
-      {sending && (
-        <div className="px-4 py-2 bg-white border-t border-gray-200 text-center text-xs text-gray-400 shrink-0">
-          Надсилання...
-        </div>
-      )}
     </div>
   );
 }
