@@ -81,16 +81,16 @@ export default function ChatPage() {
 
       patientIdRef.current = patient.id;
 
-      // 2. Find the active (non-completed) visit, closest to today
-      const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Kiev" }).format(new Date());
+      // 2. Find the most recent non-completed visit for this patient.
+      // No date filter — messages are sent immediately after registration,
+      // so the patient must see the chat regardless of how far the visit date is.
       const { data: visits, error: vErr } = await supabase
         .from("visits")
         .select("id, visit_date, visit_time, procedure, patient_id")
         .eq("patient_id", patient.id)
         .or("completed.is.null,completed.eq.false")
         .or("no_show.is.null,no_show.eq.false")
-        .gte("visit_date", todayIso)
-        .order("visit_date", { ascending: true })
+        .order("visit_date", { ascending: false })
         .limit(1);
 
       if (vErr || !visits || visits.length === 0) {
