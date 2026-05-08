@@ -6,7 +6,7 @@ import {
   BANNER_LABELS,
   NO_SHOW_ANNOTATION,
 } from "@/config/agentMessages";
-import { Plus, Phone, MessageCircle, AlertTriangle, Activity, CalendarDays, Layers, Bot } from "lucide-react";
+import { Plus, Phone, MessageCircle, AlertTriangle, Activity, CalendarDays, Layers, Bot, LogOut } from "lucide-react";
 import { type FilterType } from "@/components/StatusFilterBar";
 import { PatientCard, type Patient, type PatientStatus } from "@/components/PatientCard";
 import { PatientDetailView } from "@/components/PatientDetailView";
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { REMOTE_SYNC_EVENT } from "@/lib/sharedStateSync";
 import { savePatientToSupabase, loadPatientsFromSupabase, updatePatientInSupabase, deletePatientVisitFromSupabase, createNewVisitForExistingPatient, subscribeToPatientsRealtime, replacePatientsSnapshot, isSupabaseDataMode } from "@/lib/supabaseSync";
+import { supabase } from "@/lib/supabaseClient";
 
 const today = new Date();
 const tomorrow = new Date();
@@ -1414,6 +1415,13 @@ export default function Index() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => supabase.auth.signOut()}
+              title="Вийти"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors"
+            >
+              <LogOut size={18} />
+            </button>
             <SearchBar onSearch={setSearchQuery} />
             <button
               onClick={() => openNewEntry()}
