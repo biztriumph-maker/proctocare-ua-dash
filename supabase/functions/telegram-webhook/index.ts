@@ -60,6 +60,12 @@ function kyivTime(): string {
 }
 
 Deno.serve(async (req) => {
+  const secret = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+  const incoming = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+  if (!secret || incoming !== secret) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   let update: TelegramUpdate;
   try {
     update = await req.json();
