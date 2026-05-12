@@ -1,2 +1,5 @@
 [functions.telegram-webhook]
 verify_jwt = false
+
+[functions.web-webhook]
+verify_jwt = false
