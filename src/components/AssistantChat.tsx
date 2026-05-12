@@ -212,7 +212,9 @@ export function ChatPane({
   const activeMessages = chat.filter(
     (m) => !(m.sender === "ai" && (m.text.includes("Підготовку") || m.text.includes("Вітальне") || m.text.includes("перезапущено")))
   );
-  const hasActiveQuickReply = activeMessages.length > 0 && !!activeMessages[activeMessages.length - 1].quickReply;
+  const hasActiveQuickReply = activeMessages.some(
+    (m, i) => !!m.quickReply && !activeMessages.slice(i + 1).some((n) => n.sender === "patient")
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -236,18 +238,10 @@ export function ChatPane({
 
       {/* Chat history — bubbles */}
       {activeMessages.map((msg, i) => {
-        // If there's an unanswered "question_resolved" button, show IT regardless of position.
-        // (Computed per-iteration but value is stable across the map — no closure issue.)
-        const unansweredQIdx = activeMessages.reduce<number>((found, m, j) => {
-          if (m.sender === "ai" && m.quickReply?.context === "question_resolved") return j;
-          if (m.sender === "patient" && found !== -1) return -1;
-          return found;
-        }, -1);
         const isPatient = msg.sender === "patient";
         const isDoctor  = msg.sender === "doctor";
-        const showButtons = unansweredQIdx !== -1
-          ? i === unansweredQIdx
-          : i === activeMessages.length - 1;
+        const showButtons = !!msg.quickReply &&
+          !activeMessages.slice(i + 1).some((m) => m.sender === "patient");
         return (
           <div key={msg._dbId ?? i} className={cn("flex flex-col", isPatient || isDoctor ? "items-end" : "items-start")}>
             <div className={cn(

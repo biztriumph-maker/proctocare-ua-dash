@@ -162,17 +162,6 @@ export default function ChatPage() {
     }
   };
 
-  // ── Derive button visibility indices ──────────────────────────────────────
-  // If there's an unanswered "question_resolved" button (no patient reply after it),
-  // show IT regardless of position — scheduler messages may have been appended after it.
-  const unansweredQuestionIdx = messages.reduce<number>((found, m, i) => {
-    if (m.sender === "ai" && m.quickReply?.context === "question_resolved") return i;
-    if (m.sender === "patient" && found !== -1) return -1;
-    return found;
-  }, -1);
-
-  const lastAiIdx = [...messages].map((m, i) => (m.sender === "ai" ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
-  const patientRepliedAfter = lastAiIdx >= 0 && messages.slice(lastAiIdx + 1).some((m) => m.sender === "patient");
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -217,12 +206,8 @@ export default function ChatPage() {
         {messages.map((msg, idx) => {
           const isAi = msg.sender === "ai";
           const isPatient = msg.sender === "patient";
-          const isLastAi = isAi && idx === lastAiIdx;
-          const showInlineButtons = !!msg.quickReply && !sending && (
-            unansweredQuestionIdx !== -1
-              ? idx === unansweredQuestionIdx
-              : isLastAi && !patientRepliedAfter
-          );
+          const showInlineButtons = !!msg.quickReply && !sending &&
+            !messages.slice(idx + 1).some((m) => m.sender === "patient");
           return (
             <div key={idx} className={`flex flex-col ${isPatient ? "items-end" : "items-start"}`}>
               <div
