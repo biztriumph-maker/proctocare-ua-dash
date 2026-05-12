@@ -700,6 +700,8 @@ export type AssistantSessionRow = {
   step2_ack_result: string;
   welcome_sent: boolean;
   departure_message_sent: boolean;
+  prep_ready_ack: boolean;
+  day_plan_ack: boolean;
   saved_at?: string;
 };
 

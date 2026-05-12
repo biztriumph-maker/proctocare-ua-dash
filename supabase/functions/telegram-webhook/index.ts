@@ -295,6 +295,8 @@ Deno.serve(async (req) => {
     const aiMessages: Array<{ text: string; quickReply?: unknown }> = [];
     let dietInstructionSentNow = false;
     let departureMsgSentNow = false;
+    let prepReadyAckNow = false;
+    let dayPlanAckNow = false;
 
     // Helper: push an AI message to the list.
     // text is HTML (for Telegram) — stripped to **markdown** before dashboard storage.
@@ -533,6 +535,14 @@ Deno.serve(async (req) => {
     // diet_ready, diet_on_track, prep_ready, day_plan_understood,
     // day_before_confirm — update session only, no automatic next message
 
+    if (context === "prep_ready") {
+      prepReadyAckNow = true;
+    }
+
+    if (context === "day_plan_understood") {
+      dayPlanAckNow = true;
+    }
+
     // Append AI messages to session
     for (const aiMsg of aiMessages) {
       updatedMessages.push({
@@ -561,6 +571,8 @@ Deno.serve(async (req) => {
         waiting_for_step2_ack: session?.waiting_for_step2_ack ?? false,
         step2_ack_result: step2AckResultForUpsert,
         departure_message_sent: departureMsgSentNow || (session?.departure_message_sent ?? false),
+        prep_ready_ack: prepReadyAckNow || (session?.prep_ready_ack ?? false),
+        day_plan_ack: dayPlanAckNow || (session?.day_plan_ack ?? false),
         saved_at: new Date().toISOString(),
       },
       { onConflict: "id" }

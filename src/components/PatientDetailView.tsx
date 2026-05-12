@@ -480,7 +480,9 @@ function getPreparationProgress(
   dietInstructionSent: boolean,
   _services?: string[],
   statusOverride?: PatientStatus,
-  departureMsgSent = false
+  departureMsgSent = false,
+  prepReadyAck = false,
+  dayPlanAck = false
 ): { percent: number; steps: { label: string; done: boolean; alert?: boolean }[] } {
   const status = statusOverride ?? patient.status;
   const group = classifyProcedureGroup(patient.procedure || "");
@@ -501,8 +503,8 @@ function getPreparationProgress(
     const steps = [
       { label: "Зв'язок встановлено",    done: contactMade },
       { label: "Старт дієти",            done: dietInstructionSent || status === "ready" },
-      { label: "Підготовка до очищення", done: status === "ready" },
-      { label: "День очищення",          done: status === "ready" },
+      { label: "Підготовка до очищення", done: prepReadyAck || status === "ready" },
+      { label: "День очищення",          done: dayPlanAck || status === "ready" },
       { label: "Виїзд",                  done: status === "ready" },
     ];
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
@@ -608,6 +610,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const [step2AckResult, setStep2AckResult] = useState<"none" | "confirmed" | "question">(restoredAssistantSession?.step2AckResult ?? "none");
   const [welcomeSent, setWelcomeSent] = useState(() => restoredAssistantSession?.welcomeSent ?? isWelcomeSent(patient.id, activeVisitIso));
   const [departureMsgSent, setDepartureMsgSent] = useState(false);
+  const [prepReadyAck, setPrepReadyAck] = useState(false);
+  const [dayPlanAck, setDayPlanAck] = useState(false);
   const [drugChoice, setDrugChoice] = useState<'fortrans' | 'izyklin' | null>(
     restoredAssistantSession?.drugChoice ?? patient.drugChoice ?? null
   );
@@ -781,6 +785,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
           setWelcomeSent(session.welcome_sent);
           setDepartureMsgSent(session.departure_message_sent ?? false);
+          setPrepReadyAck(session.prep_ready_ack ?? false);
+          setDayPlanAck(session.day_plan_ack ?? false);
         };
         // Immediate attempt — may not have Block 4 yet (inserted 800ms later)
         void applySession().then(() => {
@@ -831,6 +837,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
         setWelcomeSent(session.welcome_sent);
         setDepartureMsgSent(session.departure_message_sent ?? false);
+        setPrepReadyAck(session.prep_ready_ack ?? false);
+        setDayPlanAck(session.day_plan_ack ?? false);
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -864,6 +872,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
       setDepartureMsgSent(session.departure_message_sent ?? false);
+      setPrepReadyAck(session.prep_ready_ack ?? false);
+      setDayPlanAck(session.day_plan_ack ?? false);
     });
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -888,6 +898,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
       setDepartureMsgSent(session.departure_message_sent ?? false);
+      setPrepReadyAck(session.prep_ready_ack ?? false);
+      setDayPlanAck(session.day_plan_ack ?? false);
     });
     return unsub;
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -911,6 +923,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setStep2AckResult(session.step2_ack_result as 'none' | 'confirmed' | 'question');
       setWelcomeSent(session.welcome_sent);
       setDepartureMsgSent(session.departure_message_sent ?? false);
+      setPrepReadyAck(session.prep_ready_ack ?? false);
+      setDayPlanAck(session.day_plan_ack ?? false);
     };
 
     const onVisibilityChange = () => {
@@ -970,7 +984,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return computePatientStatus(patient);
   }, [patient, step2AckResult]);
 
-  const preparation = getPreparationProgress(patient, dietInstructionSent, localServices, effectiveStatus, departureMsgSent);
+  const preparation = getPreparationProgress(patient, dietInstructionSent, localServices, effectiveStatus, departureMsgSent, prepReadyAck, dayPlanAck);
 
   useEffect(() => {
     if (!onUpdatePatient) return;
