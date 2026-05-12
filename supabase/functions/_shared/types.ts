@@ -39,7 +39,7 @@ export interface VisitWithPatient {
   visit_time: string | null;
   procedure: string | null;
   drug_choice: "fortrans" | "izyklin" | null;
-  telegram_id: number;
+  telegram_id: number | null;
   patient_name: string;
   patient_patronymic: string | null;
 }

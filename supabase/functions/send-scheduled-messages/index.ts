@@ -88,18 +88,6 @@ Deno.serve(async (_req) => {
       patronymic: string | null;
     };
 
-    if (!patient.telegram_id) {
-      // Patient hasn't registered Telegram — mark sent to stop retrying
-      console.warn(
-        `[scheduler] no telegram_id for patient ${patient.id}, skipping block ${row.block_key}`
-      );
-      await db
-        .from("message_schedule")
-        .update({ sent_at: now.toISOString() })
-        .eq("id", row.id);
-      continue;
-    }
-
     const visitWithPatient: VisitWithPatient = {
       visit_id: visitRow.id,
       patient_id: patient.id,
@@ -118,27 +106,7 @@ Deno.serve(async (_req) => {
       continue;
     }
 
-    // Send to Telegram
-    try {
-      await sendMessage(patient.telegram_id, payload.text, payload.reply_markup);
-    } catch (e) {
-      errors.push(`send failed for row ${row.id}: ${e}`);
-      continue;
-    }
-
-    // Mark sent atomically — the IS NULL guard prevents double-sending
-    const { error: markErr } = await db
-      .from("message_schedule")
-      .update({ sent_at: now.toISOString() })
-      .eq("id", row.id)
-      .is("sent_at", null);
-
-    if (markErr) {
-      errors.push(`mark sent failed for ${row.id}: ${markErr.message}`);
-      continue;
-    }
-
-    // Append message to assistant_chats so the dashboard shows it in chat history
+    // 1. ALWAYS append to assistant_chats — web-chat and Telegram are independent channels
     const { data: session } = await db
       .from("assistant_chats")
       .select("messages, waiting_for_diet_ack, diet_instruction_sent, waiting_for_step2_ack, step2_ack_result, welcome_sent, departure_message_sent")
@@ -187,6 +155,32 @@ Deno.serve(async (_req) => {
 
     if (chatErr) {
       errors.push(`assistant_chats upsert failed for row ${row.id}: ${chatErr.message}`);
+      continue;
+    }
+
+    // 2. Send to Telegram only if the patient has connected the bot
+    if (patient.telegram_id) {
+      try {
+        await sendMessage(patient.telegram_id, payload.text, payload.reply_markup);
+      } catch (e) {
+        // Log but do not abort — message is already saved in assistant_chats
+        errors.push(`telegram send failed for row ${row.id}: ${e}`);
+      }
+    } else {
+      console.warn(
+        `[scheduler] no telegram_id for patient ${patient.id}, web-chat only for block ${row.block_key}`
+      );
+    }
+
+    // 3. Mark sent atomically — the IS NULL guard prevents double-sending
+    const { error: markErr } = await db
+      .from("message_schedule")
+      .update({ sent_at: now.toISOString() })
+      .eq("id", row.id)
+      .is("sent_at", null);
+
+    if (markErr) {
+      errors.push(`mark sent failed for ${row.id}: ${markErr.message}`);
       continue;
     }
 
