@@ -2724,17 +2724,22 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     const style = document.createElement("style");
     style.id = "protocol-print-style";
     style.textContent = `
+      #protocol-print-page input:focus,
+      #protocol-print-page textarea:focus {
+        background: #f8fafc !important;
+        outline: none !important;
+        border-radius: 3px !important;
+      }
       @media (max-width: 767px) {
         #protocol-two-col { flex-direction: column !important; }
-        #protocol-colon-col { width: 100% !important; max-width: 320px !important; margin: 0 auto !important; }
-        #protocol-print-page { padding: 20px 16px 72px !important; }
-        #protocol-sig { justify-content: center !important; }
+        #protocol-colon-col { width: 100% !important; max-width: 300px !important; margin: 0 auto 16px !important; }
+        #protocol-print-page { padding: 24px 18px 80px !important; }
       }
       @media print {
         body > * { display: none !important; }
         #protocol-print-page {
           display: block !important; position: fixed !important; inset: 0 !important;
-          padding: 14mm 16mm !important; font-family: Arial, sans-serif !important;
+          padding: 14mm 18mm !important; font-family: Arial, sans-serif !important;
           font-size: 12pt !important; color: #000 !important; background: #fff !important;
           overflow: visible !important; border: none !important; box-shadow: none !important;
         }
@@ -2779,45 +2784,45 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     notes: "Нотатки",
   };
 
-  // ── Pure white A4 sheet for protocol (no blue UI) ──
+  // ── Luxury white A4 — zero visual noise ──
   if (field === "protocol") {
     return (
       <div
         className="fixed inset-0 z-[200] bg-white overflow-y-auto animate-fade-in"
         style={{ fontFamily: "Arial, sans-serif" }}
       >
-        {/* Floating minimize button */}
+        {/* Minimal close button */}
         <button
           className="no-print"
           onClick={onCancel}
           title="Згорнути"
           style={{
             position: "fixed", top: 16, right: 20, zIndex: 10,
-            width: 36, height: 36, borderRadius: "50%",
-            border: "1.5px solid #ccc", background: "white",
+            width: 34, height: 34, borderRadius: "50%",
+            border: "1px solid #e2e8f0", background: "white",
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
           }}
         >
-          <Minimize2 size={15} color="#666" />
+          <Minimize2 size={14} color="#94a3b8" />
         </button>
 
-        {/* A4 document */}
+        {/* A4 canvas — pure white, max-width, generous padding */}
         <div
           id="protocol-print-page"
           style={{
             fontFamily: "Arial, sans-serif",
             fontSize: 13,
-            color: "#000",
-            background: "white",
+            color: "#111",
+            background: "#fff",
             maxWidth: 820,
             margin: "0 auto",
-            padding: "40px 48px 80px",
+            padding: "52px 60px 96px",
             minHeight: "100vh",
           }}
         >
-          {/* Institution header — editable */}
-          <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: 10, marginBottom: 16 }}>
+          {/* Header — institution name, no decorative lines */}
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
             <input
               value={sections.hospitalName}
               onChange={(e) => setSections(prev => ({ ...prev, hospitalName: e.target.value }))}
@@ -2825,7 +2830,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               style={{
                 fontWeight: "bold", fontSize: 15, textAlign: "center",
                 border: "none", outline: "none", background: "transparent",
-                width: "100%", fontFamily: "Arial, sans-serif", color: "#000", display: "block",
+                width: "100%", fontFamily: "Arial, sans-serif", color: "#111", display: "block",
               }}
             />
             <input
@@ -2835,20 +2840,19 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               style={{
                 fontSize: 12, textAlign: "center",
                 border: "none", outline: "none", background: "transparent",
-                width: "100%", fontFamily: "Arial, sans-serif", color: "#000",
-                marginTop: 3, display: "block",
+                width: "100%", fontFamily: "Arial, sans-serif", color: "#6b7280",
+                marginTop: 4, display: "block",
               }}
             />
-            <div style={{ fontWeight: "bold", fontSize: 16, marginTop: 10, letterSpacing: 0.5 }}>
+            <div style={{ fontWeight: "bold", fontSize: 14, marginTop: 16, letterSpacing: 2, color: "#111" }}>
               ПРОТОКОЛ ЕНДОСКОПІЧНОГО ДОСЛІДЖЕННЯ
             </div>
           </div>
 
-          {/* 2-column desktop / 1-column mobile */}
-          <div id="protocol-two-col" style={{ display: "flex", gap: 20, marginBottom: 16, alignItems: "flex-start" }}>
-            {/* colon.jpg — adaptive width */}
-            <div id="protocol-colon-col" style={{ width: 220, flexShrink: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: "bold", textAlign: "center", color: "#555", marginBottom: 4 }}>
+          {/* 2-column: colon image left + patient metadata right */}
+          <div id="protocol-two-col" style={{ display: "flex", gap: 32, marginBottom: 24, alignItems: "flex-start" }}>
+            <div id="protocol-colon-col" style={{ width: 200, flexShrink: 0 }}>
+              <div style={{ fontSize: 9, fontWeight: "bold", textAlign: "center", color: "#94a3b8", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" }}>
                 Схема товстої кишки
               </div>
               <ColonImageMap
@@ -2858,8 +2862,8 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               />
             </div>
 
-            {/* Patient fields — paper-line style (border-bottom only) */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
+            {/* Metadata — no borders, clean air between rows */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 11 }}>
               {([
                 { label: "П.І.Б.:",             key: "fullName"      as keyof ProtocolSections },
                 { label: "Вік:",                 key: "age"           as keyof ProtocolSections },
@@ -2868,8 +2872,8 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                 { label: "Апарат:",              key: "apparatus"     as keyof ProtocolSections },
                 { label: "Дезінфікуючий засіб:", key: "disinfectant"  as keyof ProtocolSections },
               ] as Array<{ label: string; key: keyof ProtocolSections }>).map(({ label, key }) => (
-                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #e2e8f0", paddingBottom: 3 }}>
-                  <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 13 }}>{label}</span>
+                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                  <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 13, color: "#111" }}>{label}</span>
                   <input
                     value={sections[key] as string}
                     onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
@@ -2877,7 +2881,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                     style={{
                       flex: 1, background: "transparent",
                       border: "none", outline: "none",
-                      fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
+                      fontSize: 13, fontFamily: "Arial, sans-serif", color: "#111",
                     }}
                   />
                 </div>
@@ -2885,14 +2889,14 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* Text sections — inline bold label + borderBottom textarea */}
+          {/* Long text fields — bold inline label, no borders, no resize handle */}
           {([
             { label: "Опис:",          key: "description"     as keyof ProtocolSections, rows: 5 },
-            { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 2 },
-            { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 2 },
+            { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 3 },
+            { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 3 },
           ] as Array<{ label: string; key: keyof ProtocolSections; rows: number }>).map(({ label, key, rows }) => (
-            <div key={key} style={{ marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 6 }}>
-              <span style={{ fontWeight: "bold", fontSize: 13, whiteSpace: "nowrap", paddingTop: 2, flexShrink: 0 }}>
+            <div key={key} style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 7 }}>
+              <span style={{ fontWeight: "bold", fontSize: 13, whiteSpace: "nowrap", paddingTop: 1, flexShrink: 0, color: "#111" }}>
                 {label}
               </span>
               <textarea
@@ -2901,37 +2905,39 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                 spellCheck={false}
                 rows={rows}
                 style={{
-                  flex: 1, resize: "vertical", background: "transparent",
-                  border: "none", borderBottom: "1px solid #e2e8f0", borderRadius: 0,
-                  fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
-                  padding: "2px 0", outline: "none", lineHeight: 1.6, boxSizing: "border-box",
+                  flex: 1, resize: "none", background: "transparent",
+                  border: "none", borderRadius: 0,
+                  fontSize: 13, fontFamily: "Arial, sans-serif", color: "#111",
+                  padding: "0", outline: "none", lineHeight: 1.75, boxSizing: "border-box",
                 }}
               />
             </div>
           ))}
 
-          {/* Doctor signature: Лікар: ________ Луцишин Юрій Андрійович */}
-          <div id="protocol-sig" style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontWeight: "bold", fontSize: 13 }}>Лікар:</span>
-              <span style={{
-                display: "inline-block", width: 88,
-                borderBottom: "1px solid #000",
-                marginLeft: 4, marginRight: 6,
-              }}>&nbsp;</span>
-              <span style={{ fontWeight: "bold", fontSize: 13 }}>{PROTOCOL_DOCTOR}</span>
+          {/* Signature — bottom right, big top margin, no decorative line */}
+          <div id="protocol-sig" style={{ marginTop: 56, display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, justifyContent: "flex-end" }}>
+                <span style={{
+                  display: "inline-block", width: 128,
+                  borderBottom: "1px solid #111",
+                  marginBottom: 1,
+                }}>&nbsp;</span>
+                <span style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2 }}>(підпис)</span>
+              </div>
+              <div style={{ fontWeight: "bold", fontSize: 13, marginTop: 5 }}>{PROTOCOL_DOCTOR}</div>
             </div>
           </div>
 
-          {/* Single green Save button — hidden on print */}
-          <div className="no-print" style={{ marginTop: 28, display: "flex", justifyContent: "center" }}>
+          {/* One green Save button — hidden on print */}
+          <div className="no-print" style={{ marginTop: 40, display: "flex", justifyContent: "center" }}>
             <button
               onClick={() => onSave(serializeSections(sections))}
               style={{
-                padding: "13px 56px", fontSize: 15, fontWeight: "bold",
+                padding: "13px 60px", fontSize: 15, fontWeight: "bold",
                 background: "#43a047", color: "white", border: "none",
                 borderRadius: 10, cursor: "pointer",
-                boxShadow: "0 2px 10px rgba(67,160,71,0.4)",
+                boxShadow: "0 2px 12px rgba(67,160,71,0.35)",
               }}
             >
               Зберегти
