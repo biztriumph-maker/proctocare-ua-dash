@@ -2400,30 +2400,44 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
 // ── Smart Epicrisis helpers ──
 
-const PROTOCOL_TEMPLATE =
-  "Скарги: \nАнамнез: \nОб'єктивно: Per rectum: тонус сфінктера збережений, болючість відсутня.\nДіагноз: \nРекомендації: ";
+const PROTOCOL_EQUIPMENT = "Апарат «Pentax» EC-3890LK";
 
-const MAGIC_TEMPLATES: Record<string, Record<string, string>> = {
+type SectionKey = "complaints" | "anamnesis" | "objective" | "diagnosis" | "recommendations";
+type ProtocolSections = Record<SectionKey, string>;
+
+const SECTION_DEFS: Array<{ key: SectionKey; label: string; storageLabels: string[]; rows: number }> = [
+  { key: "complaints",      label: "Скарги",                    storageLabels: ["Скарги"],                          rows: 2 },
+  { key: "anamnesis",       label: "Анамнез захворювання",      storageLabels: ["Анамнез захворювання", "Анамнез"], rows: 3 },
+  { key: "objective",       label: "Об'єктивно (Local Status)", storageLabels: ["Об'єктивно"],                      rows: 3 },
+  { key: "diagnosis",       label: "Діагноз",                   storageLabels: ["Діагноз"],                         rows: 2 },
+  { key: "recommendations", label: "Рекомендації",              storageLabels: ["Рекомендації"],                    rows: 2 },
+];
+
+const EMPTY_SECTIONS: ProtocolSections = {
+  complaints: "", anamnesis: "", objective: "Per rectum: тонус сфінктера збережений, болючість відсутня.", diagnosis: "", recommendations: "",
+};
+
+const MAGIC_TEMPLATES: Record<string, ProtocolSections> = {
   norma: {
-    "Скарги":        "Скарг не пред'являє.",
-    "Анамнез":       "Не обтяжений.",
-    "Об'єктивно":    "Per rectum: тонус сфінктера збережений, болючість відсутня. Патологічних утворень не виявлено. Ампула прямої кишки вільна.",
-    "Діагноз":       "Без патологій.",
-    "Рекомендації":  "Динамічний нагляд проктолога.",
+    complaints:      "Скарг не пред'являє.",
+    anamnesis:       "Не обтяжений.",
+    objective:       "Per rectum: тонус сфінктера збережений, болючість відсутня. Патологічних утворень не виявлено. Ампула прямої кишки вільна.",
+    diagnosis:       "Без патологій.",
+    recommendations: "Динамічний нагляд проктолога.",
   },
   gemoroi: {
-    "Скарги":        "Кровотеча після дефекації, дискомфорт в анальній ділянці.",
-    "Анамнез":       "Скарги впродовж тривалого часу. Самостійний прийом послаблюючих.",
-    "Об'єктивно":    "Per rectum: внутрішні гемороїдальні вузли I ступеня, без пролапсу. Тонус сфінктера збережений, болючість помірна.",
-    "Діагноз":       "Внутрішній геморой I ступеня. K64.0.",
-    "Рекомендації":  "Флеботропна терапія, місцеве лікування, безшлакова дієта з клітковиною.",
+    complaints:      "Кровотеча після дефекації, дискомфорт в анальній ділянці.",
+    anamnesis:       "Скарги впродовж тривалого часу. Самостійний прийом послаблюючих.",
+    objective:       "Per rectum: внутрішні гемороїдальні вузли I ступеня, без пролапсу. Тонус сфінктера збережений, болючість помірна.",
+    diagnosis:       "Внутрішній геморой I ступеня. K64.0.",
+    recommendations: "Флеботропна терапія, місцеве лікування, безшлакова дієта з клітковиною.",
   },
   trishchyna: {
-    "Скарги":        "Гострий біль під час та після дефекації, незначна кровотеча.",
-    "Анамнез":       "Скарги протягом кількох тижнів. Схильність до закрепів.",
-    "Об'єктивно":    "Per rectum: хронічна анальна тріщина задньої стінки, сфінктероспазм помірний.",
-    "Діагноз":       "Хронічна анальна тріщина. K60.1.",
-    "Рекомендації":  "Нітрогліцеринова мазь, сидячі ванночки, нормалізація випорожнень.",
+    complaints:      "Гострий біль під час та після дефекації, незначна кровотеча.",
+    anamnesis:       "Скарги протягом кількох тижнів. Схильність до закрепів.",
+    objective:       "Per rectum: хронічна анальна тріщина задньої стінки, сфінктероспазм помірний.",
+    diagnosis:       "Хронічна анальна тріщина. K60.1.",
+    recommendations: "Нітрогліцеринова мазь, сидячі ванночки, нормалізація випорожнень.",
   },
 };
 
@@ -2435,20 +2449,37 @@ function stripProtocolHeader(text: string): string {
   return lines.slice(i).join("\n");
 }
 
-function applyObjectiveTemplate(text: string, template: string): string {
-  const lines = text.split("\n");
-  const idx = lines.findIndex((l) => l.trimStart().startsWith("Об'єктивно:"));
-  if (idx >= 0) { lines[idx] = `Об'єктивно: ${template}`; return lines.join("\n"); }
-  return text + `\nОб'єктивно: ${template}`;
+function parseTextToSections(text: string): ProtocolSections {
+  const buffers: Record<SectionKey, string[]> = { complaints: [], anamnesis: [], objective: [], diagnosis: [], recommendations: [] };
+  let cur: SectionKey | null = null;
+  for (const line of text.split("\n")) {
+    const t = line.trimStart();
+    let found = false;
+    for (const def of SECTION_DEFS) {
+      for (const lbl of def.storageLabels) {
+        if (t.startsWith(lbl + ":")) {
+          cur = def.key;
+          const rest = t.slice(lbl.length + 1).trimStart();
+          if (rest) buffers[cur].push(rest);
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found && cur) buffers[cur].push(line);
+  }
+  return {
+    complaints:      buffers.complaints.join("\n").trim(),
+    anamnesis:       buffers.anamnesis.join("\n").trim(),
+    objective:       buffers.objective.join("\n").trim(),
+    diagnosis:       buffers.diagnosis.join("\n").trim(),
+    recommendations: buffers.recommendations.join("\n").trim(),
+  };
 }
 
-function applyMagicTemplate(text: string, sections: Record<string, string>): string {
-  let lines = text.split("\n");
-  for (const [key, val] of Object.entries(sections)) {
-    const idx = lines.findIndex((l) => l.trimStart().startsWith(`${key}:`));
-    if (idx >= 0) lines[idx] = `${key}: ${val}`;
-  }
-  return lines.join("\n");
+function serializeSections(s: ProtocolSections): string {
+  return SECTION_DEFS.map((def) => `${def.storageLabels[0]}: ${s[def.key]}`).join("\n");
 }
 
 function toggleClockLocalization(text: string, hour: number): string {
@@ -2456,9 +2487,7 @@ function toggleClockLocalization(text: string, hour: number): string {
   const lines = text.split("\n");
   const existing = lines.findIndex((l) => l.trim() === line);
   if (existing >= 0) return lines.filter((_, i) => i !== existing).join("\n");
-  const diagIdx = lines.findIndex((l) => l.trimStart().startsWith("Діагноз:"));
-  if (diagIdx >= 0) { lines.splice(diagIdx, 0, line); return lines.join("\n"); }
-  return text + `\n${line}`;
+  return text.trim() ? text.trim() + `\n${line}` : line;
 }
 
 function parseClockHours(text: string): Set<number> {
@@ -2524,18 +2553,22 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
   onCancel: () => void;
 }) {
   const safeValue = value ?? "";
+
+  const initSections = (): ProtocolSections => {
+    const raw = stripProtocolHeader(safeValue);
+    return raw.trim() ? parseTextToSections(raw) : { ...EMPTY_SECTIONS };
+  };
+
   const [text, setText] = useState(() => {
     if (field === "phone") return normalizePhoneWithPlus(safeValue);
-    if (field === "protocol") {
-      const stripped = stripProtocolHeader(safeValue);
-      return stripped.trim() ? stripped : PROTOCOL_TEMPLATE;
-    }
     return safeValue;
   });
+  const [sections, setSections] = useState<ProtocolSections>(initSections);
   const [showClock, setShowClock] = useState(false);
+
   const clockHours = useMemo(
-    () => (field === "protocol" ? parseClockHours(text) : new Set<number>()),
-    [field, text]
+    () => (field === "protocol" ? parseClockHours(sections.objective) : new Set<number>()),
+    [field, sections.objective]
   );
   const baseValue = safeValue.trim();
 
@@ -2543,8 +2576,8 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
     if (field === "phone") {
       setText(normalizePhoneWithPlus(safeValue));
     } else if (field === "protocol") {
-      const stripped = stripProtocolHeader(safeValue);
-      setText(stripped.trim() ? stripped : PROTOCOL_TEMPLATE);
+      const raw = stripProtocolHeader(safeValue);
+      setSections(raw.trim() ? parseTextToSections(raw) : { ...EMPTY_SECTIONS });
     } else {
       setText(safeValue);
     }
@@ -2640,65 +2673,99 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
               autoFocus
             />
           ) : field === "protocol" ? (
-            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
-              {/* Patient info table — read-only, from visit props */}
-              <div className="shrink-0 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-                <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-2">Протокол огляду</p>
-                <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-0.5 text-xs">
-                  <span className="font-semibold text-amber-800 whitespace-nowrap">ПІБ:</span>
-                  <span className="text-foreground font-medium">{patientName}</span>
-                  {patientBirthDate && (
-                    <>
-                      <span className="font-semibold text-amber-800 whitespace-nowrap">Дата народження:</span>
-                      <span className="text-foreground">{patientBirthDate}</span>
-                    </>
-                  )}
-                  <span className="font-semibold text-amber-800 whitespace-nowrap">Дата огляду:</span>
-                  <span className="text-foreground">{patientDate || "—"}</span>
-                  {patientProcedure && (
-                    <>
-                      <span className="font-semibold text-amber-800 whitespace-nowrap">Процедура:</span>
-                      <span className="text-foreground">{patientProcedure}</span>
-                    </>
-                  )}
-                </div>
-              </div>
+            <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto pr-1" style={{ fontFamily: "Arial, sans-serif" }}>
 
-              {/* Textarea + desktop anatomic map row */}
-              <div className="flex-1 min-h-0 flex flex-row gap-3 overflow-hidden">
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onFocus={(e) => focusAtEnd(e.currentTarget)}
-                  spellCheck={false}
-                  autoCorrect="off"
-                  className="flex-1 w-full text-foreground bg-[hsl(204,100%,98%)] border border-sky-200 rounded-xl pl-7 pr-5 py-5 outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400/60 resize-none overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-sky-400/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-sky-500/70"
-                  style={{ minHeight: "80px", lineHeight: 1.55, fontFamily: "Arial, sans-serif", fontSize: 14, scrollbarWidth: "thin", scrollbarColor: "hsl(204 70% 60% / 0.5) transparent" }}
-                  autoFocus
-                />
-                {/* Desktop anatomic map — hidden on mobile */}
-                <div className="hidden md:flex flex-col items-center shrink-0" style={{ width: 164 }}>
-                  <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
-                  <div style={{ width: 156, height: 156 }}>
-                    <AnatomicMap
-                      selected={clockHours}
-                      onToggle={(h) => setText((prev) => toggleClockLocalization(prev, h))}
-                    />
+              {/* ── Document header table ── */}
+              <div className="shrink-0 border border-gray-300 rounded-lg bg-white px-5 py-3 text-[13px]">
+                {/* Row 1: ПІБ */}
+                <div className="flex gap-1 flex-wrap py-0.5 border-b border-gray-100">
+                  <span className="font-bold whitespace-nowrap text-gray-800">Прізвище, ім'я, по батькові:</span>
+                  <span className="ml-1 text-gray-700">{patientName}</span>
+                </div>
+                {/* Row 2: DOB + Exam date (same line) */}
+                <div className="flex gap-6 flex-wrap py-0.5 border-b border-gray-100">
+                  <div className="flex gap-1">
+                    <span className="font-bold text-gray-800 whitespace-nowrap">Дата народження:</span>
+                    <span className="ml-1 text-gray-700">{patientBirthDate || "—"}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <span className="font-bold text-gray-800 whitespace-nowrap">Дата обстеження:</span>
+                    <span className="ml-1 text-gray-700">{patientDate || "—"}</span>
                   </div>
                 </div>
+                {/* Row 3: Equipment */}
+                <div className="flex gap-1 flex-wrap py-0.5">
+                  <span className="font-bold text-gray-800 whitespace-nowrap">Обладнання:</span>
+                  <span className="ml-1 text-gray-700">{PROTOCOL_EQUIPMENT}</span>
+                </div>
               </div>
 
-              {/* Magic buttons row */}
-              <div className="shrink-0 flex flex-wrap gap-2">
+              {/* ── Clinical sections ── */}
+              <div className="shrink-0 flex flex-col gap-3">
+                {SECTION_DEFS.map((def, idx) => {
+                  const isObjective = def.key === "objective";
+                  return (
+                    <div key={def.key}>
+                      {isObjective ? (
+                        /* Об'єктивно + AnatomicMap side by side on desktop */
+                        <div className="flex gap-3 items-start">
+                          <div className="flex-1 flex flex-col gap-0.5">
+                            <label className="text-[13px] font-bold text-gray-800">{def.label}:</label>
+                            <textarea
+                              value={sections.objective}
+                              onChange={(e) => setSections((prev) => ({ ...prev, objective: e.target.value }))}
+                              spellCheck={false}
+                              autoCorrect="off"
+                              rows={def.rows}
+                              autoFocus={idx === 0}
+                              className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-[13px] text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
+                              style={{ lineHeight: 1.55, scrollbarWidth: "thin" }}
+                            />
+                          </div>
+                          {/* Desktop anatomic map */}
+                          <div className="hidden md:flex flex-col items-center shrink-0 pt-5" style={{ width: 158 }}>
+                            <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
+                            <div style={{ width: 150, height: 150 }}>
+                              <AnatomicMap
+                                selected={clockHours}
+                                onToggle={(h) =>
+                                  setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[13px] font-bold text-gray-800">{def.label}:</label>
+                          <textarea
+                            value={sections[def.key]}
+                            onChange={(e) => setSections((prev) => ({ ...prev, [def.key]: e.target.value }))}
+                            spellCheck={false}
+                            autoCorrect="off"
+                            rows={def.rows}
+                            autoFocus={idx === 0}
+                            className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-[13px] text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
+                            style={{ lineHeight: 1.55, scrollbarWidth: "thin" }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* ── Magic buttons + mobile map toggle ── */}
+              <div className="shrink-0 flex flex-wrap gap-2 pb-1">
                 {([
-                  { label: "Норма",    key: "norma" },
-                  { label: "Геморой",  key: "gemoroi" },
-                  { label: "Тріщина",  key: "trishchyna" },
+                  { label: "Норма",   key: "norma" },
+                  { label: "Геморой", key: "gemoroi" },
+                  { label: "Тріщина", key: "trishchyna" },
                 ] as { label: string; key: keyof typeof MAGIC_TEMPLATES }[]).map(({ label, key }) => (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setText((prev) => applyMagicTemplate(prev, MAGIC_TEMPLATES[key]))}
+                    onClick={() => setSections(MAGIC_TEMPLATES[key])}
                     className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors active:scale-[0.97]"
                     style={{ borderColor: "#f39c12", color: "#c27a00", background: "#fff8ee" }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef0d0"; }}
@@ -2707,8 +2774,6 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
                     {label}
                   </button>
                 ))}
-
-                {/* Mobile anatomic map toggle */}
                 <button
                   type="button"
                   onClick={() => setShowClock((s) => !s)}
@@ -2719,14 +2784,16 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
                 </button>
               </div>
 
-              {/* Mobile anatomic map — shown only when toggled */}
+              {/* Mobile anatomic map */}
               {showClock && (
-                <div className="md:hidden shrink-0 flex flex-col items-center">
+                <div className="md:hidden shrink-0 flex flex-col items-center pb-2">
                   <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
                   <div style={{ width: 190, height: 190 }}>
                     <AnatomicMap
                       selected={clockHours}
-                      onToggle={(h) => setText((prev) => toggleClockLocalization(prev, h))}
+                      onToggle={(h) =>
+                        setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))
+                      }
                     />
                   </div>
                 </div>
@@ -2768,7 +2835,7 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
             Скасувати
           </button>
           <button
-            onClick={() => onSave(text)}
+            onClick={() => onSave(field === "protocol" ? serializeSections(sections) : text)}
             className="px-6 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
           >
             Зберегти
