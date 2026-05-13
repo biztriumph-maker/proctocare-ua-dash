@@ -2672,7 +2672,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     const fullNameDefault = [patientName, patientPatronymic].filter(Boolean).join(" ");
     return {
       fullName:        parsed.fullName        ?? fullNameDefault,
-      age:             parsed.age             ?? "",
+      age:             parsed.age             ?? (patientBirthDate ? calcAge(patientBirthDate).ageStr : ""),
       procedureType:   parsed.procedureType   ?? "Колоноскопія",
       examDate:        parsed.examDate        ?? (patientDate || ""),
       apparatus:       parsed.apparatus       ?? PROTOCOL_APPARATUS,
@@ -2768,6 +2768,173 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     diagnosis: "Діагноз",
     notes: "Нотатки",
   };
+
+  // ── Pure white A4 sheet for protocol (no blue UI) ──
+  if (field === "protocol") {
+    return (
+      <div
+        className="fixed inset-0 z-[200] bg-white overflow-y-auto animate-fade-in"
+        style={{ fontFamily: "Arial, sans-serif" }}
+      >
+        {/* Floating minimize button */}
+        <button
+          className="no-print"
+          onClick={onCancel}
+          title="Згорнути"
+          style={{
+            position: "fixed", top: 16, right: 20, zIndex: 10,
+            width: 36, height: 36, borderRadius: "50%",
+            border: "1.5px solid #ccc", background: "white",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+          }}
+        >
+          <Minimize2 size={15} color="#666" />
+        </button>
+
+        {/* A4 document */}
+        <div
+          id="protocol-print-page"
+          style={{
+            fontFamily: "Arial, sans-serif",
+            fontSize: 13,
+            color: "#000",
+            background: "white",
+            maxWidth: 820,
+            margin: "0 auto",
+            padding: "40px 48px 80px",
+            minHeight: "100vh",
+          }}
+        >
+          {/* Institution header — editable */}
+          <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: 10, marginBottom: 16 }}>
+            <input
+              value={sections.hospitalName}
+              onChange={(e) => setSections(prev => ({ ...prev, hospitalName: e.target.value }))}
+              spellCheck={false}
+              style={{
+                fontWeight: "bold", fontSize: 15, textAlign: "center",
+                border: "none", outline: "none", background: "transparent",
+                width: "100%", fontFamily: "Arial, sans-serif", color: "#000", display: "block",
+              }}
+            />
+            <input
+              value={sections.hospitalAddress}
+              onChange={(e) => setSections(prev => ({ ...prev, hospitalAddress: e.target.value }))}
+              spellCheck={false}
+              style={{
+                fontSize: 12, textAlign: "center",
+                border: "none", outline: "none", background: "transparent",
+                width: "100%", fontFamily: "Arial, sans-serif", color: "#000",
+                marginTop: 3, display: "block",
+              }}
+            />
+            <div style={{ fontWeight: "bold", fontSize: 16, marginTop: 10, letterSpacing: 0.5 }}>
+              ПРОТОКОЛ ЕНДОСКОПІЧНОГО ДОСЛІДЖЕННЯ
+            </div>
+          </div>
+
+          {/* 2-column: colon.jpg with click-markers (left) + patient fields (right) */}
+          <div style={{ display: "flex", gap: 20, marginBottom: 16, alignItems: "flex-start" }}>
+            <div style={{ width: 220, flexShrink: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: "bold", textAlign: "center", color: "#555", marginBottom: 4 }}>
+                Схема товстої кишки
+              </div>
+              <ColonImageMap
+                markers={colonMarkers}
+                onAddMarker={addColonMarker}
+                onClearMarkers={clearColonMarkers}
+              />
+            </div>
+
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
+              {([
+                { label: "П.І.Б.:",             key: "fullName"      as keyof ProtocolSections },
+                { label: "Вік:",                 key: "age"           as keyof ProtocolSections },
+                { label: "Дата:",                key: "examDate"      as keyof ProtocolSections },
+                { label: "Вид дослідження:",     key: "procedureType" as keyof ProtocolSections },
+                { label: "Апарат:",              key: "apparatus"     as keyof ProtocolSections },
+                { label: "Дезінфікуючий засіб:", key: "disinfectant"  as keyof ProtocolSections },
+              ] as Array<{ label: string; key: keyof ProtocolSections }>).map(({ label, key }) => (
+                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #ccc", paddingBottom: 4 }}>
+                  <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 13 }}>{label}</span>
+                  <input
+                    value={sections[key] as string}
+                    onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
+                    spellCheck={false}
+                    style={{
+                      flex: 1, background: "transparent", border: "none", outline: "none",
+                      fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Inline bold label + textarea sections */}
+          {([
+            { label: "Опис:",          key: "description"     as keyof ProtocolSections, rows: 5 },
+            { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 2 },
+            { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 2 },
+          ] as Array<{ label: string; key: keyof ProtocolSections; rows: number }>).map(({ label, key, rows }) => (
+            <div key={key} style={{ marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 6 }}>
+              <span style={{ fontWeight: "bold", fontSize: 13, whiteSpace: "nowrap", paddingTop: 2, flexShrink: 0 }}>
+                {label}
+              </span>
+              <textarea
+                value={sections[key] as string}
+                onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
+                spellCheck={false}
+                rows={rows}
+                style={{
+                  flex: 1, resize: "vertical", background: "transparent",
+                  border: "none", borderBottom: "1px solid #ccc", borderRadius: 0,
+                  fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
+                  padding: "2px 0", outline: "none", lineHeight: 1.6, boxSizing: "border-box",
+                }}
+              />
+            </div>
+          ))}
+
+          {/* Magic template buttons */}
+          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#888" }}>Шаблон:</span>
+            {(["norma", "polypy", "colitis"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSections(prev => ({ ...prev, ...MAGIC_TEMPLATES[key] }))}
+                style={{ padding: "4px 14px", fontSize: 12, border: "1px solid #c27a00", borderRadius: 6, color: "#c27a00", background: "#fff8ee", cursor: "pointer" }}
+              >
+                {key === "norma" ? "Норма" : key === "polypy" ? "Поліпи" : "Коліт"}
+              </button>
+            ))}
+          </div>
+
+          {/* Doctor signature — bold, right-aligned */}
+          <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
+            <span style={{ fontWeight: "bold", fontSize: 13 }}>Лікар: {PROTOCOL_DOCTOR}</span>
+          </div>
+
+          {/* Single green Save button */}
+          <div className="no-print" style={{ marginTop: 28, display: "flex", justifyContent: "center" }}>
+            <button
+              onClick={() => onSave(serializeSections(sections))}
+              style={{
+                padding: "12px 56px", fontSize: 15, fontWeight: "bold",
+                background: "#43a047", color: "white", border: "none",
+                borderRadius: 10, cursor: "pointer",
+                boxShadow: "0 2px 10px rgba(67,160,71,0.4)",
+              }}
+            >
+              Зберегти
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center animate-fade-in bg-[hsl(204,85%,93%)]">
