@@ -198,8 +198,14 @@ function buildGreetingMessage(patient: Patient, appointmentIsoDate: string, appo
 
 function getReadyButtonText(patient: Patient): string {
   const p = (patient.patronymic || "").trim();
-  if (/івна$|ївна$|євна$/i.test(p)) return "Я готова";
+  if (/івна$|ївна$|вна$/i.test(p)) return "Я готова";
   return "Я готовий";
+}
+
+function getDietConfirmButtonText(patient: Patient): string {
+  const p = (patient.patronymic || "").trim();
+  if (/івна$|ївна$|вна$/i.test(p)) return "План отримала, усе зрозуміло";
+  return "План отримав, усе зрозуміло";
 }
 
 // Вибирає наступний блок для Групи Г на основі кількості днів до процедури.
@@ -230,7 +236,7 @@ function buildNextGBlock(patient: Patient, time: string): ChatMessage | null {
   }
   return {
     sender: 'ai', text: AGENT_CHAT_MESSAGES.block6G, time,
-    quickReply: { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: 'diet_confirm' as const },
+    quickReply: { yes: getDietConfirmButtonText(patient), context: 'diet_confirm' as const },
   };
 }
 
@@ -482,7 +488,8 @@ function getPreparationProgress(
   statusOverride?: PatientStatus,
   departureMsgSent = false,
   prepReadyAck = false,
-  dayPlanAck = false
+  dayPlanAck = false,
+  dayBeforeAck = false
 ): { percent: number; steps: { label: string; done: boolean; alert?: boolean }[] } {
   const status = statusOverride ?? patient.status;
   const group = classifyProcedureGroup(patient.procedure || "");
@@ -492,7 +499,7 @@ function getPreparationProgress(
   if (group === 'G') {
     const steps = [
       { label: "Зв'язок встановлено", done: contactMade },
-      { label: "Легка вечеря",        done: dietInstructionSent || status === "ready" },
+      { label: "Легка вечеря",        done: dayBeforeAck || status === "ready" },
       { label: "Виїзд",               done: status === "ready", alert: departureMsgSent && status !== "ready" },
     ];
     return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
@@ -514,7 +521,7 @@ function getPreparationProgress(
   // procedure field doesn't accidentally show Group К tabs ("Підготовка до очищення").
   const steps = [
     { label: "Зв'язок встановлено", done: contactMade },
-    { label: "Легка вечеря",        done: dietInstructionSent || status === "ready" },
+    { label: "Легка вечеря",        done: dayBeforeAck || status === "ready" },
     { label: "Виїзд",               done: status === "ready", alert: departureMsgSent && status !== "ready" },
   ];
   return { percent: Math.round((steps.filter(s => s.done).length / steps.length) * 100), steps };
@@ -612,6 +619,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const [departureMsgSent, setDepartureMsgSent] = useState(false);
   const [prepReadyAck, setPrepReadyAck] = useState(false);
   const [dayPlanAck, setDayPlanAck] = useState(false);
+  const [dayBeforeAck, setDayBeforeAck] = useState(false);
   const [drugChoice, setDrugChoice] = useState<'fortrans' | 'izyklin' | null>(
     restoredAssistantSession?.drugChoice ?? patient.drugChoice ?? null
   );
@@ -787,6 +795,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           setDepartureMsgSent(session.departure_message_sent ?? false);
           setPrepReadyAck(session.prep_ready_ack ?? false);
           setDayPlanAck(session.day_plan_ack ?? false);
+          setDayBeforeAck(session.day_before_ack ?? false);
         };
         // Immediate attempt — may not have Block 4 yet (inserted 800ms later)
         void applySession().then(() => {
@@ -839,6 +848,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
         setDepartureMsgSent(session.departure_message_sent ?? false);
         setPrepReadyAck(session.prep_ready_ack ?? false);
         setDayPlanAck(session.day_plan_ack ?? false);
+        setDayBeforeAck(session.day_before_ack ?? false);
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -874,6 +884,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setDepartureMsgSent(session.departure_message_sent ?? false);
       setPrepReadyAck(session.prep_ready_ack ?? false);
       setDayPlanAck(session.day_plan_ack ?? false);
+      setDayBeforeAck(session.day_before_ack ?? false);
     });
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -900,6 +911,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setDepartureMsgSent(session.departure_message_sent ?? false);
       setPrepReadyAck(session.prep_ready_ack ?? false);
       setDayPlanAck(session.day_plan_ack ?? false);
+      setDayBeforeAck(session.day_before_ack ?? false);
     });
     return unsub;
   }, [patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -925,6 +937,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       setDepartureMsgSent(session.departure_message_sent ?? false);
       setPrepReadyAck(session.prep_ready_ack ?? false);
       setDayPlanAck(session.day_plan_ack ?? false);
+      setDayBeforeAck(session.day_before_ack ?? false);
     };
 
     const onVisibilityChange = () => {
@@ -984,7 +997,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return computePatientStatus(patient);
   }, [patient, step2AckResult]);
 
-  const preparation = getPreparationProgress(patient, dietInstructionSent, localServices, effectiveStatus, departureMsgSent, prepReadyAck, dayPlanAck);
+  const preparation = getPreparationProgress(patient, dietInstructionSent, localServices, effectiveStatus, departureMsgSent, prepReadyAck, dayPlanAck, dayBeforeAck);
 
   useEffect(() => {
     if (!onUpdatePatient) return;
@@ -1212,7 +1225,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
       "question_resolved_yes": PATIENT_QUICK_REPLIES.questionResolved,
       "drug_choice_yes":       PATIENT_QUICK_REPLIES.drugChoiceFortrans,
       "drug_choice_no":        PATIENT_QUICK_REPLIES.drugChoiceIzyklin,
-      "diet_confirm_yes":      PATIENT_QUICK_REPLIES.dietConfirm,
+      "diet_confirm_yes":      getDietConfirmButtonText(patient),
     };
     const replyText = replyTextMap[`${context}_${answer}`] ?? answer;
 
@@ -1307,8 +1320,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
           sender: "ai" as const,
           text: AGENT_CHAT_MESSAGES.block6K,
           time: makeTimestamp(),
-          quickReply: PATIENT_QUICK_REPLIES.dietConfirm
-            ? { yes: PATIENT_QUICK_REPLIES.dietConfirm, context: "diet_confirm" as const }
+          quickReply: getDietConfirmButtonText(patient)
+            ? { yes: getDietConfirmButtonText(patient), context: "diet_confirm" as const }
             : undefined,
         }]);
         setIsTyping(false);
@@ -2151,8 +2164,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   {/* Chat */}
                   <div className="px-4 pb-4 pt-2">
                     <div className="bg-card rounded-xl shadow-[0_6px_16px_rgba(0,0,0,0.08)]">
-                      <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} isTyping={isTyping} />
-                      {!hideInput && <ChatInput onSend={handleDoctorSend} />}
+                      <ChatPane chat={chat} unanswered={unanswered} isTyping={isTyping} />
                     </div>
                   </div>
                 </div>
@@ -2301,7 +2313,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                   waitingForStep2Ack={waitingForStep2Ack}
                   step2AckResult={step2AckResult}
                 />
-                <ChatPane chat={chat} unanswered={unanswered} onQuickReply={handleQuickReply} onHasQuestion={welcomeSent && !hideInput && step2AckResult === "none" && !emulatedMessages.some(m => m.sender === "patient" && m.text === "Є запитання") ? handleHasQuestion : undefined} isTyping={isTyping} />
+                <ChatPane chat={chat} unanswered={unanswered} isTyping={isTyping} />
                 {!hideInput && <ChatInput onSend={handleDoctorSend} />}
               </ContentBlock>
             </div>
@@ -2316,6 +2328,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             value={focusField.value}
             history={focusField.history}
             patientName={patient.name}
+            patientBirthDate={patient.birthDate}
             patientDate={patient.date ? isoToDisplay(patient.date) : undefined}
             patientTime={patient.time}
             patientProcedure={patient.procedure}
@@ -2385,12 +2398,124 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   );
 }
 
+// ── Smart Epicrisis helpers ──
+
+const PROTOCOL_TEMPLATE =
+  "Скарги: \nАнамнез: \nОб'єктивно: Per rectum: тонус сфінктера збережений, болючість відсутня.\nДіагноз: \nРекомендації: ";
+
+const MAGIC_TEMPLATES: Record<string, Record<string, string>> = {
+  norma: {
+    "Скарги":        "Скарг не пред'являє.",
+    "Анамнез":       "Не обтяжений.",
+    "Об'єктивно":    "Per rectum: тонус сфінктера збережений, болючість відсутня. Патологічних утворень не виявлено. Ампула прямої кишки вільна.",
+    "Діагноз":       "Без патологій.",
+    "Рекомендації":  "Динамічний нагляд проктолога.",
+  },
+  gemoroi: {
+    "Скарги":        "Кровотеча після дефекації, дискомфорт в анальній ділянці.",
+    "Анамнез":       "Скарги впродовж тривалого часу. Самостійний прийом послаблюючих.",
+    "Об'єктивно":    "Per rectum: внутрішні гемороїдальні вузли I ступеня, без пролапсу. Тонус сфінктера збережений, болючість помірна.",
+    "Діагноз":       "Внутрішній геморой I ступеня. K64.0.",
+    "Рекомендації":  "Флеботропна терапія, місцеве лікування, безшлакова дієта з клітковиною.",
+  },
+  trishchyna: {
+    "Скарги":        "Гострий біль під час та після дефекації, незначна кровотеча.",
+    "Анамнез":       "Скарги протягом кількох тижнів. Схильність до закрепів.",
+    "Об'єктивно":    "Per rectum: хронічна анальна тріщина задньої стінки, сфінктероспазм помірний.",
+    "Діагноз":       "Хронічна анальна тріщина. K60.1.",
+    "Рекомендації":  "Нітрогліцеринова мазь, сидячі ванночки, нормалізація випорожнень.",
+  },
+};
+
+function stripProtocolHeader(text: string): string {
+  if (!text.trimStart().startsWith("Пацієнт:")) return text;
+  const lines = text.split("\n");
+  let i = 1;
+  while (i < lines.length && !lines[i].trim()) i++;
+  return lines.slice(i).join("\n");
+}
+
+function applyObjectiveTemplate(text: string, template: string): string {
+  const lines = text.split("\n");
+  const idx = lines.findIndex((l) => l.trimStart().startsWith("Об'єктивно:"));
+  if (idx >= 0) { lines[idx] = `Об'єктивно: ${template}`; return lines.join("\n"); }
+  return text + `\nОб'єктивно: ${template}`;
+}
+
+function applyMagicTemplate(text: string, sections: Record<string, string>): string {
+  let lines = text.split("\n");
+  for (const [key, val] of Object.entries(sections)) {
+    const idx = lines.findIndex((l) => l.trimStart().startsWith(`${key}:`));
+    if (idx >= 0) lines[idx] = `${key}: ${val}`;
+  }
+  return lines.join("\n");
+}
+
+function toggleClockLocalization(text: string, hour: number): string {
+  const line = `Локалізація: на ${hour} годині`;
+  const lines = text.split("\n");
+  const existing = lines.findIndex((l) => l.trim() === line);
+  if (existing >= 0) return lines.filter((_, i) => i !== existing).join("\n");
+  const diagIdx = lines.findIndex((l) => l.trimStart().startsWith("Діагноз:"));
+  if (diagIdx >= 0) { lines.splice(diagIdx, 0, line); return lines.join("\n"); }
+  return text + `\n${line}`;
+}
+
+function parseClockHours(text: string): Set<number> {
+  const s = new Set<number>();
+  for (const m of text.matchAll(/Локалізація: на (\d+) годині/g)) {
+    const h = parseInt(m[1]);
+    if (h >= 1 && h <= 12) s.add(h);
+  }
+  return s;
+}
+
+// ── Anatomic Map SVG ──
+function AnatomicMap({ selected, onToggle }: { selected: Set<number>; onToggle: (hour: number) => void }) {
+  const cx = 100, cy = 100, R = 82, r = 30;
+  return (
+    <svg viewBox="0 0 200 200" className="w-full h-full select-none" style={{ touchAction: "manipulation" }}>
+      {/* Outer anatomical ring */}
+      <circle cx={cx} cy={cy} r={90} fill="none" stroke="#f5c8c8" strokeWidth="2.5" />
+      <circle cx={cx} cy={cy} r={R} fill="#fff8f8" stroke="#e8b8b8" strokeWidth="1" />
+      {/* 12 sectors */}
+      {Array.from({ length: 12 }, (_, i) => {
+        const hour = i + 1;
+        const a0 = ((i * 30) - 90) * (Math.PI / 180);
+        const a1 = (((i + 1) * 30) - 90) * (Math.PI / 180);
+        const p = (a: number, rad: number): [number, number] => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+        const [ix0, iy0] = p(a0, r), [ox0, oy0] = p(a0, R);
+        const [ox1, oy1] = p(a1, R), [ix1, iy1] = p(a1, r);
+        const d = `M${ix0} ${iy0}L${ox0} ${oy0}A${R} ${R} 0 0 1 ${ox1} ${oy1}L${ix1} ${iy1}A${r} ${r} 0 0 0 ${ix0} ${iy0}Z`;
+        const [lx, ly] = p((a0 + a1) / 2, (R + r) / 2);
+        const sel = selected.has(hour);
+        return (
+          <g key={hour} onClick={() => onToggle(hour)} style={{ cursor: "pointer" }}>
+            <path d={d} fill={sel ? "#f39c12" : "#fce8e8"} stroke="#e4b0b0" strokeWidth="0.75"
+              style={{ transition: "fill 0.12s" }} />
+            <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
+              fontSize="9.5" fontWeight="700" fill={sel ? "#5c2d00" : "#a06060"}>{hour}</text>
+          </g>
+        );
+      })}
+      {/* Inner lumen */}
+      <circle cx={cx} cy={cy} r={r} fill="white" stroke="#e8b8b8" strokeWidth="1.5" />
+      <text x={cx} y={cy - 3} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#c09090" letterSpacing="0.5">АНАТ.</text>
+      <text x={cx} y={cy + 6} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#c09090" letterSpacing="0.5">СХЕМА</text>
+      {/* Orientation labels */}
+      <text x={cx} y={10} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#b05050" letterSpacing="0.8">ЗАДНЯ</text>
+      <text x={cx} y={196} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#b05050" letterSpacing="0.8">ПЕРЕДНЯ</text>
+    </svg>
+  );
+}
+
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, history, patientName, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, patientName, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
   field: string;
   value?: string | null;
   history?: HistoryEntry[];
   patientName: string;
+  patientBirthDate?: string;
   patientDate?: string;
   patientTime?: string;
   patientProcedure?: string;
@@ -2399,11 +2524,31 @@ function FocusOverlay({ field, value, history, patientName, patientDate, patient
   onCancel: () => void;
 }) {
   const safeValue = value ?? "";
-  const [text, setText] = useState(field === "phone" ? normalizePhoneWithPlus(safeValue) : safeValue);
+  const [text, setText] = useState(() => {
+    if (field === "phone") return normalizePhoneWithPlus(safeValue);
+    if (field === "protocol") {
+      const stripped = stripProtocolHeader(safeValue);
+      return stripped.trim() ? stripped : PROTOCOL_TEMPLATE;
+    }
+    return safeValue;
+  });
+  const [showClock, setShowClock] = useState(false);
+  const clockHours = useMemo(
+    () => (field === "protocol" ? parseClockHours(text) : new Set<number>()),
+    [field, text]
+  );
   const baseValue = safeValue.trim();
 
   useEffect(() => {
-    setText(field === "phone" ? normalizePhoneWithPlus(safeValue) : safeValue);
+    if (field === "phone") {
+      setText(normalizePhoneWithPlus(safeValue));
+    } else if (field === "protocol") {
+      const stripped = stripProtocolHeader(safeValue);
+      setText(stripped.trim() ? stripped : PROTOCOL_TEMPLATE);
+    } else {
+      setText(safeValue);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, safeValue]);
 
   const isDailyField = field === "notes" || field === "allergies" || field === "diagnosis";
@@ -2494,6 +2639,99 @@ function FocusOverlay({ field, value, history, patientName, patientDate, patient
               className="w-full text-sm leading-relaxed text-foreground bg-white border-2 border-[hsl(204,100%,80%)] rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300/50"
               autoFocus
             />
+          ) : field === "protocol" ? (
+            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+              {/* Patient info table — read-only, from visit props */}
+              <div className="shrink-0 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-2">Протокол огляду</p>
+                <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-0.5 text-xs">
+                  <span className="font-semibold text-amber-800 whitespace-nowrap">ПІБ:</span>
+                  <span className="text-foreground font-medium">{patientName}</span>
+                  {patientBirthDate && (
+                    <>
+                      <span className="font-semibold text-amber-800 whitespace-nowrap">Дата народження:</span>
+                      <span className="text-foreground">{patientBirthDate}</span>
+                    </>
+                  )}
+                  <span className="font-semibold text-amber-800 whitespace-nowrap">Дата огляду:</span>
+                  <span className="text-foreground">{patientDate || "—"}</span>
+                  {patientProcedure && (
+                    <>
+                      <span className="font-semibold text-amber-800 whitespace-nowrap">Процедура:</span>
+                      <span className="text-foreground">{patientProcedure}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Textarea + desktop anatomic map row */}
+              <div className="flex-1 min-h-0 flex flex-row gap-3 overflow-hidden">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onFocus={(e) => focusAtEnd(e.currentTarget)}
+                  spellCheck={false}
+                  autoCorrect="off"
+                  className="flex-1 w-full text-foreground bg-[hsl(204,100%,98%)] border border-sky-200 rounded-xl pl-7 pr-5 py-5 outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400/60 resize-none overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-sky-400/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-sky-500/70"
+                  style={{ minHeight: "80px", lineHeight: 1.55, fontFamily: "Arial, sans-serif", fontSize: 14, scrollbarWidth: "thin", scrollbarColor: "hsl(204 70% 60% / 0.5) transparent" }}
+                  autoFocus
+                />
+                {/* Desktop anatomic map — hidden on mobile */}
+                <div className="hidden md:flex flex-col items-center shrink-0" style={{ width: 164 }}>
+                  <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
+                  <div style={{ width: 156, height: 156 }}>
+                    <AnatomicMap
+                      selected={clockHours}
+                      onToggle={(h) => setText((prev) => toggleClockLocalization(prev, h))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Magic buttons row */}
+              <div className="shrink-0 flex flex-wrap gap-2">
+                {([
+                  { label: "Норма",    key: "norma" },
+                  { label: "Геморой",  key: "gemoroi" },
+                  { label: "Тріщина",  key: "trishchyna" },
+                ] as { label: string; key: keyof typeof MAGIC_TEMPLATES }[]).map(({ label, key }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setText((prev) => applyMagicTemplate(prev, MAGIC_TEMPLATES[key]))}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors active:scale-[0.97]"
+                    style={{ borderColor: "#f39c12", color: "#c27a00", background: "#fff8ee" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef0d0"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff8ee"; }}
+                  >
+                    {label}
+                  </button>
+                ))}
+
+                {/* Mobile anatomic map toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowClock((s) => !s)}
+                  className="md:hidden ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors active:scale-[0.97]"
+                  style={{ borderColor: "#f39c12", color: "#c27a00", background: showClock ? "#fef0d0" : "#fff8ee" }}
+                >
+                  Показати схему
+                </button>
+              </div>
+
+              {/* Mobile anatomic map — shown only when toggled */}
+              {showClock && (
+                <div className="md:hidden shrink-0 flex flex-col items-center">
+                  <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
+                  <div style={{ width: 190, height: 190 }}>
+                    <AnatomicMap
+                      selected={clockHours}
+                      onToggle={(h) => setText((prev) => toggleClockLocalization(prev, h))}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <textarea
               value={text}
