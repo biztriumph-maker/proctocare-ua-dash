@@ -2868,7 +2868,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                 { label: "Апарат:",              key: "apparatus"     as keyof ProtocolSections },
                 { label: "Дезінфікуючий засіб:", key: "disinfectant"  as keyof ProtocolSections },
               ] as Array<{ label: string; key: keyof ProtocolSections }>).map(({ label, key }) => (
-                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #ccc", paddingBottom: 3 }}>
+                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #e2e8f0", paddingBottom: 3 }}>
                   <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 13 }}>{label}</span>
                   <input
                     value={sections[key] as string}
@@ -2902,28 +2902,13 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                 rows={rows}
                 style={{
                   flex: 1, resize: "vertical", background: "transparent",
-                  border: "none", borderBottom: "1px solid #ccc", borderRadius: 0,
+                  border: "none", borderBottom: "1px solid #e2e8f0", borderRadius: 0,
                   fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
                   padding: "2px 0", outline: "none", lineHeight: 1.6, boxSizing: "border-box",
                 }}
               />
             </div>
           ))}
-
-          {/* Magic template buttons */}
-          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "#888" }}>Шаблон:</span>
-            {(["norma", "polypy", "colitis"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setSections(prev => ({ ...prev, ...MAGIC_TEMPLATES[key] }))}
-                style={{ padding: "4px 14px", fontSize: 12, border: "1px solid #c27a00", borderRadius: 6, color: "#c27a00", background: "#fff8ee", cursor: "pointer" }}
-              >
-                {key === "norma" ? "Норма" : key === "polypy" ? "Поліпи" : "Коліт"}
-              </button>
-            ))}
-          </div>
 
           {/* Doctor signature: Лікар: ________ Луцишин Юрій Андрійович */}
           <div id="protocol-sig" style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
@@ -2938,18 +2923,18 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* Green "Зберегти та Друкувати" button */}
+          {/* Single green Save button — hidden on print */}
           <div className="no-print" style={{ marginTop: 28, display: "flex", justifyContent: "center" }}>
             <button
-              onClick={() => { onSave(serializeSections(sections)); setTimeout(() => window.print(), 150); }}
+              onClick={() => onSave(serializeSections(sections))}
               style={{
-                padding: "13px 48px", fontSize: 15, fontWeight: "bold",
+                padding: "13px 56px", fontSize: 15, fontWeight: "bold",
                 background: "#43a047", color: "white", border: "none",
                 borderRadius: 10, cursor: "pointer",
                 boxShadow: "0 2px 10px rgba(67,160,71,0.4)",
               }}
             >
-              Зберегти та Друкувати
+              Зберегти
             </button>
           </div>
         </div>
