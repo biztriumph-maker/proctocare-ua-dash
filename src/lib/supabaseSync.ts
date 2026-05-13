@@ -655,6 +655,26 @@ export function extractStoragePathFromUrl(url: string): string | null {
   return decodeURIComponent(url.slice(idx + bucketSegment.length).split('?')[0]);
 }
 
+// Find the latest PDF file stored in a patient's storage folder and return a fresh signed URL.
+// Used as a fallback when the FileItem URL is missing (legacy records without stored file reference).
+export async function findLatestPdfInStorage(visitId: string): Promise<string | null> {
+  if (!USE_SUPABASE) return null;
+  try {
+    const { data, error } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .list(visitId, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+    if (error || !data?.length) return null;
+    const pdfFile = data.find(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (!pdfFile) return null;
+    const { data: signedData } = await supabase.storage
+      .from(PATIENT_FILES_BUCKET)
+      .createSignedUrl(`${visitId}/${pdfFile.name}`, 900);
+    return signedData?.signedUrl ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Generate a fresh signed URL from an existing Supabase storage URL (handles expiry and public→private migration)
 export async function refreshStorageSignedUrl(url: string): Promise<string | null> {
   if (!USE_SUPABASE) return null;
@@ -702,6 +722,7 @@ export type AssistantSessionRow = {
   departure_message_sent: boolean;
   prep_ready_ack: boolean;
   day_plan_ack: boolean;
+  day_before_ack: boolean;
   saved_at?: string;
 };
 

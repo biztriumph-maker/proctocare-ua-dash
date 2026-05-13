@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
-import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl, refreshStorageSignedUrl, logAudit } from "@/lib/supabaseSync";
+import { uploadFileToSupabaseStorage, deleteFileFromSupabaseStorage, resolveVisitFilePublicUrl, refreshStorageSignedUrl, findLatestPdfInStorage, logAudit } from "@/lib/supabaseSync";
 import { toast } from "sonner";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -137,10 +137,11 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
       <FileTypeIcon file={file} />
-      <div className="min-w-0 flex-1">
+      {/* File name is clickable — opens/previews the file */}
+      <button onClick={onView} className="min-w-0 flex-1 text-left hover:opacity-70 transition-opacity cursor-pointer">
         <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
         <p className="text-[10px] text-muted-foreground">{subtitle}</p>
-      </div>
+      </button>
       <div className="flex items-center gap-1 shrink-0">
         <button onClick={onView}
           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
@@ -1142,12 +1143,26 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
                   {dateProtocol && !dateFiles.some(f =>
                     f.mimeType?.includes("pdf") || f.name?.toLowerCase().endsWith(".pdf")
                   ) && (
-                    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2">
-                      <FileText size={13} className="text-muted-foreground shrink-0" />
-                      <span className="text-xs font-medium text-muted-foreground">
+                    <button
+                      onClick={async () => {
+                        if (!visitId) {
+                          toast.info("Відкрийте протокол і натисніть «Зберегти та сформувати PDF»");
+                          return;
+                        }
+                        const url = await findLatestPdfInStorage(visitId);
+                        if (url) {
+                          window.open(url, "_blank", "noopener,noreferrer");
+                        } else {
+                          toast.info("PDF ще не згенеровано. Відкрийте протокол та натисніть «Зберегти та сформувати PDF»");
+                        }
+                      }}
+                      className="w-full flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 hover:bg-accent px-2.5 py-2 transition-colors cursor-pointer text-left"
+                    >
+                      <FileText size={13} className="text-primary shrink-0" />
+                      <span className="text-xs font-medium text-primary truncate">
                         Протокол обстеження від {date}
                       </span>
-                    </div>
+                    </button>
                   )}
                   {dateFiles.map(file => (
                     <FileRow key={file.id} file={file} readOnly
