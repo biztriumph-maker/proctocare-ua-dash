@@ -2723,23 +2723,33 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     if (field !== "protocol") return;
     const style = document.createElement("style");
     style.id = "protocol-print-style";
-    style.textContent = `@media print {
-      body > * { display: none !important; }
-      #protocol-print-page {
-        display: block !important; position: fixed !important; inset: 0 !important;
-        padding: 14mm 16mm !important; font-family: Arial, sans-serif !important;
-        font-size: 12pt !important; color: #000 !important; background: #fff !important;
-        overflow: visible !important; border: none !important; box-shadow: none !important;
+    style.textContent = `
+      @media (max-width: 767px) {
+        #protocol-two-col { flex-direction: column !important; }
+        #protocol-colon-col { width: 100% !important; max-width: 320px !important; margin: 0 auto !important; }
+        #protocol-print-page { padding: 20px 16px 72px !important; }
+        #protocol-sig { justify-content: center !important; }
       }
-      #protocol-print-page input, #protocol-print-page textarea {
-        border: none !important; outline: none !important; background: transparent !important;
-        padding: 0 !important; resize: none !important;
-        font-family: Arial, sans-serif !important; font-size: 12pt !important; color: #000 !important;
+      @media print {
+        body > * { display: none !important; }
+        #protocol-print-page {
+          display: block !important; position: fixed !important; inset: 0 !important;
+          padding: 14mm 16mm !important; font-family: Arial, sans-serif !important;
+          font-size: 12pt !important; color: #000 !important; background: #fff !important;
+          overflow: visible !important; border: none !important; box-shadow: none !important;
+        }
+        #protocol-two-col { flex-direction: row !important; }
+        #protocol-colon-col { width: 180px !important; flex-shrink: 0 !important; }
+        #protocol-print-page input, #protocol-print-page textarea {
+          border: none !important; outline: none !important; background: transparent !important;
+          padding: 0 !important; resize: none !important;
+          font-family: Arial, sans-serif !important; font-size: 12pt !important; color: #000 !important;
+        }
+        #protocol-print-page img { max-width: 100% !important; }
+        .colon-marker { color: red !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .no-print { display: none !important; }
       }
-      #protocol-print-page img { max-width: 100% !important; }
-      .colon-marker { color: red !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      .no-print { display: none !important; }
-    }`;
+    `;
     document.head.appendChild(style);
     return () => { document.getElementById("protocol-print-style")?.remove(); };
   }, [field]);
@@ -2834,9 +2844,10 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* 2-column: colon.jpg with click-markers (left) + patient fields (right) */}
-          <div style={{ display: "flex", gap: 20, marginBottom: 16, alignItems: "flex-start" }}>
-            <div style={{ width: 220, flexShrink: 0 }}>
+          {/* 2-column desktop / 1-column mobile */}
+          <div id="protocol-two-col" style={{ display: "flex", gap: 20, marginBottom: 16, alignItems: "flex-start" }}>
+            {/* colon.jpg — adaptive width */}
+            <div id="protocol-colon-col" style={{ width: 220, flexShrink: 0 }}>
               <div style={{ fontSize: 11, fontWeight: "bold", textAlign: "center", color: "#555", marginBottom: 4 }}>
                 Схема товстої кишки
               </div>
@@ -2847,6 +2858,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               />
             </div>
 
+            {/* Patient fields — paper-line style (border-bottom only) */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>
               {([
                 { label: "П.І.Б.:",             key: "fullName"      as keyof ProtocolSections },
@@ -2856,14 +2868,15 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                 { label: "Апарат:",              key: "apparatus"     as keyof ProtocolSections },
                 { label: "Дезінфікуючий засіб:", key: "disinfectant"  as keyof ProtocolSections },
               ] as Array<{ label: string; key: keyof ProtocolSections }>).map(({ label, key }) => (
-                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #ccc", paddingBottom: 4 }}>
+                <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: "1px solid #ccc", paddingBottom: 3 }}>
                   <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 13 }}>{label}</span>
                   <input
                     value={sections[key] as string}
                     onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
                     spellCheck={false}
                     style={{
-                      flex: 1, background: "transparent", border: "none", outline: "none",
+                      flex: 1, background: "transparent",
+                      border: "none", outline: "none",
                       fontSize: 13, fontFamily: "Arial, sans-serif", color: "#000",
                     }}
                   />
@@ -2872,7 +2885,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* Inline bold label + textarea sections */}
+          {/* Text sections — inline bold label + borderBottom textarea */}
           {([
             { label: "Опис:",          key: "description"     as keyof ProtocolSections, rows: 5 },
             { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 2 },
@@ -2912,23 +2925,31 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             ))}
           </div>
 
-          {/* Doctor signature — bold, right-aligned */}
-          <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
-            <span style={{ fontWeight: "bold", fontSize: 13 }}>Лікар: {PROTOCOL_DOCTOR}</span>
+          {/* Doctor signature: Лікар: ________ Луцишин Юрій Андрійович */}
+          <div id="protocol-sig" style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontWeight: "bold", fontSize: 13 }}>Лікар:</span>
+              <span style={{
+                display: "inline-block", width: 88,
+                borderBottom: "1px solid #000",
+                marginLeft: 4, marginRight: 6,
+              }}>&nbsp;</span>
+              <span style={{ fontWeight: "bold", fontSize: 13 }}>{PROTOCOL_DOCTOR}</span>
+            </div>
           </div>
 
-          {/* Single green Save button */}
+          {/* Green "Зберегти та Друкувати" button */}
           <div className="no-print" style={{ marginTop: 28, display: "flex", justifyContent: "center" }}>
             <button
-              onClick={() => onSave(serializeSections(sections))}
+              onClick={() => { onSave(serializeSections(sections)); setTimeout(() => window.print(), 150); }}
               style={{
-                padding: "12px 56px", fontSize: 15, fontWeight: "bold",
+                padding: "13px 48px", fontSize: 15, fontWeight: "bold",
                 background: "#43a047", color: "white", border: "none",
                 borderRadius: 10, cursor: "pointer",
                 boxShadow: "0 2px 10px rgba(67,160,71,0.4)",
               }}
             >
-              Зберегти
+              Зберегти та Друкувати
             </button>
           </div>
         </div>
