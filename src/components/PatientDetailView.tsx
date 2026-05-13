@@ -540,7 +540,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     loading: boolean;
   }>({ telegramId: null, hasToken: false, deepLink: null, loading: false });
   const mobileTabScrollRef = useRef<HTMLDivElement>(null);
-  const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[] } | null>(null);
+  const [focusField, setFocusField] = useState<{ field: string; value: string; history?: HistoryEntry[]; wasCopied?: boolean } | null>(null);
   const [deletePhase, setDeletePhase] = useState<"idle" | "confirm" | "countdown">("idle");
   const [deleteCountdown, setDeleteCountdown] = useState(30);
   const deleteTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -562,10 +562,6 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
   const archivedVisitOutcomeByDate = ctx.archivedVisitOutcomeByDate;
   const currentVisitOutcome = ctx.currentVisitOutcome;
 
-  useEffect(() => {
-    // Closed visits should not keep focus overlays mounted in DOM.
-    if (currentVisitOutcome && focusField) setFocusField(null);
-  }, [currentVisitOutcome, focusField]);
   
   const isCompletedPastVisit = ctx.isCompletedPastVisit;
   const isNoShowPast = ctx.isNoShowPast;
@@ -1609,8 +1605,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
     return [...current, { value: trimmed, timestamp: displayDate, date: todayIso }];
   };
 
-  const handleFocusOpen = (field: string, value?: string | null, history?: HistoryEntry[]) => {
-    setFocusField({ field, value: value ?? "", history });
+  const handleFocusOpen = (field: string, value?: string | null, history?: HistoryEntry[], wasCopied?: boolean) => {
+    setFocusField({ field, value: value ?? "", history, wasCopied });
   };
 
   const handleGenerateTelegramLink = async () => {
@@ -2077,6 +2073,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                         lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
                         setFields((prev) => ({ ...prev, protocol: value }));
                         onUpdatePatient?.({ protocol: value });
+                        handleFocusOpen("protocol", value, undefined, true);
                       }}
                       visitId={patient.id}
                       relatedFiles={relatedCompletedFiles}
@@ -2223,6 +2220,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
                     lastFocusSaveMeta.current = { field: "protocol", at: Date.now() };
                     setFields((prev) => ({ ...prev, protocol: value }));
                     onUpdatePatient?.({ protocol: value });
+                    handleFocusOpen("protocol", value, undefined, true);
                   }}
                   visitId={patient.id}
                   relatedFiles={relatedCompletedFiles}
@@ -2330,6 +2328,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             field={focusField.field}
             value={focusField.value}
             history={focusField.history}
+            wasCopied={focusField.wasCopied}
             patientName={patient.name}
             patientPatronymic={patient.patronymic}
             patientBirthDate={patient.birthDate}
@@ -2656,10 +2655,11 @@ function ColonImageMap({ markers, onAddMarker, onClearMarkers }: {
 }
 
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, history, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, patientId, onPdfSaved, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, wasCopied, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, patientId, onPdfSaved, onSave, onCancel }: {
   field: string;
   value?: string | null;
   history?: HistoryEntry[];
+  wasCopied?: boolean;
   patientName: string;
   patientPatronymic?: string;
   patientBirthDate?: string;
@@ -2677,23 +2677,43 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   const initSections = (): ProtocolSections => {
     const parsed = safeValue.trim() ? parseTextToSections(safeValue) : {};
     const fullNameDefault = [patientName, patientPatronymic].filter(Boolean).join(" ");
-    // Current-visit metadata (name, age, date) always overrides copied/saved values.
-    // Medical content (description, conclusion, recommendations, markers) comes from parsed text.
     const currentAge = patientBirthDate ? calcAge(patientBirthDate).ageStr : "";
+
+    if (wasCopied) {
+      // Copy mode: paste only medical content; date/procedure from current visit (not old archive)
+      return {
+        fullName:        fullNameDefault || "",
+        age:             currentAge || "",
+        procedureType:   patientProcedure || "",
+        examDate:        patientDate || "",
+        apparatus:       PROTOCOL_APPARATUS,
+        disinfectant:    PROTOCOL_DISINFECTANT,
+        description:     parsed.description     ?? "",
+        conclusion:      parsed.conclusion      ?? "",
+        recommendations: parsed.recommendations ?? "",
+        colonSegments:   "",
+        hospitalName:    parsed.hospitalName    ?? PROTOCOL_HOSPITAL,
+        hospitalAddress: parsed.hospitalAddress ?? PROTOCOL_ADDRESS,
+        colonMarkers:    parsed.colonMarkers    ?? "",
+      };
+    }
+
+    // Only restore saved date/procedure when editing an existing protocol, not on fresh forms
+    const hasExistingData = !!safeValue.trim();
     return {
-      fullName:        fullNameDefault      || parsed.fullName        || "",
-      age:             currentAge           || parsed.age             || "",
-      procedureType:   parsed.procedureType ?? "Колоноскопія",
-      examDate:        (patientDate || "")  || parsed.examDate        || "",
-      apparatus:       parsed.apparatus     ?? PROTOCOL_APPARATUS,
-      disinfectant:    parsed.disinfectant  ?? PROTOCOL_DISINFECTANT,
-      description:     parsed.description  ?? "",
-      conclusion:      parsed.conclusion   ?? "",
-      recommendations: parsed.recommendations ?? "",
-      colonSegments:   parsed.colonSegments ?? "",
-      hospitalName:    parsed.hospitalName  ?? PROTOCOL_HOSPITAL,
-      hospitalAddress: parsed.hospitalAddress ?? PROTOCOL_ADDRESS,
-      colonMarkers:    parsed.colonMarkers  ?? "",
+      fullName:        fullNameDefault                          || parsed.fullName        || "",
+      age:             currentAge                               || parsed.age             || "",
+      procedureType:   patientProcedure                        || (hasExistingData ? parsed.procedureType : "") || "",
+      examDate:        patientDate                             || (hasExistingData ? parsed.examDate : "")      || "",
+      apparatus:       parsed.apparatus                        ?? PROTOCOL_APPARATUS,
+      disinfectant:    parsed.disinfectant                     ?? PROTOCOL_DISINFECTANT,
+      description:     parsed.description                      ?? "",
+      conclusion:      parsed.conclusion                       ?? "",
+      recommendations: parsed.recommendations                  ?? "",
+      colonSegments:   parsed.colonSegments                    ?? "",
+      hospitalName:    parsed.hospitalName                     ?? PROTOCOL_HOSPITAL,
+      hospitalAddress: parsed.hospitalAddress                  ?? PROTOCOL_ADDRESS,
+      colonMarkers:    parsed.colonMarkers                     ?? "",
     };
   };
 
@@ -2730,6 +2750,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, safeValue]);
 
+
   useEffect(() => {
     if (field !== "protocol") return;
     const style = document.createElement("style");
@@ -2740,6 +2761,13 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
         background: #f8fafc !important;
         outline: none !important;
         border-radius: 3px !important;
+      }
+      #protocol-print-page input:-webkit-autofill,
+      #protocol-print-page input:-webkit-autofill:hover,
+      #protocol-print-page input:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0px 1000px white inset !important;
+        -webkit-text-fill-color: #111 !important;
+        transition: background-color 5000s ease-in-out 0s;
       }
       @media (max-width: 767px) {
         #protocol-print-page { width: 100% !important; padding: 24px 16px 80px !important; box-sizing: border-box !important; }

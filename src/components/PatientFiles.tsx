@@ -130,14 +130,13 @@ function FileTypeIcon({ file }: { file: FileItem }) {
 }
 
 // ── Shared file row ──
-function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelete: () => void; onView: () => void; readOnly?: boolean }) {
+function FileRow({ file, onDelete, onView, onCopy, readOnly }: { file: FileItem; onDelete: () => void; onView: () => void; onCopy?: () => void; readOnly?: boolean }) {
   const subtitle = file.kind === 'video-link'
     ? `Відео · ${file.date}`
     : `${file.type === "doctor" ? "Лікар" : "Пацієнт"} · ${file.date}`;
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-background border border-border/60">
       <FileTypeIcon file={file} />
-      {/* File name is clickable — opens/previews the file */}
       <button onClick={onView} className="min-w-0 flex-1 text-left hover:opacity-70 transition-opacity cursor-pointer">
         <p className="text-xs font-bold text-foreground truncate">{file.name}</p>
         <p className="text-[10px] text-muted-foreground">{subtitle}</p>
@@ -147,12 +146,43 @@ function FileRow({ file, onDelete, onView, readOnly }: { file: FileItem; onDelet
           className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all" title="Переглянути">
           <Eye size={12} className="text-muted-foreground" />
         </button>
+        {onCopy && (
+          <button onClick={onCopy}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-sky-50 text-sky-600 active:scale-[0.9] transition-all" title="Скопіювати висновок">
+            <ClipboardList size={12} />
+          </button>
+        )}
         {!readOnly && (
           <button onClick={onDelete}
             className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-destructive/70 hover:text-destructive active:scale-[0.9] transition-all" title="Видалити">
             <Trash2 size={12} />
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── PDF iframe modal (in-app viewer) ──
+function PdfIframeModal({ name, url, onClose }: { name: string; url: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-3 animate-fade-in">
+      <div className="bg-card w-full max-w-4xl h-[92vh] rounded-xl shadow-elevated overflow-hidden border border-border/60 flex flex-col">
+        <div className="h-12 px-3 border-b border-border/60 flex items-center gap-2 shrink-0">
+          <FileText size={15} className="text-red-500 shrink-0" />
+          <p className="text-sm font-bold text-foreground truncate pr-2 flex-1">{name}</p>
+          <button onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors" title="Закрити">
+            <X size={16} className="text-muted-foreground" />
+          </button>
+        </div>
+        <iframe src={url} className="flex-1 w-full border-0" title={name} allow="fullscreen" />
       </div>
     </div>
   );
@@ -467,6 +497,7 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
   const [showVideoInput, setShowVideoInput] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoName, setVideoName] = useState('');
+  const [pdfModal, setPdfModal] = useState<{ name: string; url: string } | null>(null);
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
@@ -630,6 +661,52 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
   // Include all files NOT belonging to a definitively closed past visit,
   // regardless of whether their date matches activeDate (handles rescheduled visits).
   const activeFiles = currentVisitOutcome ? [] : files.filter(f => !pastVisitDateSet.has(f.date || activeDate));
+
+  const handleViewPdfInModal = async (file: FileItem) => {
+    try {
+      let viewUrl: string | undefined;
+      if (file.url?.includes('/storage/v1/object/')) {
+        viewUrl = (await refreshStorageSignedUrl(file.url)) ?? undefined;
+      }
+      if (!viewUrl && visitId) {
+        viewUrl = (await resolveVisitFilePublicUrl(visitId, file.name)) ?? undefined;
+      }
+      if (!viewUrl) viewUrl = file.url;
+      if (!viewUrl && file.storageKey) {
+        const blob = await getBlobFromStorage(file.storageKey).catch(() => null);
+        if (blob) viewUrl = URL.createObjectURL(blob);
+      }
+      if (viewUrl) {
+        setPdfModal({ name: file.name, url: viewUrl });
+      } else {
+        toast.error('PDF недоступний. Спробуйте ще раз.', { duration: 5000 });
+      }
+    } catch {
+      toast.error('Не вдалося відкрити PDF');
+    }
+  };
+
+  const handleViewCompactProtocol = async (date: string) => {
+    if (!visitId) {
+      toast.info("Відкрийте протокол і натисніть «Зберегти та сформувати PDF»");
+      return;
+    }
+    const url = await findLatestPdfInStorage(visitId);
+    if (url) {
+      setPdfModal({ name: `Протокол від ${date}`, url });
+    } else {
+      toast.info("PDF ще не згенеровано. Відкрийте протокол та натисніть «Зберегти та сформувати PDF»");
+    }
+  };
+
+  const handleCopyProtocol = (value: string, date: string) => {
+    if (activeProtocolText.trim()) {
+      setConfirmCopyProtocol({ value, date });
+    } else {
+      onProtocolPrefill(value);
+      toast.success(`Висновок від ${date} скопійовано`);
+    }
+  };
 
   const getFileExtension = (name: string): string => {
     const parts = name.toLowerCase().trim().split(".");
@@ -864,6 +941,7 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
 
   return (
     <div className="pb-4 relative">
+      {pdfModal && <PdfIframeModal name={pdfModal.name} url={pdfModal.url} onClose={() => setPdfModal(null)} />}
       {preview?.kind === "pdf" && <PdfPreviewModal file={preview} onClose={() => setPreview(null)} />}
       {preview?.kind === "image" && <ImagePreviewModal file={preview} onClose={() => setPreview(null)} />}
       {preview?.kind === "docx" && <DocxPreviewModal file={preview} onClose={() => setPreview(null)} />}
@@ -950,55 +1028,52 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
 
           {/* ВИСНОВОК ЛІКАРЯ — soft highlighted border, editable */}
           <div className="rounded-lg border-2 border-[hsl(204,100%,80%)] bg-[hsl(204,100%,97%)] p-3 space-y-2 mb-2.5 relative">
-            <div className="flex items-center justify-between">
-              <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <FileText size={12} className="text-primary" />
-                Висновок лікаря
-              </h4>
-              <div className="flex items-center gap-1">
-                {/* Copy button — visible when there is archived data AND doctor hasn't typed manually yet */}
-                {latestArchivedProtocol && !activeProtocolText.trim() && (
-                  <button
-                    onClick={() => {
-                      if (activeProtocolText.trim()) {
-                        // Field has content → show confirmation dialog
-                        setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date });
-                      } else {
-                        // Field is empty → copy immediately, no confirmation
-                        onProtocolPrefill(latestArchivedProtocol.value);
-                        toast.success(`Висновок від ${latestArchivedProtocol.date} скопійовано`);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-1.5 py-0.5 transition-colors shrink-0"
-                    title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
-                  >
-                    <ClipboardList size={11} className="shrink-0" />
-                    <span className="hidden sm:inline">Скопіювати</span>
-                    <span>({latestArchivedProtocol.date})</span>
-                  </button>
-                )}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <FileText size={12} className="text-primary" />
+                  Висновок лікаря
+                </h4>
                 <button onClick={() => onFocusEdit("protocol", activeProtocolText)}
-                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all">
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all shrink-0">
                   <Pencil size={11} className="text-muted-foreground" />
                 </button>
               </div>
+              {/* Copy button — always visible when there is archived data AND doctor hasn't typed manually yet */}
+              {latestArchivedProtocol && !activeProtocolText.trim() && (
+                <button
+                  onClick={() => {
+                    if (activeProtocolText.trim()) {
+                      setConfirmCopyProtocol({ value: latestArchivedProtocol.value, date: latestArchivedProtocol.date });
+                    } else {
+                      onProtocolPrefill(latestArchivedProtocol.value);
+                      toast.success(`Висновок від ${latestArchivedProtocol.date} скопійовано`);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-1 text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-md px-1.5 py-1 mb-1 transition-colors"
+                  title={`Скопіювати висновок від ${latestArchivedProtocol.date}`}
+                >
+                  <ClipboardList size={11} className="shrink-0" />
+                  Скопіювати ({latestArchivedProtocol.date})
+                </button>
+              )}
             </div>
             {activeProtocolText ? (
               <button
                 onClick={() => onFocusEdit("protocol", activeProtocolText)}
-                className="w-full text-left text-sm leading-relaxed text-foreground line-clamp-3 hover:opacity-75 transition-opacity cursor-pointer"
+                className="flex items-center gap-2 w-full rounded-lg bg-primary/5 border border-primary/15 px-2.5 py-2 hover:bg-primary/10 transition-colors text-left"
               >
-                {activeProtocolText}
+                <FileText size={13} className="text-primary shrink-0" />
+                <span className="text-xs font-semibold text-primary flex-1">Протокол заповнено</span>
+                <Pencil size={11} className="text-primary/50 shrink-0" />
               </button>
             ) : (
-              <div className="space-y-2">
-                <button
-                  onClick={() => onFocusEdit("protocol", "")}
-                  className="text-sm leading-relaxed text-muted-foreground/40 italic text-left w-full hover:text-muted-foreground/60 transition-colors"
-                >
-                  Натисніть, щоб заповнити висновок...
-                </button>
-              </div>
+              <button
+                onClick={() => onFocusEdit("protocol", "")}
+                className="text-sm leading-relaxed text-muted-foreground/40 italic text-left w-full hover:text-muted-foreground/60 transition-colors"
+              >
+                Натисніть, щоб заповнити висновок...
+              </button>
             )}
           </div>
 
@@ -1123,15 +1198,17 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
                     </div>
                   )}
                   {dateOutcome === "no-show" && !isFrozen && (
-                    <div className="rounded-lg p-2.5 border border-status-risk/35 bg-status-risk-bg">
-                      <p className="text-[10px] font-bold text-status-risk uppercase tracking-wide mb-1">Статус</p>
-                      <p className="text-xs font-semibold text-status-risk">Не з'явився на прийом</p>
+                    <div className="rounded-lg px-2.5 py-1.5 border border-status-risk/35 bg-status-risk-bg flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-status-risk" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        Не з'явився на прийом
+                      </span>
                     </div>
                   )}
                   {dateOutcome === "completed" && !isFrozen && (
-                    <div className="rounded-lg p-2.5 border border-emerald-200 bg-emerald-50">
-                      <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide mb-1">Статус</p>
-                      <p className="text-xs font-semibold text-emerald-800">Процедуру завершено</p>
+                    <div className="rounded-lg px-2.5 py-1.5 border border-emerald-200 bg-emerald-50 flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-emerald-800" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        ✓ Процедуру завершено
+                      </span>
                     </div>
                   )}
                   {dateProcedure && (
@@ -1143,32 +1220,29 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
                   {dateProtocol && !dateFiles.some(f =>
                     f.mimeType?.includes("pdf") || f.name?.toLowerCase().endsWith(".pdf")
                   ) && (
-                    <button
-                      onClick={async () => {
-                        if (!visitId) {
-                          toast.info("Відкрийте протокол і натисніть «Зберегти та сформувати PDF»");
-                          return;
-                        }
-                        const url = await findLatestPdfInStorage(visitId);
-                        if (url) {
-                          window.open(url, "_blank", "noopener,noreferrer");
-                        } else {
-                          toast.info("PDF ще не згенеровано. Відкрийте протокол та натисніть «Зберегти та сформувати PDF»");
-                        }
-                      }}
-                      className="w-full flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 hover:bg-accent px-2.5 py-2 transition-colors cursor-pointer text-left"
-                    >
+                    <div className="flex items-center gap-1 rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2">
                       <FileText size={13} className="text-primary shrink-0" />
-                      <span className="text-xs font-medium text-primary truncate">
-                        Протокол обстеження від {date}
+                      <span className="text-xs font-medium text-primary truncate flex-1 mx-1">
+                        Протокол від {date}
                       </span>
-                    </button>
+                      <button
+                        onClick={() => handleViewCompactProtocol(date)}
+                        className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-accent active:scale-[0.9] transition-all shrink-0"
+                        title="Переглянути PDF"
+                      >
+                        <Eye size={12} className="text-muted-foreground" />
+                      </button>
+                    </div>
                   )}
-                  {dateFiles.map(file => (
-                    <FileRow key={file.id} file={file} readOnly
-                      onDelete={() => setConfirmDeleteFile(file.id)}
-                      onView={() => handleViewFile(file)} />
-                  ))}
+                  {dateFiles.map(file => {
+                    const isPdf = (file.mimeType || '').includes('pdf') || file.name?.toLowerCase().endsWith('.pdf');
+                    return (
+                      <FileRow key={file.id} file={file} readOnly
+                        onDelete={() => setConfirmDeleteFile(file.id)}
+                        onView={() => isPdf ? handleViewPdfInModal(file) : handleViewFile(file)}
+                      />
+                    );
+                  })}
                   {!dateProtocol && dateFiles.length === 0 && !isFrozen && !dateOutcome && (
                     <p className="text-[11px] text-muted-foreground/40 italic">Немає записів</p>
                   )}
