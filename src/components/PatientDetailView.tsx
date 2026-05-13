@@ -2969,25 +2969,52 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   const element = document.getElementById("protocol-print-page");
                   if (!element) { toast.error("Не знайдено бланк для генерації PDF"); return; }
                   const canvas = await html2canvas(element, {
-                    scale: 2,
+                    scale: 3,
                     useCORS: true,
+                    allowTaint: true,
                     backgroundColor: "#ffffff",
                     logging: false,
-                    onclone: (doc) => {
-                      doc.querySelectorAll<HTMLElement>(".no-print").forEach(el => { el.style.display = "none"; });
+                    imageTimeout: 15000,
+                    onclone: (clonedDoc, clonedEl) => {
+                      // Hide UI buttons
+                      clonedEl.querySelectorAll<HTMLElement>(".no-print").forEach(el => {
+                        el.style.display = "none";
+                      });
+
+                      // Remove borders/outlines from form fields for clean PDF
+                      const s = clonedDoc.createElement("style");
+                      s.textContent = `
+                        input, textarea {
+                          border: none !important;
+                          outline: none !important;
+                          box-shadow: none !important;
+                          background: transparent !important;
+                        }
+                      `;
+                      clonedDoc.head.appendChild(s);
+
+                      // Copy current .value from React-managed inputs to cloned DOM
+                      // (html2canvas reads DOM .value which may differ from React state)
+                      const origInputs = Array.from(element.querySelectorAll<HTMLInputElement>("input"));
+                      const cloneInputs = Array.from(clonedEl.querySelectorAll<HTMLInputElement>("input"));
+                      origInputs.forEach((orig, i) => { if (cloneInputs[i]) cloneInputs[i].value = orig.value; });
+
+                      const origTas = Array.from(element.querySelectorAll<HTMLTextAreaElement>("textarea"));
+                      const cloneTas = Array.from(clonedEl.querySelectorAll<HTMLTextAreaElement>("textarea"));
+                      origTas.forEach((orig, i) => { if (cloneTas[i]) cloneTas[i].value = orig.value; });
                     },
                   });
 
                   // 2. Persist text data to DB (closes overlay — canvas already captured)
                   onSave(serializeSections(sections));
 
-                  // 3. Build A4 PDF (multi-page if content is tall)
+                  // 3. Build A4 PDF — fit canvas width to A4, multi-page if tall
                   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
                   const pageW = pdf.internal.pageSize.getWidth();
                   const pageH = pdf.internal.pageSize.getHeight();
                   const imgW = pageW;
                   const imgH = (canvas.height * pageW) / canvas.width;
-                  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                  const imgData = canvas.toDataURL("image/jpeg", 0.95);
                   pdf.addImage(imgData, "JPEG", 0, 0, imgW, imgH);
                   let remaining = imgH - pageH;
                   let pageOffset = pageH;
@@ -2998,10 +3025,10 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                     remaining -= pageH;
                   }
 
-                  // 4. Build filename
+                  // 4. Build filename: Протокол_[Прізвище]_від_[Дата].pdf
                   const lastName = sections.fullName.trim().split(/\s+/)[0] || "Пацієнт";
                   const dateStr = (sections.examDate || new Date().toLocaleDateString("uk-UA")).replace(/\./g, "-");
-                  const fileName = `Протокол_${lastName}_${dateStr}.pdf`;
+                  const fileName = `Протокол_${lastName}_від_${dateStr}.pdf`;
                   const pdfBlob = pdf.output("blob");
 
                   // 5. Upload to Supabase Storage + register in patient's files
