@@ -32,6 +32,8 @@ import { PatientAllergies } from "./PatientAllergies";
 import { PatientFiles, type FileItem } from "./PatientFiles";
 import { PatientProfile } from "./PatientProfile";
 import { usePatientContext } from "@/hooks/usePatientContext";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   type ChatMessage,
   ChatPane,
@@ -2969,7 +2971,6 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   // 2. Capture visible A4 canvas (no-print elements excluded via onclone)
                   const element = document.getElementById("protocol-print-page");
                   if (!element) return;
-                  const { default: html2canvas } = await import("html2canvas");
                   const canvas = await html2canvas(element, {
                     scale: 2,
                     useCORS: true,
@@ -2981,7 +2982,6 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   });
 
                   // 3. Build A4 PDF (multi-page if content is tall)
-                  const { jsPDF } = await import("jspdf");
                   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
                   const pageW = pdf.internal.pageSize.getWidth();
                   const pageH = pdf.internal.pageSize.getHeight();
