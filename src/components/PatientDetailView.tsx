@@ -2759,6 +2759,21 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     return () => { document.getElementById("protocol-print-style")?.remove(); };
   }, [field]);
 
+  // Auto-resize all protocol textareas whenever content changes
+  useEffect(() => {
+    if (field !== "protocol") return;
+    const resize = () => {
+      document.querySelectorAll<HTMLTextAreaElement>("#protocol-print-page textarea").forEach(el => {
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+      });
+    };
+    resize();
+    // small delay for first render when value comes from DB
+    const t = setTimeout(resize, 60);
+    return () => clearTimeout(t);
+  }, [field, sections.description, sections.conclusion, sections.recommendations]);
+
   const isDailyField = field === "notes" || field === "allergies" || field === "diagnosis";
   const todayIso = getTodayIsoKyiv();
   const visibleHistory = (history || []).filter((entry) => {
@@ -2889,26 +2904,32 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* Long text fields — bold inline label, no borders, no resize handle */}
+          {/* Long text fields — auto-resize, no scroll, no resize handle */}
           {([
-            { label: "Опис:",          key: "description"     as keyof ProtocolSections, rows: 5 },
-            { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 3 },
-            { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 3 },
-          ] as Array<{ label: string; key: keyof ProtocolSections; rows: number }>).map(({ label, key, rows }) => (
+            { label: "Опис:",          key: "description"     as keyof ProtocolSections },
+            { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections },
+            { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections },
+          ] as Array<{ label: string; key: keyof ProtocolSections }>).map(({ label, key }) => (
             <div key={key} style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 7 }}>
               <span style={{ fontWeight: "bold", fontSize: 13, whiteSpace: "nowrap", paddingTop: 1, flexShrink: 0, color: "#111" }}>
                 {label}
               </span>
               <textarea
                 value={sections[key] as string}
-                onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
+                onChange={(e) => {
+                  setSections(prev => ({ ...prev, [key]: e.target.value }));
+                  const el = e.target;
+                  el.style.height = "auto";
+                  el.style.height = `${el.scrollHeight}px`;
+                }}
                 spellCheck={false}
-                rows={rows}
+                rows={1}
                 style={{
                   flex: 1, resize: "none", background: "transparent",
-                  border: "none", borderRadius: 0,
+                  border: "none", borderRadius: 0, overflow: "hidden",
                   fontSize: 13, fontFamily: "Arial, sans-serif", color: "#111",
-                  padding: "0", outline: "none", lineHeight: 1.75, boxSizing: "border-box",
+                  padding: "0", outline: "none", lineHeight: 1.75,
+                  boxSizing: "border-box", minHeight: "1.75em",
                 }}
               />
             </div>
@@ -2929,18 +2950,28 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* One green Save button — hidden on print */}
+          {/* Save + PDF — hidden on print */}
           <div className="no-print" style={{ marginTop: 40, display: "flex", justifyContent: "center" }}>
             <button
-              onClick={() => onSave(serializeSections(sections))}
+              onClick={() => {
+                onSave(serializeSections(sections));
+                const lastName = (sections.fullName.trim().split(/\s+/)[0]) || "Пацієнт";
+                const dateStr = (sections.examDate || new Date().toLocaleDateString("uk-UA")).replace(/\./g, "-");
+                const prevTitle = document.title;
+                document.title = `Протокол_${lastName}_${dateStr}`;
+                setTimeout(() => {
+                  window.print();
+                  setTimeout(() => { document.title = prevTitle; }, 2500);
+                }, 160);
+              }}
               style={{
-                padding: "13px 60px", fontSize: 15, fontWeight: "bold",
+                padding: "13px 44px", fontSize: 15, fontWeight: "bold",
                 background: "#43a047", color: "white", border: "none",
                 borderRadius: 10, cursor: "pointer",
                 boxShadow: "0 2px 12px rgba(67,160,71,0.35)",
               }}
             >
-              Зберегти
+              Зберегти та створити PDF
             </button>
           </div>
         </div>
