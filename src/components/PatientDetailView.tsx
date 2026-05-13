@@ -15,6 +15,7 @@ import {
   loadTelegramStatus,
   suppressNextRealtimeReload,
   revokePatientWebToken,
+  uploadFileToSupabaseStorage,
 } from "@/lib/supabaseSync";
 import { X, MessageCircle, AlertTriangle, User, Activity, Pencil, FileText, Trash2, Minimize2, Send, Loader2, Copy, Globe, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -2334,6 +2335,8 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             patientTime={patient.time}
             patientProcedure={patient.procedure}
             allergies={currentAllergy.status === "allergen" ? currentAllergy.allergen : ""}
+            patientId={patient.id}
+            onPdfSaved={(file) => handleFilesChange([...localFiles, file])}
             onSave={handleFocusSave}
             onCancel={handleFocusCancel}
           />
@@ -2651,7 +2654,7 @@ function ColonImageMap({ markers, onAddMarker, onClearMarkers }: {
 }
 
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, history, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, patientId, onPdfSaved, onSave, onCancel }: {
   field: string;
   value?: string | null;
   history?: HistoryEntry[];
@@ -2662,6 +2665,8 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   patientTime?: string;
   patientProcedure?: string;
   allergies: string;
+  patientId?: string;
+  onPdfSaved?: (file: FileItem) => void;
   onSave: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -2706,6 +2711,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   };
 
   const clearColonMarkers = () => setSections(prev => ({ ...prev, colonMarkers: "" }));
+  const [pdfBusy, setPdfBusy] = useState(false);
   const baseValue = safeValue.trim();
 
   useEffect(() => {
@@ -2950,28 +2956,94 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             </div>
           </div>
 
-          {/* Save + PDF — hidden on print */}
+          {/* Save + PDF button — hidden on print */}
           <div className="no-print" style={{ marginTop: 40, display: "flex", justifyContent: "center" }}>
             <button
-              onClick={() => {
-                onSave(serializeSections(sections));
-                const lastName = (sections.fullName.trim().split(/\s+/)[0]) || "Пацієнт";
-                const dateStr = (sections.examDate || new Date().toLocaleDateString("uk-UA")).replace(/\./g, "-");
-                const prevTitle = document.title;
-                document.title = `Протокол_${lastName}_${dateStr}`;
-                setTimeout(() => {
-                  window.print();
-                  setTimeout(() => { document.title = prevTitle; }, 2500);
-                }, 160);
+              disabled={pdfBusy}
+              onClick={async () => {
+                setPdfBusy(true);
+                try {
+                  // 1. Persist text data to DB
+                  onSave(serializeSections(sections));
+
+                  // 2. Capture visible A4 canvas (no-print elements excluded via onclone)
+                  const element = document.getElementById("protocol-print-page");
+                  if (!element) return;
+                  const { default: html2canvas } = await import("html2canvas");
+                  const canvas = await html2canvas(element, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: "#ffffff",
+                    logging: false,
+                    onclone: (doc) => {
+                      doc.querySelectorAll<HTMLElement>(".no-print").forEach(el => { el.style.display = "none"; });
+                    },
+                  });
+
+                  // 3. Build A4 PDF (multi-page if content is tall)
+                  const { jsPDF } = await import("jspdf");
+                  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+                  const pageW = pdf.internal.pageSize.getWidth();
+                  const pageH = pdf.internal.pageSize.getHeight();
+                  const imgW = pageW;
+                  const imgH = (canvas.height * pageW) / canvas.width;
+                  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                  pdf.addImage(imgData, "JPEG", 0, 0, imgW, imgH);
+                  let remaining = imgH - pageH;
+                  let pageOffset = pageH;
+                  while (remaining > 0) {
+                    pdf.addPage();
+                    pdf.addImage(imgData, "JPEG", 0, -pageOffset, imgW, imgH);
+                    pageOffset += pageH;
+                    remaining -= pageH;
+                  }
+
+                  // 4. Build filename
+                  const lastName = sections.fullName.trim().split(/\s+/)[0] || "Пацієнт";
+                  const dateStr = (sections.examDate || new Date().toLocaleDateString("uk-UA")).replace(/\./g, "-");
+                  const fileName = `Протокол_${lastName}_${dateStr}.pdf`;
+                  const pdfBlob = pdf.output("blob");
+
+                  // 5. Upload to Supabase Storage + register in patient's files
+                  if (patientId && onPdfSaved) {
+                    const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+                    const url = await uploadFileToSupabaseStorage(patientId, pdfFile);
+                    if (url) {
+                      onPdfSaved({
+                        id: `pdf_${Date.now()}`,
+                        name: fileName,
+                        type: "doctor",
+                        date: new Date().toISOString().split("T")[0],
+                        url,
+                        mimeType: "application/pdf",
+                      });
+                      toast.success(`PDF збережено в архів: ${fileName}`);
+                    }
+                  }
+
+                  // 6. Open generated PDF in new tab
+                  const blobUrl = URL.createObjectURL(pdfBlob);
+                  window.open(blobUrl, "_blank");
+
+                } catch (err) {
+                  console.error("[PDF]", err);
+                  toast.error("Помилка генерації PDF");
+                } finally {
+                  setPdfBusy(false);
+                }
               }}
               style={{
                 padding: "13px 44px", fontSize: 15, fontWeight: "bold",
-                background: "#43a047", color: "white", border: "none",
-                borderRadius: 10, cursor: "pointer",
+                background: pdfBusy ? "#9e9e9e" : "#43a047",
+                color: "white", border: "none",
+                borderRadius: 10, cursor: pdfBusy ? "not-allowed" : "pointer",
                 boxShadow: "0 2px 12px rgba(67,160,71,0.35)",
+                display: "flex", alignItems: "center", gap: 8,
+                transition: "background 0.2s",
               }}
             >
-              Зберегти та створити PDF
+              {pdfBusy && <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />}
+              {pdfBusy ? "Генерація PDF…" : "Зберегти та сформувати PDF"}
             </button>
           </div>
         </div>
