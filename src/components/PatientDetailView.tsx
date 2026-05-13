@@ -2401,84 +2401,84 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
 // ── Smart Epicrisis helpers ──
 
-const PROTOCOL_EQUIPMENT = "Апарат «Pentax» EC-3890LK";
-
-type SectionKey = "complaints" | "anamnesis" | "objective" | "diagnosis" | "recommendations";
+const PROTOCOL_APPARATUS    = "Відеоколоноскоп Olympus CF-H170L";
+const PROTOCOL_DISINFECTANT = "Засіб Сайдекс ОПА";
+const PROTOCOL_DOCTOR       = "Луцишин Ю.А.";
 
 type ProtocolSections = {
-  // Editable header fields
-  fullName:   string;
-  birthDate:  string;
-  examDate:   string;
-  equipment:  string;
-  // Clinical sections
-  complaints:      string;
-  anamnesis:       string;
-  objective:       string;
-  diagnosis:       string;
+  fullName:        string;
+  age:             string;
+  procedureType:   string;
+  examDate:        string;
+  apparatus:       string;
+  disinfectant:    string;
+  description:     string;
+  conclusion:      string;
   recommendations: string;
+  colonSegments:   string;
 };
 
-const SECTION_DEFS: Array<{ key: SectionKey; label: string; storageLabels: string[]; rows: number }> = [
-  { key: "complaints",      label: "Скарги",                    storageLabels: ["Скарги"],                          rows: 2 },
-  { key: "anamnesis",       label: "Анамнез захворювання",      storageLabels: ["Анамнез захворювання", "Анамнез"], rows: 3 },
-  { key: "objective",       label: "Об'єктивно (Local Status)", storageLabels: ["Об'єктивно"],                      rows: 3 },
-  { key: "diagnosis",       label: "Діагноз",                   storageLabels: ["Діагноз"],                         rows: 2 },
-  { key: "recommendations", label: "Рекомендації",              storageLabels: ["Рекомендації"],                    rows: 2 },
+const COLON_SEGS_DEF: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "ascending",   label: "Висхідна ободова" },
+  { id: "hepaticFlex", label: "Права (печінк.) флексура" },
+  { id: "transverse",  label: "Поперечна ободова" },
+  { id: "splenicFlex", label: "Ліва (сел.) флексура" },
+  { id: "descending",  label: "Низхідна ободова" },
+  { id: "sigmoid",     label: "Сигмовидна кишка" },
+  { id: "rectum",      label: "Пряма кишка" },
+  { id: "cecum",       label: "Сліпа кишка" },
+  { id: "appendix",    label: "Апендикс" },
 ];
 
-const HEADER_PARSE_DEFS: Array<{ key: keyof ProtocolSections; labels: string[] }> = [
-  { key: "fullName",  labels: ["Прізвище, ім'я, по батькові", "ПІБ", "П.І.Б.", "Пацієнт"] },
-  { key: "birthDate", labels: ["Дата народження"] },
-  { key: "examDate",  labels: ["Дата обстеження", "Дата огляду"] },
-  { key: "equipment", labels: ["Обладнання", "Апарат"] },
-];
-
-
-const MAGIC_TEMPLATES: Record<string, Omit<ProtocolSections, "fullName"|"birthDate"|"examDate"|"equipment">> = {
+const MAGIC_TEMPLATES: Record<string, Pick<ProtocolSections, "description"|"conclusion"|"recommendations">> = {
   norma: {
-    complaints:      "Скарг не пред'являє.",
-    anamnesis:       "Не обтяжений.",
-    objective:       "Per rectum: тонус сфінктера збережений, болючість відсутня. Патологічних утворень не виявлено. Ампула прямої кишки вільна.",
-    diagnosis:       "Без патологій.",
-    recommendations: "Динамічний нагляд проктолога.",
+    description:     "Колоноскопія виконана до купола сліпої кишки. Слизова оболонка рожева, блискуча, судинний рисунок збережений. Гаустри чіткі. Патологічних утворень не виявлено.",
+    conclusion:      "Колоноскопія — норма.",
+    recommendations: "Динамічний нагляд. Контрольна колоноскопія через 5 років.",
   },
-  gemoroi: {
-    complaints:      "Кровотеча після дефекації, дискомфорт в анальній ділянці.",
-    anamnesis:       "Скарги впродовж тривалого часу. Самостійний прийом послаблюючих.",
-    objective:       "Per rectum: внутрішні гемороїдальні вузли I ступеня, без пролапсу. Тонус сфінктера збережений, болючість помірна.",
-    diagnosis:       "Внутрішній геморой I ступеня. K64.0.",
-    recommendations: "Флеботропна терапія, місцеве лікування, безшлакова дієта з клітковиною.",
+  polypy: {
+    description:     "Колоноскопія виконана до купола сліпої кишки. Слизова оболонка рожева. В сигмовидній кишці виявлено поліп на ніжці 0,8 см — виконана петлева поліпектомія. Матеріал направлено на гістологічне дослідження.",
+    conclusion:      "Поліп сигмовидної кишки. Поліпектомія.",
+    recommendations: "Контроль гістології. Контрольна колоноскопія через 3 роки.",
   },
-  trishchyna: {
-    complaints:      "Гострий біль під час та після дефекації, незначна кровотеча.",
-    anamnesis:       "Скарги протягом кількох тижнів. Схильність до закрепів.",
-    objective:       "Per rectum: хронічна анальна тріщина задньої стінки, сфінктероспазм помірний.",
-    diagnosis:       "Хронічна анальна тріщина. K60.1.",
-    recommendations: "Нітрогліцеринова мазь, сидячі ванночки, нормалізація випорожнень.",
+  colitis: {
+    description:     "Слизова оболонка товстої кишки дифузно гіперемована, з контактною кровоточивістю. Судинний рисунок розмитий. Ерозій та виразок не виявлено.",
+    conclusion:      "Ендоскопічна картина хронічного коліту.",
+    recommendations: "Консультація гастроентеролога. Призначити базисну протизапальну терапію.",
   },
 };
 
-function stripProtocolHeader(text: string): string {
-  if (!text.trimStart().startsWith("Пацієнт:")) return text;
-  const lines = text.split("\n");
-  let i = 1;
-  while (i < lines.length && !lines[i].trim()) i++;
-  return lines.slice(i).join("\n");
+function toggleColonSegment(csv: string, id: string): string {
+  const segs = new Set(csv.split(",").map(s => s.trim()).filter(Boolean));
+  if (segs.has(id)) segs.delete(id); else segs.add(id);
+  return Array.from(segs).join(",");
 }
 
+function parseColonSegments(csv: string): Set<string> {
+  return new Set(csv.split(",").map(s => s.trim()).filter(Boolean));
+}
+
+const PROTOCOL_PARSE_DEFS: Array<{ key: keyof ProtocolSections; labels: string[] }> = [
+  { key: "fullName",        labels: ["П.І.Б.", "ПІБ", "Прізвище, ім'я, по батькові", "Пацієнт"] },
+  { key: "age",             labels: ["Вік"] },
+  { key: "procedureType",   labels: ["Вид дослідження", "Процедура"] },
+  { key: "examDate",        labels: ["Дата", "Дата обстеження", "Дата огляду"] },
+  { key: "apparatus",       labels: ["Апарат", "Обладнання"] },
+  { key: "disinfectant",    labels: ["Дезінфектант", "Засіб"] },
+  { key: "description",     labels: ["Опис", "Об'єктивно"] },
+  { key: "conclusion",      labels: ["Висновок", "Діагноз"] },
+  { key: "recommendations", labels: ["Рекомендовано", "Рекомендації"] },
+  { key: "colonSegments",   labels: ["Сегменти"] },
+];
+
 function parseTextToSections(text: string): Partial<ProtocolSections> {
-  const ALL_DEFS: Array<{ key: keyof ProtocolSections; labels: string[] }> = [
-    ...HEADER_PARSE_DEFS,
-    ...SECTION_DEFS.map((d) => ({ key: d.key as keyof ProtocolSections, labels: d.storageLabels })),
-  ];
   const buffers: Partial<Record<keyof ProtocolSections, string[]>> = {};
   let cur: keyof ProtocolSections | null = null;
 
   for (const line of text.split("\n")) {
     const t = line.trimStart();
     let found = false;
-    for (const def of ALL_DEFS) {
+    for (const def of PROTOCOL_PARSE_DEFS) {
       for (const lbl of def.labels) {
         if (t.startsWith(lbl + ":")) {
           cur = def.key;
@@ -2498,7 +2498,7 @@ function parseTextToSections(text: string): Partial<ProtocolSections> {
   }
 
   const result: Partial<ProtocolSections> = {};
-  for (const def of ALL_DEFS) {
+  for (const def of PROTOCOL_PARSE_DEFS) {
     const v = buffers[def.key]?.join("\n").trim();
     if (v !== undefined) (result as Record<string, string>)[def.key as string] = v;
   }
@@ -2506,68 +2506,63 @@ function parseTextToSections(text: string): Partial<ProtocolSections> {
 }
 
 function serializeSections(s: ProtocolSections): string {
-  const header = [
-    `Прізвище, ім'я, по батькові: ${s.fullName}`,
-    `Дата народження: ${s.birthDate}`,
-    `Дата обстеження: ${s.examDate}`,
-    `Обладнання: ${s.equipment}`,
+  return [
+    `П.І.Б.: ${s.fullName}`,
+    `Вік: ${s.age}`,
+    `Вид дослідження: ${s.procedureType}`,
+    `Дата: ${s.examDate}`,
+    `Апарат: ${s.apparatus}`,
+    `Дезінфектант: ${s.disinfectant}`,
+    `Сегменти: ${s.colonSegments}`,
+    `Опис:\n${s.description}`,
+    `Висновок:\n${s.conclusion}`,
+    `Рекомендовано:\n${s.recommendations}`,
   ].join("\n");
-  const body = SECTION_DEFS.map((def) => `${def.storageLabels[0]}: ${s[def.key]}`).join("\n");
-  return header + "\n" + body;
 }
 
-function toggleClockLocalization(text: string, hour: number): string {
-  const line = `Локалізація: на ${hour} годині`;
-  const lines = text.split("\n");
-  const existing = lines.findIndex((l) => l.trim() === line);
-  if (existing >= 0) return lines.filter((_, i) => i !== existing).join("\n");
-  return text.trim() ? text.trim() + `\n${line}` : line;
+// ── Colon Map SVG ──
+interface ColonSvgSeg {
+  id: string;
+  baseColor: string;
+  selColor: string;
+  pathD: string;
+  sw: number;
 }
 
-function parseClockHours(text: string): Set<number> {
-  const s = new Set<number>();
-  for (const m of text.matchAll(/Локалізація: на (\d+) годині/g)) {
-    const h = parseInt(m[1]);
-    if (h >= 1 && h <= 12) s.add(h);
-  }
-  return s;
-}
+const COLON_SVG_SEGS: ColonSvgSeg[] = [
+  { id: "ascending",   baseColor: "#c8e6c4", selColor: "#2e7d32", pathD: "M 193 218 L 193 72",                                          sw: 22 },
+  { id: "hepaticFlex", baseColor: "#d4b8f0", selColor: "#6a1b9a", pathD: "M 193 72 A 23 23 0 0 0 170 49",                               sw: 22 },
+  { id: "transverse",  baseColor: "#bbdefb", selColor: "#1565c0", pathD: "M 170 49 L 70 49",                                             sw: 22 },
+  { id: "splenicFlex", baseColor: "#ffe0b2", selColor: "#e65100", pathD: "M 70 49 A 23 23 0 0 0 47 72",                                 sw: 22 },
+  { id: "descending",  baseColor: "#fff9c4", selColor: "#f57f17", pathD: "M 47 72 L 47 218",                                             sw: 22 },
+  { id: "sigmoid",     baseColor: "#ffccbc", selColor: "#bf360c", pathD: "M 47 218 C 47 254 84 264 118 267",                             sw: 22 },
+  { id: "rectum",      baseColor: "#f8bbd0", selColor: "#880e4f", pathD: "M 118 267 L 118 290",                                          sw: 22 },
+  { id: "cecum",       baseColor: "#dcedc8", selColor: "#558b2f", pathD: "M 167 218 C 163 248 167 270 192 272 C 217 270 221 248 217 218", sw: 22 },
+  { id: "appendix",    baseColor: "#ffcdd2", selColor: "#b71c1c", pathD: "M 192 272 L 204 288",                                          sw: 10 },
+];
 
-// ── Anatomic Map SVG ──
-function AnatomicMap({ selected, onToggle }: { selected: Set<number>; onToggle: (hour: number) => void }) {
-  const cx = 120, cy = 120, R = 104, r = 38;
+function ColonMap({ selected, onToggle }: { selected: Set<string>; onToggle: (id: string) => void }) {
   return (
-    <svg viewBox="0 0 240 240" className="w-full h-full select-none" style={{ touchAction: "manipulation" }}>
-      {/* Outer decorative ring */}
-      <circle cx={cx} cy={cy} r={112} fill="none" stroke="#f0c0c0" strokeWidth="2.5" />
-      <circle cx={cx} cy={cy} r={R} fill="#fff8f8" stroke="#dba8a8" strokeWidth="1.5" />
-      {/* 12 sectors */}
-      {Array.from({ length: 12 }, (_, i) => {
-        const hour = i + 1;
-        const a0 = ((i * 30) - 90) * (Math.PI / 180);
-        const a1 = (((i + 1) * 30) - 90) * (Math.PI / 180);
-        const p = (a: number, rad: number): [number, number] => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
-        const [ix0, iy0] = p(a0, r), [ox0, oy0] = p(a0, R);
-        const [ox1, oy1] = p(a1, R), [ix1, iy1] = p(a1, r);
-        const d = `M${ix0} ${iy0}L${ox0} ${oy0}A${R} ${R} 0 0 1 ${ox1} ${oy1}L${ix1} ${iy1}A${r} ${r} 0 0 0 ${ix0} ${iy0}Z`;
-        const [lx, ly] = p((a0 + a1) / 2, (R + r) / 2);
-        const sel = selected.has(hour);
+    <svg viewBox="0 0 240 304" style={{ width: "100%", height: "100%", display: "block" }}>
+      <rect width="240" height="304" fill="white" />
+      {/* Orientation labels */}
+      <text x="120" y="14" textAnchor="middle" fontSize="7.5" fill="#aaa" fontFamily="Arial,sans-serif">Поперечна</text>
+      <text x="228" y="148" textAnchor="start" fontSize="7.5" fill="#aaa" fontFamily="Arial,sans-serif">Висхідна</text>
+      <text x="12" y="148" textAnchor="start" fontSize="7.5" fill="#aaa" fontFamily="Arial,sans-serif">Низхідна</text>
+      {COLON_SVG_SEGS.map((seg) => {
+        const sel = selected.has(seg.id);
         return (
-          <g key={hour} onClick={() => onToggle(hour)} style={{ cursor: "pointer" }}>
-            <path d={d} fill={sel ? "#f39c12" : "#fde8e8"} stroke="#d8a8a8" strokeWidth="1"
-              style={{ transition: "fill 0.15s" }} />
-            <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-              fontSize="14" fontWeight="800" fill={sel ? "#5c2d00" : "#9a5555"}>{hour}</text>
+          <g key={seg.id} onClick={() => onToggle(seg.id)} style={{ cursor: "pointer" }}>
+            {/* Hit area */}
+            <path d={seg.pathD} fill="none" stroke="transparent" strokeWidth={seg.sw + 14} strokeLinecap="round" />
+            {/* Outer stroke (border) */}
+            <path d={seg.pathD} fill="none" stroke={sel ? seg.selColor : "#bbb"} strokeWidth={seg.sw + 3} strokeLinecap="round" opacity={0.55} />
+            {/* Main colored tube */}
+            <path d={seg.pathD} fill="none" stroke={sel ? seg.selColor : seg.baseColor}
+              strokeWidth={seg.sw} strokeLinecap="round" style={{ transition: "stroke 0.14s" }} />
           </g>
         );
       })}
-      {/* Inner lumen */}
-      <circle cx={cx} cy={cy} r={r} fill="white" stroke="#dba8a8" strokeWidth="2" />
-      <text x={cx} y={cy - 5} textAnchor="middle" fontSize="7" fontWeight="700" fill="#c09090" letterSpacing="0.5">АНАТ.</text>
-      <text x={cx} y={cy + 8} textAnchor="middle" fontSize="7" fontWeight="700" fill="#c09090" letterSpacing="0.5">СХЕМА</text>
-      {/* Orientation labels */}
-      <text x={cx} y={12} textAnchor="middle" fontSize="7" fontWeight="700" fill="#a04040" letterSpacing="1">ЗАДНЯ</text>
-      <text x={cx} y={234} textAnchor="middle" fontSize="7" fontWeight="700" fill="#a04040" letterSpacing="1">ПЕРЕДНЯ</text>
     </svg>
   );
 }
@@ -2590,19 +2585,19 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   const safeValue = value ?? "";
 
   const initSections = (): ProtocolSections => {
-    const raw = stripProtocolHeader(safeValue);
-    const parsed = raw.trim() ? parseTextToSections(raw) : {};
+    const parsed = safeValue.trim() ? parseTextToSections(safeValue) : {};
     const fullNameDefault = [patientName, patientPatronymic].filter(Boolean).join(" ");
     return {
       fullName:        parsed.fullName        ?? fullNameDefault,
-      birthDate:       parsed.birthDate       ?? (patientBirthDate || ""),
+      age:             parsed.age             ?? "",
+      procedureType:   parsed.procedureType   ?? "Колоноскопія",
       examDate:        parsed.examDate        ?? (patientDate || ""),
-      equipment:       parsed.equipment       ?? PROTOCOL_EQUIPMENT,
-      complaints:      parsed.complaints      ?? "",
-      anamnesis:       parsed.anamnesis       ?? "",
-      objective:       parsed.objective       ?? "Per rectum: тонус сфінктера збережений, болючість відсутня.",
-      diagnosis:       parsed.diagnosis       ?? "",
+      apparatus:       parsed.apparatus       ?? PROTOCOL_APPARATUS,
+      disinfectant:    parsed.disinfectant    ?? PROTOCOL_DISINFECTANT,
+      description:     parsed.description     ?? "",
+      conclusion:      parsed.conclusion      ?? "",
       recommendations: parsed.recommendations ?? "",
+      colonSegments:   parsed.colonSegments   ?? "",
     };
   };
 
@@ -2611,11 +2606,10 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     return safeValue;
   });
   const [sections, setSections] = useState<ProtocolSections>(initSections);
-  const [showClock, setShowClock] = useState(false);
 
-  const clockHours = useMemo(
-    () => (field === "protocol" ? parseClockHours(sections.objective) : new Set<number>()),
-    [field, sections.objective]
+  const selectedSegs = useMemo(
+    () => (field === "protocol" ? parseColonSegments(sections.colonSegments) : new Set<string>()),
+    [field, sections.colonSegments]
   );
   const baseValue = safeValue.trim();
 
@@ -2629,6 +2623,29 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, safeValue]);
+
+  useEffect(() => {
+    if (field !== "protocol") return;
+    const style = document.createElement("style");
+    style.id = "protocol-print-style";
+    style.textContent = `@media print {
+      body > * { display: none !important; }
+      #protocol-print-page {
+        display: block !important; position: fixed !important; inset: 0 !important;
+        padding: 14mm 16mm !important; font-family: Arial, sans-serif !important;
+        font-size: 12pt !important; color: #000 !important; background: #fff !important;
+        overflow: visible !important;
+      }
+      #protocol-print-page input, #protocol-print-page textarea {
+        border: none !important; outline: none !important; background: transparent !important;
+        padding: 0 !important; resize: none !important;
+        font-family: Arial, sans-serif !important; font-size: 12pt !important; color: #000 !important;
+      }
+      .no-print { display: none !important; }
+    }`;
+    document.head.appendChild(style);
+    return () => { document.getElementById("protocol-print-style")?.remove(); };
+  }, [field]);
 
   const isDailyField = field === "notes" || field === "allergies" || field === "diagnosis";
   const todayIso = getTodayIsoKyiv();
@@ -2719,137 +2736,135 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               autoFocus
             />
           ) : field === "protocol" ? (
-            /* ── 2-column: left = document, right = anatomic map ── */
-            <div className="flex-1 min-h-0 flex gap-5 overflow-hidden" style={{ fontFamily: "Arial, sans-serif" }}>
+            /* ── A4 digital medical blank ── */
+            <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-4" style={{ scrollbarWidth: "thin" }}>
+              <div
+                id="protocol-print-page"
+                style={{
+                  fontFamily: "Arial, sans-serif",
+                  fontSize: 13,
+                  color: "#111",
+                  background: "white",
+                  maxWidth: 820,
+                  margin: "0 auto",
+                  padding: "20px 24px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.10)",
+                }}
+              >
+                {/* Institution header */}
+                <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: 8, marginBottom: 14 }}>
+                  <div style={{ fontWeight: "bold", fontSize: 14 }}>КНП ЛОР «Львівський обласний клінічний діагностичний центр»</div>
+                  <div style={{ fontSize: 12, marginTop: 2 }}>Відділення ендоскопії | вул. Пекарська, 69б</div>
+                  <div style={{ fontWeight: "bold", fontSize: 15, marginTop: 8, letterSpacing: 0.5 }}>ПРОТОКОЛ ЕНДОСКОПІЧНОГО ДОСЛІДЖЕННЯ</div>
+                </div>
 
-              {/* Left column: editable header + clinical sections + magic buttons */}
-              <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto pr-1">
-
-                {/* ── Editable document header ── */}
-                <div className="shrink-0 border border-gray-300 rounded-lg bg-white overflow-hidden text-base">
-                  {/* Row 1: ПІБ */}
-                  <div className="flex items-baseline gap-2 px-4 py-2 border-b border-gray-200">
-                    <span className="font-bold text-gray-900 whitespace-nowrap" style={{ minWidth: 260 }}>Прізвище, ім'я, по батькові:</span>
-                    <input
-                      value={sections.fullName}
-                      onChange={(e) => setSections((prev) => ({ ...prev, fullName: e.target.value }))}
-                      spellCheck={false}
-                      className="flex-1 bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors min-w-0"
-                      style={{ fontSize: 16 }}
-                    />
-                  </div>
-                  {/* Row 2: DOB + Exam date */}
-                  <div className="flex flex-wrap gap-6 items-baseline px-4 py-2 border-b border-gray-200">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-bold text-gray-900 whitespace-nowrap">Дата народження:</span>
-                      <input
-                        value={sections.birthDate}
-                        onChange={(e) => setSections((prev) => ({ ...prev, birthDate: e.target.value }))}
-                        spellCheck={false}
-                        className="bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors w-28"
-                        style={{ fontSize: 16 }}
+                {/* 2-column: colon map + patient fields */}
+                <div style={{ display: "flex", gap: 16, marginBottom: 14, alignItems: "flex-start" }}>
+                  {/* Colon map */}
+                  <div style={{ width: 210, flexShrink: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: "bold", textAlign: "center", color: "#555", marginBottom: 3 }}>Схема товстої кишки</div>
+                    <div style={{ width: 210, height: 252 }}>
+                      <ColonMap
+                        selected={selectedSegs}
+                        onToggle={(id) => setSections((prev) => ({ ...prev, colonSegments: toggleColonSegment(prev.colonSegments, id) }))}
                       />
                     </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-bold text-gray-900 whitespace-nowrap">Дата обстеження:</span>
-                      <input
-                        value={sections.examDate}
-                        onChange={(e) => setSections((prev) => ({ ...prev, examDate: e.target.value }))}
-                        spellCheck={false}
-                        className="bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors w-28"
-                        style={{ fontSize: 16 }}
-                      />
-                    </div>
+                    {selectedSegs.size > 0 && (
+                      <div style={{ fontSize: 10.5, marginTop: 4, color: "#333", lineHeight: 1.4 }}>
+                        <span style={{ fontWeight: "bold" }}>Патологія: </span>
+                        {COLON_SEGS_DEF.filter(s => selectedSegs.has(s.id)).map(s => s.label).join(", ")}
+                      </div>
+                    )}
                   </div>
-                  {/* Row 3: Equipment */}
-                  <div className="flex items-baseline gap-2 px-4 py-2">
-                    <span className="font-bold text-gray-900 whitespace-nowrap">Обладнання:</span>
-                    <input
-                      value={sections.equipment}
-                      onChange={(e) => setSections((prev) => ({ ...prev, equipment: e.target.value }))}
-                      spellCheck={false}
-                      className="flex-1 bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors min-w-0"
-                      style={{ fontSize: 16 }}
-                    />
+
+                  {/* Patient / procedure fields */}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+                    {([
+                      { label: "Дата:",                  key: "examDate"       as keyof ProtocolSections, flex: false },
+                      { label: "Апарат:",                key: "apparatus"      as keyof ProtocolSections, flex: true  },
+                      { label: "Дезінфікуючий засіб:",   key: "disinfectant"   as keyof ProtocolSections, flex: true  },
+                      { label: "П.І.Б.:",                key: "fullName"       as keyof ProtocolSections, flex: true  },
+                      { label: "Вік:",                   key: "age"            as keyof ProtocolSections, flex: false },
+                      { label: "Вид дослідження:",       key: "procedureType"  as keyof ProtocolSections, flex: true  },
+                    ] as Array<{ label: string; key: keyof ProtocolSections; flex: boolean }>).map(({ label, key, flex }) => (
+                      <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 5, borderBottom: "1px solid #ddd", paddingBottom: 3 }}>
+                        <span style={{ fontWeight: "bold", whiteSpace: "nowrap", fontSize: 12.5, minWidth: flex ? undefined : "auto" }}>{label}</span>
+                        <input
+                          value={sections[key] as string}
+                          onChange={(e) => setSections((prev) => ({ ...prev, [key]: e.target.value }))}
+                          spellCheck={false}
+                          style={{
+                            flex: flex ? 1 : undefined,
+                            width: flex ? undefined : (key === "age" ? 60 : 120),
+                            background: "transparent",
+                            border: "none",
+                            outline: "none",
+                            fontSize: 13,
+                            fontFamily: "Arial, sans-serif",
+                            color: "#111",
+                          }}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                {/* ── Clinical sections ── */}
-                <div className="shrink-0 flex flex-col gap-3">
-                  {SECTION_DEFS.map((def, idx) => (
-                    <div key={def.key} className="flex flex-col gap-0.5">
-                      <label className="font-bold text-gray-900" style={{ fontSize: 16 }}>{def.label}:</label>
-                      <textarea
-                        value={sections[def.key]}
-                        onChange={(e) => setSections((prev) => ({ ...prev, [def.key]: e.target.value }))}
-                        spellCheck={false}
-                        autoCorrect="off"
-                        rows={def.rows}
-                        autoFocus={idx === 0}
-                        className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
-                        style={{ fontSize: 16, lineHeight: 1.55, scrollbarWidth: "thin" }}
-                      />
-                    </div>
-                  ))}
-                </div>
+                {/* Full-width text sections */}
+                {([
+                  { label: "Опис:",         key: "description"     as keyof ProtocolSections, rows: 5  },
+                  { label: "Висновок:",     key: "conclusion"      as keyof ProtocolSections, rows: 3  },
+                  { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 3  },
+                ] as Array<{ label: string; key: keyof ProtocolSections; rows: number }>).map(({ label, key, rows }) => (
+                  <div key={key} style={{ marginBottom: 12 }}>
+                    <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 3 }}>{label}</div>
+                    <textarea
+                      value={sections[key] as string}
+                      onChange={(e) => setSections((prev) => ({ ...prev, [key]: e.target.value }))}
+                      spellCheck={false}
+                      rows={rows}
+                      style={{
+                        width: "100%",
+                        resize: "vertical",
+                        background: "transparent",
+                        border: "1px solid #ccc",
+                        borderRadius: 3,
+                        fontSize: 13,
+                        fontFamily: "Arial, sans-serif",
+                        color: "#111",
+                        padding: "5px 7px",
+                        outline: "none",
+                        lineHeight: 1.55,
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+                ))}
 
-                {/* ── Magic buttons + mobile map toggle ── */}
-                <div className="shrink-0 flex flex-wrap gap-2 pb-2">
+                {/* Magic template buttons — hidden on print */}
+                <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "#888" }}>Шаблон:</span>
                   {([
-                    { label: "Норма",   key: "norma" },
-                    { label: "Геморой", key: "gemoroi" },
-                    { label: "Тріщина", key: "trishchyna" },
+                    { label: "Норма",   key: "norma"   },
+                    { label: "Поліпи",  key: "polypy"  },
+                    { label: "Коліт",   key: "colitis" },
                   ] as { label: string; key: keyof typeof MAGIC_TEMPLATES }[]).map(({ label, key }) => (
                     <button
                       key={key}
                       type="button"
                       onClick={() => setSections((prev) => ({ ...prev, ...MAGIC_TEMPLATES[key] } as ProtocolSections))}
-                      className="px-4 py-2 text-sm font-semibold rounded-lg border transition-colors active:scale-[0.97]"
-                      style={{ borderColor: "#f39c12", color: "#c27a00", background: "#fff8ee", fontSize: 14 }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef0d0"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff8ee"; }}
+                      style={{ padding: "4px 14px", fontSize: 12, border: "1px solid #c27a00", borderRadius: 6, color: "#c27a00", background: "#fff8ee", cursor: "pointer" }}
                     >
                       {label}
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => setShowClock((s) => !s)}
-                    className="md:hidden ml-auto px-4 py-2 text-sm font-semibold rounded-lg border transition-colors active:scale-[0.97]"
-                    style={{ borderColor: "#f39c12", color: "#c27a00", background: showClock ? "#fef0d0" : "#fff8ee", fontSize: 14 }}
-                  >
-                    {showClock ? "Сховати схему" : "Показати схему"}
-                  </button>
                 </div>
 
-                {/* Mobile map */}
-                {showClock && (
-                  <div className="md:hidden shrink-0 flex flex-col items-center pb-4">
-                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-2">Локалізація</p>
-                    <div style={{ width: 240, height: 240 }}>
-                      <AnatomicMap
-                        selected={clockHours}
-                        onToggle={(h) => setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right column: large AnatomicMap — desktop only */}
-              <div className="hidden md:flex flex-col items-center shrink-0" style={{ width: 290 }}>
-                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-2 mt-1">Локалізація</p>
-                <div style={{ width: 274, height: 274 }}>
-                  <AnatomicMap
-                    selected={clockHours}
-                    onToggle={(h) => setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))}
-                  />
+                {/* Doctor signature */}
+                <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid #000", display: "flex", justifyContent: "flex-end" }}>
+                  <span style={{ fontWeight: "bold", fontSize: 13 }}>Лікар: {PROTOCOL_DOCTOR}</span>
                 </div>
-                {clockHours.size > 0 && (
-                  <p className="text-xs text-amber-700 mt-2 text-center font-medium">
-                    {Array.from(clockHours).sort((a, b) => a - b).map((h) => `${h} год.`).join(", ")}
-                  </p>
-                )}
               </div>
             </div>
           ) : (
@@ -2893,6 +2908,15 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
           >
             Зберегти
           </button>
+          {field === "protocol" && (
+            <button
+              onClick={() => { onSave(serializeSections(sections)); setTimeout(() => window.print(), 150); }}
+              className="px-6 py-2.5 text-sm font-bold text-white rounded-lg active:scale-[0.97] shadow-sm transition-colors"
+              style={{ background: "#43a047" }}
+            >
+              Зберегти та Друкувати
+            </button>
+          )}
         </div>
       </div>
     </div>
