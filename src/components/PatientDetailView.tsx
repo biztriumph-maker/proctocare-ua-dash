@@ -2965,12 +2965,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
               onClick={async () => {
                 setPdfBusy(true);
                 try {
-                  // 1. Persist text data to DB
-                  onSave(serializeSections(sections));
-
-                  // 2. Capture visible A4 canvas (no-print elements excluded via onclone)
+                  // 1. Capture canvas FIRST — overlay must still be in DOM
                   const element = document.getElementById("protocol-print-page");
-                  if (!element) return;
+                  if (!element) { toast.error("Не знайдено бланк для генерації PDF"); return; }
                   const canvas = await html2canvas(element, {
                     scale: 2,
                     useCORS: true,
@@ -2980,6 +2977,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                       doc.querySelectorAll<HTMLElement>(".no-print").forEach(el => { el.style.display = "none"; });
                     },
                   });
+
+                  // 2. Persist text data to DB (closes overlay — canvas already captured)
+                  onSave(serializeSections(sections));
 
                   // 3. Build A4 PDF (multi-page if content is tall)
                   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
