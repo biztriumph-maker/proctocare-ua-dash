@@ -2739,9 +2739,12 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
         border-radius: 3px !important;
       }
       @media (max-width: 767px) {
+        #protocol-print-page { width: 100% !important; padding: 24px 16px 80px !important; box-sizing: border-box !important; }
         #protocol-two-col { flex-direction: column !important; }
-        #protocol-colon-col { width: 100% !important; max-width: 300px !important; margin: 0 auto 16px !important; }
-        #protocol-print-page { padding: 24px 18px 80px !important; }
+        #protocol-colon-col { width: 100% !important; max-width: 280px !important; margin: 0 auto 16px !important; }
+        #protocol-print-page input, #protocol-print-page textarea {
+          width: 100% !important; word-break: break-word !important; overflow-wrap: break-word !important;
+        }
       }
       @media print {
         body > * { display: none !important; }
@@ -2830,7 +2833,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
           <Minimize2 size={14} color="#94a3b8" />
         </button>
 
-        {/* A4 canvas — pure white, max-width, generous padding */}
+        {/* A4 canvas — pure white, fixed 820px, box-sizing enforced */}
         <div
           id="protocol-print-page"
           style={{
@@ -2838,7 +2841,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             fontSize: 13,
             color: "#111",
             background: "#fff",
+            width: "100%",
             maxWidth: 820,
+            boxSizing: "border-box",
             margin: "0 auto",
             padding: "52px 60px 96px",
             minHeight: "100vh",
@@ -2902,9 +2907,10 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                     onChange={(e) => setSections(prev => ({ ...prev, [key]: e.target.value }))}
                     spellCheck={false}
                     style={{
-                      flex: 1, background: "transparent",
+                      flex: 1, minWidth: 0, background: "transparent",
                       border: "none", outline: "none",
                       fontSize: 13, fontFamily: "Arial, sans-serif", color: "#111",
+                      wordBreak: "break-word", overflowWrap: "break-word",
                     }}
                   />
                 </div>
@@ -2969,7 +2975,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   const element = document.getElementById("protocol-print-page");
                   if (!element) { toast.error("Не знайдено бланк для генерації PDF"); return; }
                   const canvas = await html2canvas(element, {
-                    scale: 3,
+                    scale: 2,
+                    width: element.offsetWidth,
+                    windowWidth: 820,
                     useCORS: true,
                     allowTaint: true,
                     backgroundColor: "#ffffff",
@@ -2981,27 +2989,35 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                         el.style.display = "none";
                       });
 
-                      // Remove borders/outlines from form fields for clean PDF
-                      const s = clonedDoc.createElement("style");
-                      s.textContent = `
-                        input, textarea {
-                          border: none !important;
-                          outline: none !important;
-                          box-shadow: none !important;
-                          background: transparent !important;
-                        }
-                      `;
-                      clonedDoc.head.appendChild(s);
-
-                      // Copy current .value from React-managed inputs to cloned DOM
-                      // (html2canvas reads DOM .value which may differ from React state)
+                      // Replace <input> → <span>: inputs are single-line and clip text,
+                      // spans with white-space:pre-wrap display full wrapping text in the PDF
                       const origInputs = Array.from(element.querySelectorAll<HTMLInputElement>("input"));
                       const cloneInputs = Array.from(clonedEl.querySelectorAll<HTMLInputElement>("input"));
-                      origInputs.forEach((orig, i) => { if (cloneInputs[i]) cloneInputs[i].value = orig.value; });
+                      cloneInputs.forEach((inp, i) => {
+                        const span = clonedDoc.createElement("span");
+                        span.textContent = origInputs[i]?.value ?? inp.value;
+                        span.style.cssText = inp.getAttribute("style") || "";
+                        span.style.whiteSpace = "pre-wrap";
+                        span.style.wordBreak = "break-word";
+                        span.style.overflowWrap = "break-word";
+                        span.style.minWidth = "0";
+                        inp.parentNode?.replaceChild(span, inp);
+                      });
 
+                      // Replace <textarea> → <div>: ensures full auto height and wrapping
                       const origTas = Array.from(element.querySelectorAll<HTMLTextAreaElement>("textarea"));
                       const cloneTas = Array.from(clonedEl.querySelectorAll<HTMLTextAreaElement>("textarea"));
-                      origTas.forEach((orig, i) => { if (cloneTas[i]) cloneTas[i].value = orig.value; });
+                      cloneTas.forEach((ta, i) => {
+                        const div = clonedDoc.createElement("div");
+                        div.textContent = origTas[i]?.value ?? ta.value;
+                        div.style.cssText = ta.getAttribute("style") || "";
+                        div.style.whiteSpace = "pre-wrap";
+                        div.style.wordBreak = "break-word";
+                        div.style.overflowWrap = "break-word";
+                        div.style.overflow = "visible";
+                        div.style.height = "auto";
+                        ta.parentNode?.replaceChild(div, ta);
+                      });
                     },
                   });
 
