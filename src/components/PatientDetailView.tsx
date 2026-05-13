@@ -2403,7 +2403,9 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 
 const PROTOCOL_APPARATUS    = "Відеоколоноскоп Olympus CF-H170L";
 const PROTOCOL_DISINFECTANT = "Засіб Сайдекс ОПА";
-const PROTOCOL_DOCTOR       = "Луцишин Ю.А.";
+const PROTOCOL_DOCTOR       = "Луцишин Юрій Андрійович";
+const PROTOCOL_HOSPITAL     = "КНП ЛОР «Львівський обласний клінічний діагностичний центр»";
+const PROTOCOL_ADDRESS      = "Відділення ендоскопії | вул. Пекарська, 69б";
 
 type ProtocolSections = {
   fullName:        string;
@@ -2416,6 +2418,9 @@ type ProtocolSections = {
   conclusion:      string;
   recommendations: string;
   colonSegments:   string;
+  hospitalName:    string;
+  hospitalAddress: string;
+  colonMarkers:    string;
 };
 
 const COLON_SEGS_DEF: ReadonlyArray<{ id: string; label: string }> = [
@@ -2469,6 +2474,9 @@ const PROTOCOL_PARSE_DEFS: Array<{ key: keyof ProtocolSections; labels: string[]
   { key: "conclusion",      labels: ["Висновок", "Діагноз"] },
   { key: "recommendations", labels: ["Рекомендовано", "Рекомендації"] },
   { key: "colonSegments",   labels: ["Сегменти"] },
+  { key: "hospitalName",    labels: ["Лікарня", "Заклад"] },
+  { key: "hospitalAddress", labels: ["Адреса"] },
+  { key: "colonMarkers",    labels: ["Маркери"] },
 ];
 
 function parseTextToSections(text: string): Partial<ProtocolSections> {
@@ -2514,6 +2522,9 @@ function serializeSections(s: ProtocolSections): string {
     `Апарат: ${s.apparatus}`,
     `Дезінфектант: ${s.disinfectant}`,
     `Сегменти: ${s.colonSegments}`,
+    `Лікарня: ${s.hospitalName}`,
+    `Адреса: ${s.hospitalAddress}`,
+    `Маркери: ${s.colonMarkers}`,
     `Опис:\n${s.description}`,
     `Висновок:\n${s.conclusion}`,
     `Рекомендовано:\n${s.recommendations}`,
@@ -2567,6 +2578,78 @@ function ColonMap({ selected, onToggle }: { selected: Set<string>; onToggle: (id
   );
 }
 
+// ── Interactive Colon Image Map ──
+function ColonImageMap({ markers, onAddMarker, onClearMarkers }: {
+  markers: Array<{ x: number; y: number }>;
+  onAddMarker: (x: number, y: number) => void;
+  onClearMarkers: () => void;
+}) {
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    onAddMarker(Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+  };
+
+  return (
+    <div style={{ position: "relative", display: "block", width: "100%" }}>
+      <div
+        onClick={handleClick}
+        style={{ position: "relative", cursor: "crosshair", userSelect: "none" }}
+        title="Клікніть щоб поставити маркер"
+      >
+        <img
+          src="/colon.jpg"
+          alt="Схема товстої кишки"
+          draggable={false}
+          style={{ width: "100%", display: "block", borderRadius: 4 }}
+        />
+        {markers.map((m, i) => (
+          <span
+            key={i}
+            className="colon-marker"
+            style={{
+              position: "absolute",
+              left: `${m.x}%`,
+              top: `${m.y}%`,
+              transform: "translate(-50%, -50%)",
+              color: "red",
+              fontWeight: "bold",
+              fontSize: 22,
+              lineHeight: 1,
+              pointerEvents: "none",
+              textShadow: "0 0 2px #fff",
+            }}
+          >
+            ✕
+          </span>
+        ))}
+      </div>
+      {markers.length > 0 && (
+        <button
+          type="button"
+          onClick={onClearMarkers}
+          className="no-print"
+          style={{
+            marginTop: 4,
+            fontSize: 10,
+            padding: "2px 8px",
+            border: "1px solid #ddd",
+            borderRadius: 4,
+            background: "#fff8f8",
+            color: "#b00",
+            cursor: "pointer",
+            display: "block",
+            width: "100%",
+          }}
+        >
+          Очистити маркери ({markers.length})
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Focus Mode Overlay ──
 function FocusOverlay({ field, value, history, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
   field: string;
@@ -2598,6 +2681,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
       conclusion:      parsed.conclusion      ?? "",
       recommendations: parsed.recommendations ?? "",
       colonSegments:   parsed.colonSegments   ?? "",
+      hospitalName:    parsed.hospitalName    ?? PROTOCOL_HOSPITAL,
+      hospitalAddress: parsed.hospitalAddress ?? PROTOCOL_ADDRESS,
+      colonMarkers:    parsed.colonMarkers    ?? "",
     };
   };
 
@@ -2607,10 +2693,19 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   });
   const [sections, setSections] = useState<ProtocolSections>(initSections);
 
-  const selectedSegs = useMemo(
-    () => (field === "protocol" ? parseColonSegments(sections.colonSegments) : new Set<string>()),
-    [field, sections.colonSegments]
-  );
+  const colonMarkers = useMemo((): Array<{ x: number; y: number }> => {
+    if (!sections.colonMarkers) return [];
+    try { return JSON.parse(sections.colonMarkers); } catch { return []; }
+  }, [sections.colonMarkers]);
+
+  const addColonMarker = (x: number, y: number) => {
+    const current: Array<{ x: number; y: number }> = sections.colonMarkers
+      ? (() => { try { return JSON.parse(sections.colonMarkers); } catch { return []; } })()
+      : [];
+    setSections(prev => ({ ...prev, colonMarkers: JSON.stringify([...current, { x, y }]) }));
+  };
+
+  const clearColonMarkers = () => setSections(prev => ({ ...prev, colonMarkers: "" }));
   const baseValue = safeValue.trim();
 
   useEffect(() => {
@@ -2634,13 +2729,15 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
         display: block !important; position: fixed !important; inset: 0 !important;
         padding: 14mm 16mm !important; font-family: Arial, sans-serif !important;
         font-size: 12pt !important; color: #000 !important; background: #fff !important;
-        overflow: visible !important;
+        overflow: visible !important; border: none !important; box-shadow: none !important;
       }
       #protocol-print-page input, #protocol-print-page textarea {
         border: none !important; outline: none !important; background: transparent !important;
         padding: 0 !important; resize: none !important;
         font-family: Arial, sans-serif !important; font-size: 12pt !important; color: #000 !important;
       }
+      #protocol-print-page img { max-width: 100% !important; }
+      .colon-marker { color: red !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       .no-print { display: none !important; }
     }`;
     document.head.appendChild(style);
@@ -2747,36 +2844,38 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   background: "white",
                   maxWidth: 820,
                   margin: "0 auto",
-                  padding: "20px 24px",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.10)",
+                  padding: "24px 28px",
+                  borderRadius: 0,
+                  boxShadow: "0 1px 8px rgba(0,0,0,0.07)",
                 }}
               >
-                {/* Institution header */}
+                {/* Institution header — editable */}
                 <div style={{ textAlign: "center", borderBottom: "2px solid #000", paddingBottom: 8, marginBottom: 14 }}>
-                  <div style={{ fontWeight: "bold", fontSize: 14 }}>КНП ЛОР «Львівський обласний клінічний діагностичний центр»</div>
-                  <div style={{ fontSize: 12, marginTop: 2 }}>Відділення ендоскопії | вул. Пекарська, 69б</div>
+                  <input
+                    value={sections.hospitalName}
+                    onChange={(e) => setSections(prev => ({ ...prev, hospitalName: e.target.value }))}
+                    spellCheck={false}
+                    style={{ fontWeight: "bold", fontSize: 14, textAlign: "center", border: "none", outline: "none", background: "transparent", width: "100%", fontFamily: "Arial, sans-serif", color: "#111", display: "block" }}
+                  />
+                  <input
+                    value={sections.hospitalAddress}
+                    onChange={(e) => setSections(prev => ({ ...prev, hospitalAddress: e.target.value }))}
+                    spellCheck={false}
+                    style={{ fontSize: 12, textAlign: "center", border: "none", outline: "none", background: "transparent", width: "100%", fontFamily: "Arial, sans-serif", color: "#111", marginTop: 2, display: "block" }}
+                  />
                   <div style={{ fontWeight: "bold", fontSize: 15, marginTop: 8, letterSpacing: 0.5 }}>ПРОТОКОЛ ЕНДОСКОПІЧНОГО ДОСЛІДЖЕННЯ</div>
                 </div>
 
                 {/* 2-column: colon map + patient fields */}
                 <div style={{ display: "flex", gap: 16, marginBottom: 14, alignItems: "flex-start" }}>
-                  {/* Colon map */}
-                  <div style={{ width: 210, flexShrink: 0 }}>
+                  {/* Colon image — click to place red markers */}
+                  <div style={{ width: 220, flexShrink: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: "bold", textAlign: "center", color: "#555", marginBottom: 3 }}>Схема товстої кишки</div>
-                    <div style={{ width: 210, height: 252 }}>
-                      <ColonMap
-                        selected={selectedSegs}
-                        onToggle={(id) => setSections((prev) => ({ ...prev, colonSegments: toggleColonSegment(prev.colonSegments, id) }))}
-                      />
-                    </div>
-                    {selectedSegs.size > 0 && (
-                      <div style={{ fontSize: 10.5, marginTop: 4, color: "#333", lineHeight: 1.4 }}>
-                        <span style={{ fontWeight: "bold" }}>Патологія: </span>
-                        {COLON_SEGS_DEF.filter(s => selectedSegs.has(s.id)).map(s => s.label).join(", ")}
-                      </div>
-                    )}
+                    <ColonImageMap
+                      markers={colonMarkers}
+                      onAddMarker={addColonMarker}
+                      onClearMarkers={clearColonMarkers}
+                    />
                   </div>
 
                   {/* Patient / procedure fields */}
@@ -2811,29 +2910,30 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                   </div>
                 </div>
 
-                {/* Full-width text sections */}
+                {/* Full-width text sections — inline bold label */}
                 {([
-                  { label: "Опис:",         key: "description"     as keyof ProtocolSections, rows: 5  },
-                  { label: "Висновок:",     key: "conclusion"      as keyof ProtocolSections, rows: 3  },
+                  { label: "Опис:",          key: "description"     as keyof ProtocolSections, rows: 5  },
+                  { label: "Висновок:",      key: "conclusion"      as keyof ProtocolSections, rows: 3  },
                   { label: "Рекомендовано:", key: "recommendations" as keyof ProtocolSections, rows: 3  },
                 ] as Array<{ label: string; key: keyof ProtocolSections; rows: number }>).map(({ label, key, rows }) => (
-                  <div key={key} style={{ marginBottom: 12 }}>
-                    <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 3 }}>{label}</div>
+                  <div key={key} style={{ marginBottom: 10, display: "flex", alignItems: "flex-start", gap: 6 }}>
+                    <span style={{ fontWeight: "bold", fontSize: 13, whiteSpace: "nowrap", paddingTop: 3, flexShrink: 0 }}>{label}</span>
                     <textarea
                       value={sections[key] as string}
                       onChange={(e) => setSections((prev) => ({ ...prev, [key]: e.target.value }))}
                       spellCheck={false}
                       rows={rows}
                       style={{
-                        width: "100%",
+                        flex: 1,
                         resize: "vertical",
                         background: "transparent",
-                        border: "1px solid #ccc",
-                        borderRadius: 3,
+                        border: "none",
+                        borderBottom: "1px solid #ddd",
+                        borderRadius: 0,
                         fontSize: 13,
                         fontFamily: "Arial, sans-serif",
                         color: "#111",
-                        padding: "5px 7px",
+                        padding: "2px 4px",
                         outline: "none",
                         lineHeight: 1.55,
                         boxSizing: "border-box",
@@ -2897,14 +2997,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
         {/* Footer */}
         <div className="shrink-0 px-8 pt-5 pb-7 bg-[hsl(204,100%,96%)] border-t border-sky-100 flex items-center justify-end gap-3">
           <button
-            onClick={onCancel}
-            className="px-6 py-2.5 text-sm font-bold text-muted-foreground bg-transparent border border-border rounded-lg hover:bg-muted/40 transition-colors active:scale-[0.97]"
-          >
-            Скасувати
-          </button>
-          <button
             onClick={() => onSave(field === "protocol" ? serializeSections(sections) : text)}
-            className="px-6 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors active:scale-[0.97] shadow-sm"
+            className="px-6 py-2.5 text-sm font-bold text-white rounded-lg transition-colors active:scale-[0.97] shadow-sm"
+            style={{ background: "#43a047" }}
           >
             Зберегти
           </button>
@@ -2912,9 +3007,9 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
             <button
               onClick={() => { onSave(serializeSections(sections)); setTimeout(() => window.print(), 150); }}
               className="px-6 py-2.5 text-sm font-bold text-white rounded-lg active:scale-[0.97] shadow-sm transition-colors"
-              style={{ background: "#43a047" }}
+              style={{ background: "#FF8C00" }}
             >
-              Зберегти та Друкувати
+              Друк
             </button>
           )}
         </div>
