@@ -2328,6 +2328,7 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
             value={focusField.value}
             history={focusField.history}
             patientName={patient.name}
+            patientPatronymic={patient.patronymic}
             patientBirthDate={patient.birthDate}
             patientDate={patient.date ? isoToDisplay(patient.date) : undefined}
             patientTime={patient.time}
@@ -2403,7 +2404,20 @@ export function PatientDetailView({ patient, allPatients = [], onClose, onUpdate
 const PROTOCOL_EQUIPMENT = "Апарат «Pentax» EC-3890LK";
 
 type SectionKey = "complaints" | "anamnesis" | "objective" | "diagnosis" | "recommendations";
-type ProtocolSections = Record<SectionKey, string>;
+
+type ProtocolSections = {
+  // Editable header fields
+  fullName:   string;
+  birthDate:  string;
+  examDate:   string;
+  equipment:  string;
+  // Clinical sections
+  complaints:      string;
+  anamnesis:       string;
+  objective:       string;
+  diagnosis:       string;
+  recommendations: string;
+};
 
 const SECTION_DEFS: Array<{ key: SectionKey; label: string; storageLabels: string[]; rows: number }> = [
   { key: "complaints",      label: "Скарги",                    storageLabels: ["Скарги"],                          rows: 2 },
@@ -2413,11 +2427,15 @@ const SECTION_DEFS: Array<{ key: SectionKey; label: string; storageLabels: strin
   { key: "recommendations", label: "Рекомендації",              storageLabels: ["Рекомендації"],                    rows: 2 },
 ];
 
-const EMPTY_SECTIONS: ProtocolSections = {
-  complaints: "", anamnesis: "", objective: "Per rectum: тонус сфінктера збережений, болючість відсутня.", diagnosis: "", recommendations: "",
-};
+const HEADER_PARSE_DEFS: Array<{ key: keyof ProtocolSections; labels: string[] }> = [
+  { key: "fullName",  labels: ["Прізвище, ім'я, по батькові", "ПІБ", "П.І.Б.", "Пацієнт"] },
+  { key: "birthDate", labels: ["Дата народження"] },
+  { key: "examDate",  labels: ["Дата обстеження", "Дата огляду"] },
+  { key: "equipment", labels: ["Обладнання", "Апарат"] },
+];
 
-const MAGIC_TEMPLATES: Record<string, ProtocolSections> = {
+
+const MAGIC_TEMPLATES: Record<string, Omit<ProtocolSections, "fullName"|"birthDate"|"examDate"|"equipment">> = {
   norma: {
     complaints:      "Скарг не пред'являє.",
     anamnesis:       "Не обтяжений.",
@@ -2449,37 +2467,53 @@ function stripProtocolHeader(text: string): string {
   return lines.slice(i).join("\n");
 }
 
-function parseTextToSections(text: string): ProtocolSections {
-  const buffers: Record<SectionKey, string[]> = { complaints: [], anamnesis: [], objective: [], diagnosis: [], recommendations: [] };
-  let cur: SectionKey | null = null;
+function parseTextToSections(text: string): Partial<ProtocolSections> {
+  const ALL_DEFS: Array<{ key: keyof ProtocolSections; labels: string[] }> = [
+    ...HEADER_PARSE_DEFS,
+    ...SECTION_DEFS.map((d) => ({ key: d.key as keyof ProtocolSections, labels: d.storageLabels })),
+  ];
+  const buffers: Partial<Record<keyof ProtocolSections, string[]>> = {};
+  let cur: keyof ProtocolSections | null = null;
+
   for (const line of text.split("\n")) {
     const t = line.trimStart();
     let found = false;
-    for (const def of SECTION_DEFS) {
-      for (const lbl of def.storageLabels) {
+    for (const def of ALL_DEFS) {
+      for (const lbl of def.labels) {
         if (t.startsWith(lbl + ":")) {
           cur = def.key;
+          if (!buffers[cur]) buffers[cur] = [];
           const rest = t.slice(lbl.length + 1).trimStart();
-          if (rest) buffers[cur].push(rest);
+          if (rest) buffers[cur]!.push(rest);
           found = true;
           break;
         }
       }
       if (found) break;
     }
-    if (!found && cur) buffers[cur].push(line);
+    if (!found && cur) {
+      if (!buffers[cur]) buffers[cur] = [];
+      buffers[cur]!.push(line);
+    }
   }
-  return {
-    complaints:      buffers.complaints.join("\n").trim(),
-    anamnesis:       buffers.anamnesis.join("\n").trim(),
-    objective:       buffers.objective.join("\n").trim(),
-    diagnosis:       buffers.diagnosis.join("\n").trim(),
-    recommendations: buffers.recommendations.join("\n").trim(),
-  };
+
+  const result: Partial<ProtocolSections> = {};
+  for (const def of ALL_DEFS) {
+    const v = buffers[def.key]?.join("\n").trim();
+    if (v !== undefined) (result as Record<string, string>)[def.key as string] = v;
+  }
+  return result;
 }
 
 function serializeSections(s: ProtocolSections): string {
-  return SECTION_DEFS.map((def) => `${def.storageLabels[0]}: ${s[def.key]}`).join("\n");
+  const header = [
+    `Прізвище, ім'я, по батькові: ${s.fullName}`,
+    `Дата народження: ${s.birthDate}`,
+    `Дата обстеження: ${s.examDate}`,
+    `Обладнання: ${s.equipment}`,
+  ].join("\n");
+  const body = SECTION_DEFS.map((def) => `${def.storageLabels[0]}: ${s[def.key]}`).join("\n");
+  return header + "\n" + body;
 }
 
 function toggleClockLocalization(text: string, hour: number): string {
@@ -2501,12 +2535,12 @@ function parseClockHours(text: string): Set<number> {
 
 // ── Anatomic Map SVG ──
 function AnatomicMap({ selected, onToggle }: { selected: Set<number>; onToggle: (hour: number) => void }) {
-  const cx = 100, cy = 100, R = 82, r = 30;
+  const cx = 120, cy = 120, R = 104, r = 38;
   return (
-    <svg viewBox="0 0 200 200" className="w-full h-full select-none" style={{ touchAction: "manipulation" }}>
-      {/* Outer anatomical ring */}
-      <circle cx={cx} cy={cy} r={90} fill="none" stroke="#f5c8c8" strokeWidth="2.5" />
-      <circle cx={cx} cy={cy} r={R} fill="#fff8f8" stroke="#e8b8b8" strokeWidth="1" />
+    <svg viewBox="0 0 240 240" className="w-full h-full select-none" style={{ touchAction: "manipulation" }}>
+      {/* Outer decorative ring */}
+      <circle cx={cx} cy={cy} r={112} fill="none" stroke="#f0c0c0" strokeWidth="2.5" />
+      <circle cx={cx} cy={cy} r={R} fill="#fff8f8" stroke="#dba8a8" strokeWidth="1.5" />
       {/* 12 sectors */}
       {Array.from({ length: 12 }, (_, i) => {
         const hour = i + 1;
@@ -2520,30 +2554,31 @@ function AnatomicMap({ selected, onToggle }: { selected: Set<number>; onToggle: 
         const sel = selected.has(hour);
         return (
           <g key={hour} onClick={() => onToggle(hour)} style={{ cursor: "pointer" }}>
-            <path d={d} fill={sel ? "#f39c12" : "#fce8e8"} stroke="#e4b0b0" strokeWidth="0.75"
-              style={{ transition: "fill 0.12s" }} />
+            <path d={d} fill={sel ? "#f39c12" : "#fde8e8"} stroke="#d8a8a8" strokeWidth="1"
+              style={{ transition: "fill 0.15s" }} />
             <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-              fontSize="9.5" fontWeight="700" fill={sel ? "#5c2d00" : "#a06060"}>{hour}</text>
+              fontSize="14" fontWeight="800" fill={sel ? "#5c2d00" : "#9a5555"}>{hour}</text>
           </g>
         );
       })}
       {/* Inner lumen */}
-      <circle cx={cx} cy={cy} r={r} fill="white" stroke="#e8b8b8" strokeWidth="1.5" />
-      <text x={cx} y={cy - 3} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#c09090" letterSpacing="0.5">АНАТ.</text>
-      <text x={cx} y={cy + 6} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#c09090" letterSpacing="0.5">СХЕМА</text>
+      <circle cx={cx} cy={cy} r={r} fill="white" stroke="#dba8a8" strokeWidth="2" />
+      <text x={cx} y={cy - 5} textAnchor="middle" fontSize="7" fontWeight="700" fill="#c09090" letterSpacing="0.5">АНАТ.</text>
+      <text x={cx} y={cy + 8} textAnchor="middle" fontSize="7" fontWeight="700" fill="#c09090" letterSpacing="0.5">СХЕМА</text>
       {/* Orientation labels */}
-      <text x={cx} y={10} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#b05050" letterSpacing="0.8">ЗАДНЯ</text>
-      <text x={cx} y={196} textAnchor="middle" fontSize="5.5" fontWeight="700" fill="#b05050" letterSpacing="0.8">ПЕРЕДНЯ</text>
+      <text x={cx} y={12} textAnchor="middle" fontSize="7" fontWeight="700" fill="#a04040" letterSpacing="1">ЗАДНЯ</text>
+      <text x={cx} y={234} textAnchor="middle" fontSize="7" fontWeight="700" fill="#a04040" letterSpacing="1">ПЕРЕДНЯ</text>
     </svg>
   );
 }
 
 // ── Focus Mode Overlay ──
-function FocusOverlay({ field, value, history, patientName, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
+function FocusOverlay({ field, value, history, patientName, patientPatronymic, patientBirthDate, patientDate, patientTime, patientProcedure, allergies, onSave, onCancel }: {
   field: string;
   value?: string | null;
   history?: HistoryEntry[];
   patientName: string;
+  patientPatronymic?: string;
   patientBirthDate?: string;
   patientDate?: string;
   patientTime?: string;
@@ -2556,7 +2591,19 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
 
   const initSections = (): ProtocolSections => {
     const raw = stripProtocolHeader(safeValue);
-    return raw.trim() ? parseTextToSections(raw) : { ...EMPTY_SECTIONS };
+    const parsed = raw.trim() ? parseTextToSections(raw) : {};
+    const fullNameDefault = [patientName, patientPatronymic].filter(Boolean).join(" ");
+    return {
+      fullName:        parsed.fullName        ?? fullNameDefault,
+      birthDate:       parsed.birthDate       ?? (patientBirthDate || ""),
+      examDate:        parsed.examDate        ?? (patientDate || ""),
+      equipment:       parsed.equipment       ?? PROTOCOL_EQUIPMENT,
+      complaints:      parsed.complaints      ?? "",
+      anamnesis:       parsed.anamnesis       ?? "",
+      objective:       parsed.objective       ?? "Per rectum: тонус сфінктера збережений, болючість відсутня.",
+      diagnosis:       parsed.diagnosis       ?? "",
+      recommendations: parsed.recommendations ?? "",
+    };
   };
 
   const [text, setText] = useState(() => {
@@ -2576,8 +2623,7 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
     if (field === "phone") {
       setText(normalizePhoneWithPlus(safeValue));
     } else if (field === "protocol") {
-      const raw = stripProtocolHeader(safeValue);
-      setSections(raw.trim() ? parseTextToSections(raw) : { ...EMPTY_SECTIONS });
+      setSections(initSections());
     } else {
       setText(safeValue);
     }
@@ -2673,131 +2719,138 @@ function FocusOverlay({ field, value, history, patientName, patientBirthDate, pa
               autoFocus
             />
           ) : field === "protocol" ? (
-            <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto pr-1" style={{ fontFamily: "Arial, sans-serif" }}>
+            /* ── 2-column: left = document, right = anatomic map ── */
+            <div className="flex-1 min-h-0 flex gap-5 overflow-hidden" style={{ fontFamily: "Arial, sans-serif" }}>
 
-              {/* ── Document header table ── */}
-              <div className="shrink-0 border border-gray-300 rounded-lg bg-white px-5 py-3 text-[13px]">
-                {/* Row 1: ПІБ */}
-                <div className="flex gap-1 flex-wrap py-0.5 border-b border-gray-100">
-                  <span className="font-bold whitespace-nowrap text-gray-800">Прізвище, ім'я, по батькові:</span>
-                  <span className="ml-1 text-gray-700">{patientName}</span>
-                </div>
-                {/* Row 2: DOB + Exam date (same line) */}
-                <div className="flex gap-6 flex-wrap py-0.5 border-b border-gray-100">
-                  <div className="flex gap-1">
-                    <span className="font-bold text-gray-800 whitespace-nowrap">Дата народження:</span>
-                    <span className="ml-1 text-gray-700">{patientBirthDate || "—"}</span>
-                  </div>
-                  <div className="flex gap-1">
-                    <span className="font-bold text-gray-800 whitespace-nowrap">Дата обстеження:</span>
-                    <span className="ml-1 text-gray-700">{patientDate || "—"}</span>
-                  </div>
-                </div>
-                {/* Row 3: Equipment */}
-                <div className="flex gap-1 flex-wrap py-0.5">
-                  <span className="font-bold text-gray-800 whitespace-nowrap">Обладнання:</span>
-                  <span className="ml-1 text-gray-700">{PROTOCOL_EQUIPMENT}</span>
-                </div>
-              </div>
+              {/* Left column: editable header + clinical sections + magic buttons */}
+              <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto pr-1">
 
-              {/* ── Clinical sections ── */}
-              <div className="shrink-0 flex flex-col gap-3">
-                {SECTION_DEFS.map((def, idx) => {
-                  const isObjective = def.key === "objective";
-                  return (
-                    <div key={def.key}>
-                      {isObjective ? (
-                        /* Об'єктивно + AnatomicMap side by side on desktop */
-                        <div className="flex gap-3 items-start">
-                          <div className="flex-1 flex flex-col gap-0.5">
-                            <label className="text-[13px] font-bold text-gray-800">{def.label}:</label>
-                            <textarea
-                              value={sections.objective}
-                              onChange={(e) => setSections((prev) => ({ ...prev, objective: e.target.value }))}
-                              spellCheck={false}
-                              autoCorrect="off"
-                              rows={def.rows}
-                              autoFocus={idx === 0}
-                              className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-[13px] text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
-                              style={{ lineHeight: 1.55, scrollbarWidth: "thin" }}
-                            />
-                          </div>
-                          {/* Desktop anatomic map */}
-                          <div className="hidden md:flex flex-col items-center shrink-0 pt-5" style={{ width: 158 }}>
-                            <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
-                            <div style={{ width: 150, height: 150 }}>
-                              <AnatomicMap
-                                selected={clockHours}
-                                onToggle={(h) =>
-                                  setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))
-                                }
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-0.5">
-                          <label className="text-[13px] font-bold text-gray-800">{def.label}:</label>
-                          <textarea
-                            value={sections[def.key]}
-                            onChange={(e) => setSections((prev) => ({ ...prev, [def.key]: e.target.value }))}
-                            spellCheck={false}
-                            autoCorrect="off"
-                            rows={def.rows}
-                            autoFocus={idx === 0}
-                            className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-[13px] text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
-                            style={{ lineHeight: 1.55, scrollbarWidth: "thin" }}
-                          />
-                        </div>
-                      )}
+                {/* ── Editable document header ── */}
+                <div className="shrink-0 border border-gray-300 rounded-lg bg-white overflow-hidden text-base">
+                  {/* Row 1: ПІБ */}
+                  <div className="flex items-baseline gap-2 px-4 py-2 border-b border-gray-200">
+                    <span className="font-bold text-gray-900 whitespace-nowrap" style={{ minWidth: 260 }}>Прізвище, ім'я, по батькові:</span>
+                    <input
+                      value={sections.fullName}
+                      onChange={(e) => setSections((prev) => ({ ...prev, fullName: e.target.value }))}
+                      spellCheck={false}
+                      className="flex-1 bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors min-w-0"
+                      style={{ fontSize: 16 }}
+                    />
+                  </div>
+                  {/* Row 2: DOB + Exam date */}
+                  <div className="flex flex-wrap gap-6 items-baseline px-4 py-2 border-b border-gray-200">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-gray-900 whitespace-nowrap">Дата народження:</span>
+                      <input
+                        value={sections.birthDate}
+                        onChange={(e) => setSections((prev) => ({ ...prev, birthDate: e.target.value }))}
+                        spellCheck={false}
+                        className="bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors w-28"
+                        style={{ fontSize: 16 }}
+                      />
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* ── Magic buttons + mobile map toggle ── */}
-              <div className="shrink-0 flex flex-wrap gap-2 pb-1">
-                {([
-                  { label: "Норма",   key: "norma" },
-                  { label: "Геморой", key: "gemoroi" },
-                  { label: "Тріщина", key: "trishchyna" },
-                ] as { label: string; key: keyof typeof MAGIC_TEMPLATES }[]).map(({ label, key }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSections(MAGIC_TEMPLATES[key])}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors active:scale-[0.97]"
-                    style={{ borderColor: "#f39c12", color: "#c27a00", background: "#fff8ee" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef0d0"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff8ee"; }}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowClock((s) => !s)}
-                  className="md:hidden ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors active:scale-[0.97]"
-                  style={{ borderColor: "#f39c12", color: "#c27a00", background: showClock ? "#fef0d0" : "#fff8ee" }}
-                >
-                  Показати схему
-                </button>
-              </div>
-
-              {/* Mobile anatomic map */}
-              {showClock && (
-                <div className="md:hidden shrink-0 flex flex-col items-center pb-2">
-                  <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mb-1">Локалізація</p>
-                  <div style={{ width: 190, height: 190 }}>
-                    <AnatomicMap
-                      selected={clockHours}
-                      onToggle={(h) =>
-                        setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))
-                      }
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-gray-900 whitespace-nowrap">Дата обстеження:</span>
+                      <input
+                        value={sections.examDate}
+                        onChange={(e) => setSections((prev) => ({ ...prev, examDate: e.target.value }))}
+                        spellCheck={false}
+                        className="bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors w-28"
+                        style={{ fontSize: 16 }}
+                      />
+                    </div>
+                  </div>
+                  {/* Row 3: Equipment */}
+                  <div className="flex items-baseline gap-2 px-4 py-2">
+                    <span className="font-bold text-gray-900 whitespace-nowrap">Обладнання:</span>
+                    <input
+                      value={sections.equipment}
+                      onChange={(e) => setSections((prev) => ({ ...prev, equipment: e.target.value }))}
+                      spellCheck={false}
+                      className="flex-1 bg-transparent outline-none text-gray-800 border-b border-transparent hover:border-gray-300 focus:border-amber-400 transition-colors min-w-0"
+                      style={{ fontSize: 16 }}
                     />
                   </div>
                 </div>
-              )}
+
+                {/* ── Clinical sections ── */}
+                <div className="shrink-0 flex flex-col gap-3">
+                  {SECTION_DEFS.map((def, idx) => (
+                    <div key={def.key} className="flex flex-col gap-0.5">
+                      <label className="font-bold text-gray-900" style={{ fontSize: 16 }}>{def.label}:</label>
+                      <textarea
+                        value={sections[def.key]}
+                        onChange={(e) => setSections((prev) => ({ ...prev, [def.key]: e.target.value }))}
+                        spellCheck={false}
+                        autoCorrect="off"
+                        rows={def.rows}
+                        autoFocus={idx === 0}
+                        className="w-full resize-none rounded-md border border-gray-200 bg-gray-50/40 px-3 py-2 text-gray-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300/50"
+                        style={{ fontSize: 16, lineHeight: 1.55, scrollbarWidth: "thin" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Magic buttons + mobile map toggle ── */}
+                <div className="shrink-0 flex flex-wrap gap-2 pb-2">
+                  {([
+                    { label: "Норма",   key: "norma" },
+                    { label: "Геморой", key: "gemoroi" },
+                    { label: "Тріщина", key: "trishchyna" },
+                  ] as { label: string; key: keyof typeof MAGIC_TEMPLATES }[]).map(({ label, key }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSections((prev) => ({ ...prev, ...MAGIC_TEMPLATES[key] } as ProtocolSections))}
+                      className="px-4 py-2 text-sm font-semibold rounded-lg border transition-colors active:scale-[0.97]"
+                      style={{ borderColor: "#f39c12", color: "#c27a00", background: "#fff8ee", fontSize: 14 }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef0d0"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff8ee"; }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowClock((s) => !s)}
+                    className="md:hidden ml-auto px-4 py-2 text-sm font-semibold rounded-lg border transition-colors active:scale-[0.97]"
+                    style={{ borderColor: "#f39c12", color: "#c27a00", background: showClock ? "#fef0d0" : "#fff8ee", fontSize: 14 }}
+                  >
+                    {showClock ? "Сховати схему" : "Показати схему"}
+                  </button>
+                </div>
+
+                {/* Mobile map */}
+                {showClock && (
+                  <div className="md:hidden shrink-0 flex flex-col items-center pb-4">
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-2">Локалізація</p>
+                    <div style={{ width: 240, height: 240 }}>
+                      <AnatomicMap
+                        selected={clockHours}
+                        onToggle={(h) => setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right column: large AnatomicMap — desktop only */}
+              <div className="hidden md:flex flex-col items-center shrink-0" style={{ width: 290 }}>
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-2 mt-1">Локалізація</p>
+                <div style={{ width: 274, height: 274 }}>
+                  <AnatomicMap
+                    selected={clockHours}
+                    onToggle={(h) => setSections((prev) => ({ ...prev, objective: toggleClockLocalization(prev.objective, h) }))}
+                  />
+                </div>
+                {clockHours.size > 0 && (
+                  <p className="text-xs text-amber-700 mt-2 text-center font-medium">
+                    {Array.from(clockHours).sort((a, b) => a - b).map((h) => `${h} год.`).join(", ")}
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
             <textarea
