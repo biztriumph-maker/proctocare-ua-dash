@@ -2677,20 +2677,23 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
   const initSections = (): ProtocolSections => {
     const parsed = safeValue.trim() ? parseTextToSections(safeValue) : {};
     const fullNameDefault = [patientName, patientPatronymic].filter(Boolean).join(" ");
+    // Current-visit metadata (name, age, date) always overrides copied/saved values.
+    // Medical content (description, conclusion, recommendations, markers) comes from parsed text.
+    const currentAge = patientBirthDate ? calcAge(patientBirthDate).ageStr : "";
     return {
-      fullName:        parsed.fullName        ?? fullNameDefault,
-      age:             parsed.age             ?? (patientBirthDate ? calcAge(patientBirthDate).ageStr : ""),
-      procedureType:   parsed.procedureType   ?? "Колоноскопія",
-      examDate:        parsed.examDate        ?? (patientDate || ""),
-      apparatus:       parsed.apparatus       ?? PROTOCOL_APPARATUS,
-      disinfectant:    parsed.disinfectant    ?? PROTOCOL_DISINFECTANT,
-      description:     parsed.description     ?? "",
-      conclusion:      parsed.conclusion      ?? "",
+      fullName:        fullNameDefault      || parsed.fullName        || "",
+      age:             currentAge           || parsed.age             || "",
+      procedureType:   parsed.procedureType ?? "Колоноскопія",
+      examDate:        (patientDate || "")  || parsed.examDate        || "",
+      apparatus:       parsed.apparatus     ?? PROTOCOL_APPARATUS,
+      disinfectant:    parsed.disinfectant  ?? PROTOCOL_DISINFECTANT,
+      description:     parsed.description  ?? "",
+      conclusion:      parsed.conclusion   ?? "",
       recommendations: parsed.recommendations ?? "",
-      colonSegments:   parsed.colonSegments   ?? "",
-      hospitalName:    parsed.hospitalName    ?? PROTOCOL_HOSPITAL,
+      colonSegments:   parsed.colonSegments ?? "",
+      hospitalName:    parsed.hospitalName  ?? PROTOCOL_HOSPITAL,
       hospitalAddress: parsed.hospitalAddress ?? PROTOCOL_ADDRESS,
-      colonMarkers:    parsed.colonMarkers    ?? "",
+      colonMarkers:    parsed.colonMarkers  ?? "",
     };
   };
 
@@ -3056,7 +3059,7 @@ function FocusOverlay({ field, value, history, patientName, patientPatronymic, p
                         id: `pdf_${Date.now()}`,
                         name: fileName,
                         type: "doctor",
-                        date: new Date().toISOString().split("T")[0],
+                        date: sections.examDate || isoToDisplay(getTodayIsoKyiv()),
                         url,
                         mimeType: "application/pdf",
                       });

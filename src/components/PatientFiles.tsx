@@ -466,7 +466,6 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
   const [showVideoInput, setShowVideoInput] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoName, setVideoName] = useState('');
-  const [expandedProtocols, setExpandedProtocols] = useState<Set<string>>(new Set());
 
   const activeDate = activeVisitDate || isoToDisplay(getTodayIsoKyiv());
 
@@ -1140,27 +1139,14 @@ export function PatientFiles({ files, onFilesChange, onFocusEdit, fromForm, prot
                       <p className="text-xs font-semibold text-sky-900">{dateProcedure}</p>
                     </div>
                   )}
-                  {dateProtocol && (
-                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Висновок лікаря</p>
-                      <p className={cn(
-                        "text-xs leading-relaxed text-foreground/80",
-                        !expandedProtocols.has(date) && "line-clamp-3"
-                      )}>
-                        {dateProtocol}
-                      </p>
-                      {(dateProtocol.split('\n').length > 3 || dateProtocol.length > 200) && (
-                        <button
-                          onClick={() => setExpandedProtocols(prev => {
-                            const next = new Set(prev);
-                            if (next.has(date)) next.delete(date); else next.add(date);
-                            return next;
-                          })}
-                          className="mt-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:underline transition-colors"
-                        >
-                          {expandedProtocols.has(date) ? "Згорнути" : "Читати далі..."}
-                        </button>
-                      )}
+                  {dateProtocol && !dateFiles.some(f =>
+                    f.mimeType?.includes("pdf") || f.name?.toLowerCase().endsWith(".pdf")
+                  ) && (
+                    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/10 px-2.5 py-2">
+                      <FileText size={13} className="text-muted-foreground shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Протокол обстеження від {date}
+                      </span>
                     </div>
                   )}
                   {dateFiles.map(file => (
